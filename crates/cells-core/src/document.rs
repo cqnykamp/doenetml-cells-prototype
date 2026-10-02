@@ -90,19 +90,19 @@ impl Document {
     /// Load from DAST JSON, timing each stage separately.
     pub fn load_timed(json: &str) -> crate::Result<(Document, LoadTimings)> {
         let mut t = LoadTimings::default();
-        let clock = std::time::Instant::now();
+        let clock = web_time::Instant::now();
         let dast = crate::dast::parse_json(json)?;
         t.deserialize = clock.elapsed();
 
-        let clock = std::time::Instant::now();
+        let clock = web_time::Instant::now();
         let unscheduled = crate::build::build(&dast)?;
         t.build = clock.elapsed();
 
-        let clock = std::time::Instant::now();
+        let clock = web_time::Instant::now();
         let mut doc = unscheduled.schedule()?;
         t.schedule = clock.elapsed();
 
-        let clock = std::time::Instant::now();
+        let clock = web_time::Instant::now();
         doc.recompute();
         t.initial_compute = clock.elapsed();
         Ok((doc, t))

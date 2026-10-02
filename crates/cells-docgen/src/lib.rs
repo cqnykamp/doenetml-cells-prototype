@@ -16,16 +16,21 @@ pub fn points(n: usize) -> String {
 
 /// One input feeding a chain of L operators, ending at a point's x.
 /// Cells: L + 1 + 4. Derived: L. The chain alternates offset, scale and
-/// negate so that every value changes when the input does.
+/// negate so that every value changes when the input does; the last
+/// operator is a clamp so the point stays inside the graph for dragging.
 pub fn chain(l: usize) -> String {
     let mut s = String::from("<numberInput name=\"n\" value=\"1\"/>\n");
     let mut prev = "n".to_string();
     for i in 0..l {
         let name = format!("c{i}");
-        let op = match i % 3 {
-            0 => "kind=\"offset\" k=\"1\"",
-            1 => "kind=\"scale\" k=\"1.0001\"",
-            _ => "kind=\"negate\"",
+        let op = if i + 1 == l {
+            "kind=\"clamp\" lo=\"-9\" hi=\"9\""
+        } else {
+            match i % 3 {
+                0 => "kind=\"offset\" k=\"1\"",
+                1 => "kind=\"scale\" k=\"1.0001\"",
+                _ => "kind=\"negate\"",
+            }
         };
         let _ = writeln!(s, "<op name=\"{name}\" {op} args=\"${prev}\"/>");
         prev = name;
@@ -62,9 +67,10 @@ pub fn aliases(n: usize) -> String {
 }
 
 /// N independent chains of length L, each from its own input to its own
-/// point. Cells: N(L + 2) + 4. Derived: NL.
+/// point, all points in one graph. Cells: N(L + 2) + 4. Derived: NL.
 pub fn grid(n: usize, l: usize) -> String {
     let mut s = String::new();
+    let mut points = String::from("<graph name=\"g\">\n");
     for j in 0..n {
         let _ = writeln!(s, "<numberInput name=\"n{j}\" value=\"{}\"/>", j % 10);
         let mut prev = format!("n{j}");
@@ -74,9 +80,10 @@ pub fn grid(n: usize, l: usize) -> String {
             let _ = writeln!(s, "<op name=\"{name}\" {op} args=\"${prev}\"/>");
             prev = name;
         }
-        let _ = writeln!(s, "<point name=\"p{j}\" x=\"${prev}\" y=\"{}\"/>", j % 20);
+        let _ = writeln!(points, "  <point name=\"p{j}\" x=\"${prev}\" y=\"{}\"/>", j % 20);
     }
-    s
+    points.push_str("</graph>\n");
+    s + &points
 }
 
 /// Parse a CLI-style spec such as `chain-1000` or `grid-100x10`.

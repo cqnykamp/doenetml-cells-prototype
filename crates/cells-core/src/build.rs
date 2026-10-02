@@ -148,6 +148,9 @@ impl<'a> Builder<'a> {
                         self.components[parent as usize].children.push(Child::Component(idx));
                     }
                 }
+                // Whitespace-only text between elements carries no content and
+                // would otherwise become one DOM node per element.
+                DastNode::Text(t) if t.value.trim().is_empty() => {}
                 DastNode::Text(t) => {
                     self.components[parent as usize].children.push(Child::Text(t.value.clone()));
                 }

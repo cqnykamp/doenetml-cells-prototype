@@ -1,0 +1,21 @@
+[package]
+name = "cells-wasm"
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-or-later"
+description = "wasm-bindgen binding exposing the cells core to a browser renderer"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+cells-core = { path = "../cells-core" }
+wasm-bindgen = "0.2"
+serde_json.workspace = true
+console_error_panic_hook = "0.1"
+
+# The locally installed wasm-pack 0.10 bundles a wasm-opt that corrupts the
+# function table of current wasm-bindgen output ("WebAssembly.Table.grow()
+# failed"). The Rust release profile already optimizes; skip wasm-opt.
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false

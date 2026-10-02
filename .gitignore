@@ -3,3 +3,5 @@ node_modules/
 fixtures/*.json
 results/raw/
 web/dist/
+web/src/wasm/
+web/test-results/

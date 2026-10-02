@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/cells-core", "crates/cells-docgen", "crates/cells-bench"]
+members = ["crates/cells-core", "crates/cells-docgen", "crates/cells-bench", "crates/cells-wasm"]
 
 [workspace.package]
 edition = "2024"

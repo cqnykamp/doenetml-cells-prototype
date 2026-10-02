@@ -9,3 +9,4 @@ description = "Prototype DoenetML core organized around a flat list of f64 cells
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+web-time = "1"

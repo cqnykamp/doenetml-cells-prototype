@@ -36,6 +36,12 @@ def collect_stats():
         return {}
     return {json.loads(l)["spec"]: json.loads(l) for l in p.read_text().splitlines() if l.strip()}
 
+def collect_e2e():
+    files = sorted(RAW.glob("e2e-*.json"))
+    if not files:
+        return None
+    return json.loads(files[-1].read_text())
+
 def cpu_name():
     try:
         for line in open("/proc/cpuinfo"):
@@ -127,6 +133,26 @@ def main():
         if chains:
             l, ns = max(chains)
             md.append(f"Longest measured chain: {l} operators at {fmt_ms(ns)} ms per tick (full recompute). Linear extrapolation puts the 50 ms budget at roughly {int(l * 50e6 / ns):,} serial operators, ignoring the renderer.\n")
+
+    e2e = collect_e2e()
+    if e2e:
+        md.append("## Browser end to end (headless Chromium, Playwright)\n")
+        md.append(f"Measured on {e2e['date']}: load the fixture, then drag the target point for {e2e['steps']} pointer moves. Startup here includes fetching the JSON, wasm instantiation, the core stages, manifest construction and React's first render.\n")
+        md.append("| fixture | evaluator | cells | components | fetch | wasm init | core total | manifest | first render | total (ms) |")
+        md.append("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|")
+        for r in sorted(e2e["results"], key=lambda r: (spec_key(r["spec"]), r["evaluator"])):
+            t = r["timings"] or {}
+            parts = [t.get("fetch"), t.get("wasmInit"), t.get("coreTotal"), t.get("manifest"), t.get("firstRender")]
+            total = sum(x for x in parts if isinstance(x, (int, float)) and x == x)
+            md.append(f"| {r['spec']} | {r['evaluator']} | {r['nCells']} | {r['nComponents']} | " + " | ".join(f"{x:.1f}" if isinstance(x, (int, float)) and x == x else "–" for x in parts) + f" | {total:.1f} |")
+        md.append("")
+        md.append("Per drag step, in ms. *Core* is the time inside the wasm request call. *Commit* is from the request until React committed the resulting DOM updates. *Frame* is from the request until the next animation frame.\n")
+        md.append("| fixture | evaluator | changed cells | core p50 | core p90 | commit p50 | commit p90 | frame p50 | frame p90 | frame max |")
+        md.append("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|")
+        for r in sorted(e2e["results"], key=lambda r: (spec_key(r["spec"]), r["evaluator"])):
+            k = r["tick"]
+            md.append(f"| {r['spec']} | {r['evaluator']} | {k['changed']['p50']:.0f} | {k['core']['p50']:.3f} | {k['core']['p90']:.3f} | {k['commit']['p50']:.2f} | {k['commit']['p90']:.2f} | {k['frame']['p50']:.2f} | {k['frame']['p90']:.2f} | {k['frame']['max']:.2f} |")
+        md.append("")
 
     (ROOT / "RESULTS.md").write_text("\n".join(md))
     print(f"wrote RESULTS.md and {RAW / (stamp + '-bench.json')}")

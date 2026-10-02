@@ -99998,5 +99998,5 @@
 <op name="c99996" kind="offset" k="1" args="$c99995"/>
 <op name="c99997" kind="scale" k="1.0001" args="$c99996"/>
 <op name="c99998" kind="negate" args="$c99997"/>
-<op name="c99999" kind="offset" k="1" args="$c99998"/>
+<op name="c99999" kind="clamp" lo="-9" hi="9" args="$c99998"/>
 <graph name="g"><point name="p" x="$c99999" y="$n"/></graph>
