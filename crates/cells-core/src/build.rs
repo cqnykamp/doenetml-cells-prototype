@@ -38,14 +38,15 @@ pub struct Unscheduled {
     root: CompIdx,
     names: HashMap<String, CompIdx>,
     /// Human-readable owner of each cell, e.g. "p1.x", for error messages.
-    cell_label: Vec<String>,
+    /// Computed lazily because a cycle error is the only consumer.
+    cell_label: Box<dyn Fn(CellIdx) -> String>,
 }
 
 impl Unscheduled {
     pub fn schedule(self) -> Result<Document> {
         let n = self.cells.len();
         let program = Program::schedule(self.instrs, n)
-            .map_err(|cell| Error::Cycle(self.cell_label[cell as usize].clone()))?;
+            .map_err(|cell| Error::Cycle((self.cell_label)(cell)))?;
         Ok(Document::new(self.cells, self.n_essential, program, self.components, self.root, self.names))
     }
 }
@@ -64,14 +65,14 @@ struct Builder<'a> {
     /// slots[comp][prop_index]
     slots: Vec<Vec<SlotId>>,
     sources: Vec<Source>,
-    slot_label: Vec<String>,
+    /// (component, prop index) per slot, for error messages.
+    slot_owner: Vec<(CompIdx, u16)>,
     names: HashMap<String, CompIdx>,
     /// Explicit elements to process in phase B.
     elements: Vec<(CompIdx, &'a DastElement)>,
     /// `$ref` children awaiting a kind.
     pending: Vec<(CompIdx, &'a DastMacro)>,
     root: CompIdx,
-    anon_counter: usize,
 }
 
 impl<'a> Builder<'a> {
@@ -109,20 +110,19 @@ impl<'a> Builder<'a> {
     }
 
     fn allocate_slots(&mut self, comp: CompIdx) {
+        let n = self.components[comp as usize].kind.prop_defs().len();
+        let first = self.sources.len() as SlotId;
+        self.sources.extend(std::iter::repeat_n(Source::Unset, n));
+        self.slot_owner.extend((0..n as u16).map(|pi| (comp, pi)));
+        self.slots[comp as usize] = (first..first + n as SlotId).collect();
+    }
+
+    /// Human-readable owner of a slot, e.g. "p1.x" or "<point>#12.y".
+    fn slot_label(&self, slot: SlotId) -> String {
+        let (comp, pi) = self.slot_owner[slot as usize];
         let c = &self.components[comp as usize];
-        let label = c.name.clone().unwrap_or_else(|| {
-            self.anon_counter += 1;
-            format!("<{}>#{}", c.kind.tag(), self.anon_counter)
-        });
-        let defs = c.kind.prop_defs();
-        let mut slots = Vec::with_capacity(defs.len());
-        for def in defs {
-            let id = self.sources.len() as SlotId;
-            self.sources.push(Source::Unset);
-            self.slot_label.push(format!("{label}.{}", def.name));
-            slots.push(id);
-        }
-        self.slots[comp as usize] = slots;
+        let owner = c.name.clone().unwrap_or_else(|| format!("<{}>#{}", c.kind.tag(), comp));
+        format!("{owner}.{}", c.kind.prop_defs()[pi as usize].name)
     }
 
     fn add_element(&mut self, el: &'a DastElement, parent: Option<CompIdx>) -> Result<Option<CompIdx>> {
@@ -130,7 +130,7 @@ impl<'a> Builder<'a> {
             return Ok(None);
         }
         let kind = ComponentKind::from_tag(&el.name).ok_or_else(|| Error::UnsupportedTag(el.name.clone()))?;
-        let name = el.attributes.get("name").and_then(attr_text).map(|s| s.trim().to_string());
+        let name = el.attr("name").and_then(attr_text).map(|s| s.trim().to_string());
         let idx = self.new_component(kind, name, parent)?;
         self.elements.push((idx, el));
         // A number's children are its value, not rendered children.
@@ -199,7 +199,7 @@ impl<'a> Builder<'a> {
         let elements = std::mem::take(&mut self.elements);
         for (idx, el) in elements {
             let kind = self.components[idx as usize].kind;
-            let extend = match el.attributes.get("extend") {
+            let extend = match el.attr("extend") {
                 Some(a) => {
                     let m = single_macro(a).ok_or_else(|| Error::BadValue { attr: "extend".into(), text: attr_text(a).unwrap_or_default() })?;
                     if m.path.len() != 1 {
@@ -218,7 +218,7 @@ impl<'a> Builder<'a> {
             // Virtual multi-cell attributes (a point's coords) bind several slots at once.
             let mut bound_by_virtual = vec![false; kind.prop_defs().len()];
             for (vname, parts) in virtual_attrs(kind) {
-                if let Some(a) = el.attributes.get(vname) {
+                if let Some(a) = el.attr(vname) {
                     let m = single_macro(a).ok_or_else(|| Error::BadValue { attr: vname.into(), text: attr_text(a).unwrap_or_default() })?;
                     let targets = self.resolve_ref(m)?;
                     if targets.len() != parts.len() {
@@ -226,7 +226,7 @@ impl<'a> Builder<'a> {
                     }
                     for (part, &t) in parts.iter().zip(&targets) {
                         let pi = kind.prop_index(part).unwrap();
-                        if el.attributes.contains_key(*part) {
+                        if el.has_attr(part) {
                             return Err(Error::BadValue { attr: part.to_string(), text: format!("conflicts with {vname}") });
                         }
                         self.sources[self.slots[idx as usize][pi] as usize] = Source::Alias(t);
@@ -241,7 +241,7 @@ impl<'a> Builder<'a> {
                 }
                 let slot = self.slots[idx as usize][pi];
                 let source = match def.from {
-                    PropFrom::Attribute => match el.attributes.get(def.name) {
+                    PropFrom::Attribute => match el.attr(def.name) {
                         Some(a) => self.value_source(idx, pi, def.name, &a.children)?,
                         None => self.inherit_or_default(extend, pi, def.default),
                     },
@@ -300,10 +300,10 @@ impl<'a> Builder<'a> {
     }
 
     fn op_source(&mut self, el: &DastElement) -> Result<Source> {
-        let kind_text = el.attributes.get("kind").and_then(attr_text).unwrap_or_default();
+        let kind_text = el.attr("kind").and_then(attr_text).unwrap_or_default();
         let kind_text = kind_text.trim();
         let param = |name: &str| -> Result<f64> {
-            let a = el.attributes.get(name).ok_or_else(|| Error::MissingParam { kind: kind_text.into(), attr: name.into() })?;
+            let a = el.attr(name).ok_or_else(|| Error::MissingParam { kind: kind_text.into(), attr: name.into() })?;
             attr_text(a)
                 .and_then(|t| t.trim().parse::<f64>().ok())
                 .ok_or_else(|| Error::BadLiteralParam(name.into()))
@@ -320,7 +320,7 @@ impl<'a> Builder<'a> {
             other => return Err(Error::UnknownOp(other.into())),
         };
         let mut inputs = Vec::new();
-        if let Some(args) = el.attributes.get("args") {
+        if let Some(args) = el.attr("args") {
             for node in &args.children {
                 match node {
                     DastNode::Macro(m) => {
@@ -380,7 +380,7 @@ impl<'a> Builder<'a> {
         for (s, src) in self.sources.iter().enumerate() {
             match src {
                 Source::Alias(_) => {}
-                Source::Unset => unreachable!("slot {} never received a source", self.slot_label[s]),
+                Source::Unset => unreachable!("slot {} never received a source", self.slot_label(s as SlotId)),
                 _ => {
                     let root = uf.find(s as SlotId) as usize;
                     debug_assert!(class_def[root].is_none(), "two sources in one alias class");
@@ -391,14 +391,14 @@ impl<'a> Builder<'a> {
         for s in 0..n {
             let root = uf.find(s as SlotId) as usize;
             if class_def[root].is_none() {
-                return Err(Error::Cycle(self.slot_label[s].clone()));
+                return Err(Error::Cycle(self.slot_label(s as SlotId)));
             }
         }
 
         // Number cells: essential classes first, then derived.
         let mut slot_cell: Vec<CellIdx> = vec![u32::MAX; n];
         let mut cells = Vec::new();
-        let mut cell_label = Vec::new();
+        let mut cell_def_slot: Vec<SlotId> = Vec::new();
         let mut derived_defs = Vec::new();
         for s in 0..n {
             let root = uf.find(s as SlotId) as usize;
@@ -410,7 +410,7 @@ impl<'a> Builder<'a> {
                 Source::Literal(v) | Source::Default(v) => {
                     slot_cell[root] = cells.len() as CellIdx;
                     cells.push(*v);
-                    cell_label.push(self.slot_label[s].clone());
+                    cell_def_slot.push(s as SlotId);
                 }
                 Source::Op(..) => derived_defs.push(s),
                 _ => unreachable!(),
@@ -421,7 +421,7 @@ impl<'a> Builder<'a> {
             let root = uf.find(s as SlotId) as usize;
             slot_cell[root] = cells.len() as CellIdx;
             cells.push(f64::NAN);
-            cell_label.push(self.slot_label[s].clone());
+            cell_def_slot.push(s as SlotId);
         }
         let cell_of = |uf: &mut UnionFind, slot: SlotId| slot_cell[uf.find(slot) as usize];
 
@@ -442,6 +442,15 @@ impl<'a> Builder<'a> {
                 .collect();
         }
 
+        let slot_owner = self.slot_owner;
+        let comp_info: Vec<(Option<String>, ComponentKind)> =
+            self.components.iter().map(|c| (c.name.clone(), c.kind)).collect();
+        let cell_label = Box::new(move |cell: CellIdx| {
+            let (comp, pi) = slot_owner[cell_def_slot[cell as usize] as usize];
+            let (name, kind) = &comp_info[comp as usize];
+            let owner = name.clone().unwrap_or_else(|| format!("<{}>#{}", kind.tag(), comp));
+            format!("{owner}.{}", kind.prop_defs()[pi as usize].name)
+        });
         Ok(Unscheduled {
             cells,
             n_essential,

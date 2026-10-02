@@ -1,5 +1,13 @@
 ## Observations
 
-_(Hand-written; included verbatim by the renderer. Update when the numbers change.)_
+_Hand-written; included verbatim by `scripts/render-results.py`. Numbers quoted here are from the run on the date in the header and are rounded._
 
-- Pending the first full benchmark run.
+**Compute is never the bottleneck.** A full recompute of 100,000 derived cells takes well under a millisecond. Linear extrapolation puts the 50 ms drag budget at several million serial operators. Chain depth, the question the prototype was built to answer, is simply not a constraint in the core; whatever limits a 50 ms loop will be the renderer or the worker boundary, which milestone 4 measures.
+
+**Startup is dominated by the JSON boundary, then by building the naming layer.** At 100k cells, deserializing the DAST JSON costs about 260 ms and building components, resolving references and merging aliases about 140 ms; scheduling is 15 to 20 ms and the initial compute is negligible. Two cheap changes halved the first run's numbers: a hand-written single-pass deserializer (serde's internally tagged enum buffers every node, and a two-pass conversion scatters nodes across the heap, which then slows the build traversal), and removing per-slot string formatting from the build. Further gains would come from a leaner wire format than the current DAST JSON, or from skipping JSON entirely by parsing in Rust.
+
+**Memory is almost entirely the naming layer.** Cells cost 8 bytes each; the document costs about 150 bytes per cell for plain points and about 270 for operator chains, nearly all of it component names, children lists and prop vectors. The `aliases` fixtures make this explicit: 10,000 copies of one point still produce 6 cells, but 10,000 components. If memory matters, the render tree should be built lazily or stored columnar.
+
+**Full recompute beats dirty tracking on dense closures; sparse closures want the opposite.** On chains and fan-outs, where a drag changes nearly every derived cell, the branch-free full pass is fastest at every size and the dirty-scan pays for its checks. The heap-based dirty-closure is several times slower there because of per-instruction heap traffic. On the grid fixtures, where a drag touches one chain out of a thousand, dirty-closure is two orders of magnitude faster than either alternative. A production core wants a hybrid: walk the closure, but fall back to a plain scan of the affected index window once the closure is a large fraction of the program.
+
+**The TypeScript parser is the slowest stage by far, even though it is out of scope.** Parsing 5 MB of DoenetML to DAST takes about 5 s in node and needs a larger stack for 100k sibling elements. Any startup target below a second for large documents requires parser work regardless of core architecture.

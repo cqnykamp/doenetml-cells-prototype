@@ -53,14 +53,8 @@ impl Evaluator for DirtyScan {
             self.dirty[c as usize] = true;
         }
         for ins in &program.instrs {
-            let any_dirty = match ins.op {
-                crate::ops::Op::Add(a, b) | crate::ops::Op::Sub(a, b) | crate::ops::Op::Mul(a, b) | crate::ops::Op::Lerp(a, b, _) => {
-                    self.dirty[a as usize] | self.dirty[b as usize]
-                }
-                crate::ops::Op::Negate(a) | crate::ops::Op::Scale(a, _) | crate::ops::Op::Offset(a, _) | crate::ops::Op::Clamp(a, _, _) => {
-                    self.dirty[a as usize]
-                }
-            };
+            let (a, b) = ins.op.input_pair();
+            let any_dirty = self.dirty[a as usize] | b.is_some_and(|b| self.dirty[b as usize]);
             if any_dirty {
                 let new = ins.op.eval(cells);
                 let out = ins.out as usize;
@@ -113,8 +107,9 @@ impl Evaluator for DirtyClosure {
         "dirty-closure"
     }
     fn recompute(&mut self, program: &Program, cells: &mut [f64], changed: &mut Vec<CellIdx>) {
-        for i in 0..changed.len() {
-            self.enqueue_dependents(changed[i]);
+        let seeds: Vec<CellIdx> = changed.clone();
+        for c in seeds {
+            self.enqueue_dependents(c);
         }
         while let Some(Reverse(i)) = self.heap.pop() {
             self.queued[i as usize] = false;

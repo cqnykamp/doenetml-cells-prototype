@@ -28,7 +28,7 @@ pub fn fixtures() -> Vec<(String, String)> {
             out.push((spec, std::fs::read_to_string(&p).unwrap()));
         }
     }
-    out.sort_by(|a, b| spec_key(&a.0).cmp(&spec_key(&b.0)));
+    out.sort_by_key(|a| spec_key(&a.0));
     out
 }
 

@@ -219,7 +219,7 @@ impl Document {
                     + c.props.iter().map(|p| size_of::<Prop>() + p.cells.capacity() * size_of::<CellIdx>()).sum::<usize>()
             })
             .sum::<usize>()
-            + self.names.iter().map(|(k, _)| k.capacity() + size_of::<(String, CompIdx)>()).sum::<usize>();
+            + self.names.keys().map(|k| k.capacity() + size_of::<(String, CompIdx)>()).sum::<usize>();
         MemoryEstimate {
             cells: self.cells.capacity() * size_of::<f64>(),
             program: self.program.instrs.capacity() * size_of::<crate::ops::Instr>() + self.program.producer.capacity() * size_of::<u32>(),

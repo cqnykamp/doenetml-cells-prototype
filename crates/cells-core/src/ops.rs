@@ -71,11 +71,18 @@ impl Op {
         })
     }
 
-    pub fn inputs(&self) -> Vec<CellIdx> {
+    /// Input cells, without allocating: `(first, Some(second))` for binary ops.
+    #[inline(always)]
+    pub fn input_pair(&self) -> (CellIdx, Option<CellIdx>) {
         match *self {
-            Op::Add(a, b) | Op::Sub(a, b) | Op::Mul(a, b) | Op::Lerp(a, b, _) => vec![a, b],
-            Op::Negate(a) | Op::Scale(a, _) | Op::Offset(a, _) | Op::Clamp(a, _, _) => vec![a],
+            Op::Add(a, b) | Op::Sub(a, b) | Op::Mul(a, b) | Op::Lerp(a, b, _) => (a, Some(b)),
+            Op::Negate(a) | Op::Scale(a, _) | Op::Offset(a, _) | Op::Clamp(a, _, _) => (a, None),
         }
+    }
+
+    pub fn inputs(&self) -> impl Iterator<Item = CellIdx> {
+        let (a, b) = self.input_pair();
+        std::iter::once(a).chain(b)
     }
 
     pub fn kind_name(&self) -> &'static str {
