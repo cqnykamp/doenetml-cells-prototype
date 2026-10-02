@@ -1,6 +1,6 @@
 use cells_core::reference;
 use cells_core::test_utils::load;
-use cells_core::{Document, Request};
+use cells_core::{Document, Request, Tick};
 
 fn req(doc: &Document, name: &str, prop: &str, value: f64) -> Request {
     Request { cell: doc.cell(name, prop).unwrap(), value }
@@ -122,4 +122,40 @@ fn unchanged_values_are_not_reported() {
     let mut doc = load(r#"<numberInput name="n" value="3"/><op name="cl" kind="clamp" lo="0" hi="1" args="$n"/>"#).unwrap();
     let tick = doc.request(&[req(&doc, "n", "value", 4.0)]);
     assert_eq!(tick.changed, vec![doc.cell("n", "value").unwrap()]);
+}
+
+#[test]
+fn evaluators_agree() {
+    use cells_core::{DirtyClosure, DirtyScan, Evaluator, FullRecompute};
+    let src = r#"<numberInput name="a" value="2"/><numberInput name="b" value="5"/>
+        <op name="s" kind="add" args="$a $b"/><op name="t" kind="scale" k="3" args="$s"/>
+        <op name="u" kind="negate" args="$b"/><op name="v" kind="clamp" lo="0" hi="100" args="$t"/>
+        <op name="w" kind="lerp" t="0.5" args="$u $v"/>
+        <numberInput name="c" value="1"/><op name="x" kind="offset" k="1" args="$c"/>"#;
+    let base = load(src).unwrap();
+    let reqs = [req(&base, "s", "value", 20.0), req(&base, "u", "value", -1.0)];
+    let mut evs: Vec<Box<dyn Evaluator>> = vec![
+        Box::new(FullRecompute),
+        Box::new(DirtyScan::new(base.cells.len())),
+        Box::new(DirtyClosure::new(&base.program, base.cells.len())),
+    ];
+    let mut results = Vec::new();
+    for ev in evs.iter_mut() {
+        let mut doc = base.clone();
+        let mut tick = Tick::default();
+        for &r in &reqs {
+            let (cell, value) = doc.program.invert_to_essential(&doc.cells, r.cell, r.value).unwrap();
+            doc.cells[cell as usize] = value;
+            tick.changed.push(cell);
+        }
+        ev.recompute(&doc.program, &mut doc.cells, &mut tick.changed);
+        assert_eq!(reference::check(&doc), None, "{}", ev.name());
+        let mut changed = tick.changed.clone();
+        changed.sort();
+        results.push((doc.cells.clone(), changed));
+    }
+    assert_eq!(results[0], results[1]);
+    assert_eq!(results[0], results[2]);
+    // x depends only on c, which did not change: it must not be reported.
+    assert!(!results[0].1.contains(&base.cell("x", "value").unwrap()));
 }

@@ -137,6 +137,11 @@ impl Document {
     /// Apply requests: invert each to an essential cell (later requests win
     /// when two land on one cell), recompute, and report what changed.
     pub fn request(&mut self, requests: &[Request]) -> Tick {
+        self.request_with(&mut crate::eval::FullRecompute, requests)
+    }
+
+    /// `request` with an explicit recompute strategy.
+    pub fn request_with(&mut self, evaluator: &mut (impl crate::eval::Evaluator + ?Sized), requests: &[Request]) -> Tick {
         let mut tick = Tick::default();
         for &r in requests {
             match self.program.invert_to_essential(&self.cells, r.cell, r.value) {
@@ -153,7 +158,7 @@ impl Document {
             }
         }
         if !tick.changed.is_empty() {
-            self.program.run_all_tracking(&mut self.cells, &mut tick.changed);
+            evaluator.recompute(&self.program, &mut self.cells, &mut tick.changed);
         }
         tick
     }
@@ -184,5 +189,41 @@ impl Document {
 
     pub fn value(&self, name: &str, prop: &str) -> Option<f64> {
         self.cell(name, prop).map(|c| self.cells[c as usize])
+    }
+}
+
+/// Rough heap footprint of a loaded document, by part.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct MemoryEstimate {
+    pub cells: usize,
+    pub program: usize,
+    pub components: usize,
+}
+
+impl MemoryEstimate {
+    pub fn total(&self) -> usize {
+        self.cells + self.program + self.components
+    }
+}
+
+impl Document {
+    pub fn memory_estimate(&self) -> MemoryEstimate {
+        use std::mem::size_of;
+        let components = self
+            .components
+            .iter()
+            .map(|c| {
+                size_of::<Component>()
+                    + c.name.as_ref().map_or(0, |n| n.capacity())
+                    + c.children.iter().map(|ch| size_of::<Child>() + if let Child::Text(t) = ch { t.capacity() } else { 0 }).sum::<usize>()
+                    + c.props.iter().map(|p| size_of::<Prop>() + p.cells.capacity() * size_of::<CellIdx>()).sum::<usize>()
+            })
+            .sum::<usize>()
+            + self.names.iter().map(|(k, _)| k.capacity() + size_of::<(String, CompIdx)>()).sum::<usize>();
+        MemoryEstimate {
+            cells: self.cells.capacity() * size_of::<f64>(),
+            program: self.program.instrs.capacity() * size_of::<crate::ops::Instr>() + self.program.producer.capacity() * size_of::<u32>(),
+            components,
+        }
     }
 }
