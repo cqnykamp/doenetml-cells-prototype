@@ -1,0 +1,8 @@
+{
+  "name": "cells-prototype",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "parse": "node scripts/parse-dast.mjs"
+  }
+}
