@@ -98,11 +98,10 @@ impl<'a> Builder<'a> {
 
     fn new_component(&mut self, kind: ComponentKind, name: Option<String>, parent: Option<CompIdx>) -> Result<CompIdx> {
         let idx = self.components.len() as CompIdx;
-        if let Some(n) = &name {
-            if self.names.insert(n.clone(), idx).is_some() {
+        if let Some(n) = &name
+            && self.names.insert(n.clone(), idx).is_some() {
                 return Err(Error::DuplicateName(n.clone()));
             }
-        }
         self.components.push(Component { kind, name, parent, children: Vec::new(), props: Vec::new() });
         self.slots.push(Vec::new());
         self.allocate_slots(idx);
@@ -131,11 +130,11 @@ impl<'a> Builder<'a> {
             return Ok(None);
         }
         let kind = ComponentKind::from_tag(&el.name).ok_or_else(|| Error::UnsupportedTag(el.name.clone()))?;
-        let name = el.attributes.get("name").and_then(|a| attr_text(a)).map(|s| s.trim().to_string());
+        let name = el.attributes.get("name").and_then(attr_text).map(|s| s.trim().to_string());
         let idx = self.new_component(kind, name, parent)?;
         self.elements.push((idx, el));
         // A number's children are its value, not rendered children.
-        if !matches!(kind.prop_defs().iter().find(|d| d.from == PropFrom::Children), Some(_)) {
+        if kind.prop_defs().iter().find(|d| d.from == PropFrom::Children).is_none() {
             self.add_children(&el.children, idx)?;
         }
         Ok(Some(idx))

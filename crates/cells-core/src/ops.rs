@@ -40,6 +40,37 @@ impl Op {
         }
     }
 
+    /// Given a desired output value, which input to write and what value.
+    /// Binary operators always write their first argument. Returns `None`
+    /// when the inverse is undefined for the current values (division by
+    /// zero), in which case the request is dropped.
+    #[inline]
+    pub fn invert(&self, cells: &[f64], desired: f64) -> Option<(CellIdx, f64)> {
+        let v = |c: CellIdx| cells[c as usize];
+        Some(match *self {
+            Op::Add(a, b) => (a, desired - v(b)),
+            Op::Sub(a, b) => (a, desired + v(b)),
+            Op::Mul(a, b) => {
+                let d = v(b);
+                if d == 0.0 { return None; }
+                (a, desired / d)
+            }
+            Op::Negate(a) => (a, -desired),
+            Op::Scale(a, k) => {
+                if k == 0.0 { return None; }
+                (a, desired / k)
+            }
+            Op::Offset(a, k) => (a, desired - k),
+            // Clamp inverts as identity; the forward pass clamps again.
+            Op::Clamp(a, _, _) => (a, desired),
+            Op::Lerp(a, b, t) => {
+                // desired = a(1-t) + t b
+                if t == 1.0 { return None; }
+                (a, (desired - t * v(b)) / (1.0 - t))
+            }
+        })
+    }
+
     pub fn inputs(&self) -> Vec<CellIdx> {
         match *self {
             Op::Add(a, b) | Op::Sub(a, b) | Op::Mul(a, b) | Op::Lerp(a, b, _) => vec![a, b],

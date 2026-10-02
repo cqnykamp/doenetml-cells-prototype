@@ -45,6 +45,23 @@ pub struct Document {
     names: HashMap<String, CompIdx>,
 }
 
+/// A renderer's ask to change one cell to a value.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Request {
+    pub cell: CellIdx,
+    pub value: f64,
+}
+
+/// What one tick changed.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Tick {
+    /// Cells whose value changed, essential ones first in request order,
+    /// then derived ones in schedule order. No duplicates within each part.
+    pub changed: Vec<CellIdx>,
+    /// Requests that were dropped because an inverse was undefined.
+    pub dropped: Vec<Request>,
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub struct LoadTimings {
     pub deserialize: Duration,
@@ -110,12 +127,35 @@ impl Document {
         self.program.run_all(&mut self.cells);
     }
 
-    /// Write an essential cell and recompute. Panics if `cell` is derived;
-    /// requests on derived cells arrive with inversion in a later milestone.
+    /// Write an essential cell and recompute. Panics if `cell` is derived.
     pub fn set_essential(&mut self, cell: CellIdx, value: f64) {
         assert!(self.is_essential(cell), "cell {cell} is derived");
         self.cells[cell as usize] = value;
         self.recompute();
+    }
+
+    /// Apply requests: invert each to an essential cell (later requests win
+    /// when two land on one cell), recompute, and report what changed.
+    pub fn request(&mut self, requests: &[Request]) -> Tick {
+        let mut tick = Tick::default();
+        for &r in requests {
+            match self.program.invert_to_essential(&self.cells, r.cell, r.value) {
+                Some((cell, value)) => {
+                    let old = self.cells[cell as usize];
+                    if value != old && !(value.is_nan() && old.is_nan()) {
+                        self.cells[cell as usize] = value;
+                        if !tick.changed.contains(&cell) {
+                            tick.changed.push(cell);
+                        }
+                    }
+                }
+                None => tick.dropped.push(r),
+            }
+        }
+        if !tick.changed.is_empty() {
+            self.program.run_all_tracking(&mut self.cells, &mut tick.changed);
+        }
+        tick
     }
 
     pub fn component(&self, name: &str) -> Option<CompIdx> {

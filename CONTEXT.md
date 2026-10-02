@@ -56,8 +56,13 @@ cell-addressed. The core resolves a request by inverting through operators
 until essential cells are reached, then recomputes.
 
 **Inverse** — The rule an operator uses to turn a requested output value into
-requested input values. Binary operators pick one input to receive the write.
-An operator with no inverse makes its output non-draggable.
+a requested input value. Binary operators always write their first argument.
+Every derived cell has an essential ancestor, because literal parameters are
+not cells, so inversion fails only dynamically (division by zero); such a
+request is dropped.
+
+**Dropped request** — A request whose inverse was undefined for the current
+values. It changes nothing and is reported back with the tick.
 
 **Schedule** — The topological order in which derived cells are recomputed
 after essential cells change. Fixed once the document is loaded.

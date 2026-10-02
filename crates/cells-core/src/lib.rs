@@ -14,7 +14,7 @@ pub mod program;
 pub mod reference;
 pub mod test_utils;
 
-pub use document::{CellIdx, Child, CompIdx, Component, Document, LoadTimings, Prop};
+pub use document::{CellIdx, Child, CompIdx, Component, Document, LoadTimings, Prop, Request, Tick};
 pub use error::{Error, Result};
 pub use ops::{Instr, Op};
 pub use program::Program;

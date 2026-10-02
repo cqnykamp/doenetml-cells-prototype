@@ -8,6 +8,9 @@ use crate::ops::Instr;
 #[derive(Debug, Clone, Default)]
 pub struct Program {
     pub instrs: Vec<Instr>,
+    /// producer[cell] = index into `instrs` of the instruction writing that
+    /// cell, or `u32::MAX` for essential cells.
+    pub producer: Vec<u32>,
 }
 
 impl Program {
@@ -49,7 +52,39 @@ impl Program {
             let stuck = (0..n).find(|&i| indegree[i] > 0).unwrap();
             return Err(instrs[stuck].out);
         }
-        Ok(Program { instrs: order })
+        let mut producer = vec![u32::MAX; n_cells];
+        for (i, ins) in order.iter().enumerate() {
+            producer[ins.out as usize] = i as u32;
+        }
+        Ok(Program { instrs: order, producer })
+    }
+
+    /// Recompute every derived cell, appending the indices whose value
+    /// changed to `changed`. NaN to NaN counts as unchanged.
+    #[inline]
+    pub fn run_all_tracking(&self, cells: &mut [f64], changed: &mut Vec<CellIdx>) {
+        for ins in &self.instrs {
+            let out = ins.out as usize;
+            let new = ins.op.eval(cells);
+            let old = cells[out];
+            if new != old && !(new.is_nan() && old.is_nan()) {
+                cells[out] = new;
+                changed.push(ins.out);
+            }
+        }
+    }
+
+    /// Resolve a request on `cell` down to the essential cell that receives
+    /// the write, or `None` if some inverse is undefined.
+    #[inline]
+    pub fn invert_to_essential(&self, cells: &[f64], mut cell: CellIdx, mut value: f64) -> Option<(CellIdx, f64)> {
+        loop {
+            let p = self.producer[cell as usize];
+            if p == u32::MAX {
+                return Some((cell, value));
+            }
+            (cell, value) = self.instrs[p as usize].op.invert(cells, value)?;
+        }
     }
 
     /// Recompute every derived cell in schedule order.
