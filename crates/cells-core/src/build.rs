@@ -551,7 +551,16 @@ impl<'a> Builder<'a> {
             format!("{owner}.{}", kinds[comp as usize].prop_defs()[pi].name)
         });
 
-        Ok(Unscheduled { cells, n_essential, instrs, comps: self.comps, strings: self.dast.strings.clone(), root: self.root, cell_label })
+        // Columns were sized by DAST node count, an upper bound; release the slack.
+        let mut comps = self.comps;
+        comps.kind.shrink_to_fit();
+        comps.name.shrink_to_fit();
+        comps.parent.shrink_to_fit();
+        comps.child_start.shrink_to_fit();
+        comps.child_count.shrink_to_fit();
+        comps.child_list.shrink_to_fit();
+        comps.prop_cells.shrink_to_fit();
+        Ok(Unscheduled { cells, n_essential, instrs, comps, strings: self.dast.strings.clone(), root: self.root, cell_label })
     }
 }
 
