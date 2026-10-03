@@ -119,17 +119,39 @@ export function App() {
             <option value="worker-msg">worker + postMessage</option>
           </select>
         </label>
-        <button onClick={loadSource}>Load source</button>
-        <textarea value={source} onChange={(e) => setSource(e.target.value)} />
       </div>
-      {error && <div style={{ color: "crimson" }}>{error}</div>}
       {timings && <Timings t={timings} store={store} />}
-      {store && (
-        <StoreContext.Provider value={store}>
-          <CommitReporter />
-          <Component idx={store.comps.root} inGraph={false} />
-        </StoreContext.Provider>
-      )}
+      <div className="split">
+        <section className="pane source-pane">
+          <div className="pane-header">
+            <span>DoenetML source</span>
+            <button onClick={loadSource}>Load source (Ctrl+Enter)</button>
+          </div>
+          <textarea
+            value={source}
+            spellCheck={false}
+            onChange={(e) => setSource(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                loadSource();
+              }
+            }}
+          />
+        </section>
+        <section className="pane doc-pane">
+          <div className="pane-header">
+            <span>Rendered document</span>
+          </div>
+          {error && <div className="error">{error}</div>}
+          {store && (
+            <StoreContext.Provider value={store}>
+              <CommitReporter />
+              <Component idx={store.comps.root} inGraph={false} />
+            </StoreContext.Provider>
+          )}
+        </section>
+      </div>
     </div>
   );
 }
