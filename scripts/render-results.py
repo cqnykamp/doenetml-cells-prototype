@@ -95,22 +95,24 @@ def main():
 
     if stats:
         md.append("## Document structure and memory\n")
-        md.append("| fixture | cells | essential | instructions | components | JSON KB | core KB | bytes/cell |")
-        md.append("|---|---:|---:|---:|---:|---:|---:|---:|")
+        md.append("*core KB* is the loaded document's heap: cells, program, columnar component tables and the string table (names and text).\n")
+        md.append("| fixture | cells | essential | instructions | components | JSON KB | binary KB | core KB | of which strings KB | bytes/cell |")
+        md.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
         for s in specs:
             d = stats.get(s)
             if not d:
                 continue
-            md.append(f"| {s} | {d['cells']} | {d['essential']} | {d['instrs']} | {d['components']} | {d['json_bytes']//1024} | {d['bytes_total']//1024} | {d['bytes_total']/d['cells']:.0f} |")
+            md.append(f"| {s} | {d['cells']} | {d['essential']} | {d['instrs']} | {d['components']} | {d['json_bytes']//1024} | {d.get('binary_bytes', 0)//1024} | {d['bytes_total']//1024} | {d.get('bytes_strings', 0)//1024} | {d['bytes_total']/d['cells']:.0f} |")
         md.append("")
 
     st = crit.get("startup", {})
     if st:
         md.append("## Startup (ms, criterion mean)\n")
-        md.append("| fixture | cells | deserialize | build | schedule | initial compute | total from JSON |")
-        md.append("|---|---:|---:|---:|---:|---:|---:|")
+        md.append("*deserialize* is DAST JSON; *deserialize binary* is the CDST wire format (ADR 0002). Both feed the same build.\n")
+        md.append("| fixture | cells | deserialize JSON | deserialize binary | build | schedule | initial compute | total from JSON | total from binary |")
+        md.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|")
         for s in specs:
-            row = [st.get(f, {}).get(s, {}).get("mean_ns") for f in ("deserialize", "build", "schedule", "initial_compute", "total_from_json")]
+            row = [st.get(f, {}).get(s, {}).get("mean_ns") for f in ("deserialize", "deserialize_binary", "build", "schedule", "initial_compute", "total_from_json", "total_from_binary")]
             if all(r is None for r in row):
                 continue
             cells = stats.get(s, {}).get("cells", "")
@@ -141,10 +143,10 @@ def main():
     if e2e:
         md.append("## Browser end to end (headless Chromium, Playwright)\n")
         md.append(f"Measured on {e2e['date']}: load the fixture, then drag the target point for {e2e['steps']} pointer moves. Startup here includes fetching the JSON, wasm instantiation, the core stages, manifest construction and React's first render.\n")
-        md.append("Startup is shown for the `full` evaluator only (the evaluator does not affect loading). *worker* is spawn, module load and the JSON copy into the worker; *manifest* is building it in wasm plus parsing it on the main thread.\n")
-        md.append("| fixture | backend | cells | components | fetch | worker | wasm init | core total | manifest | first render | total (ms) |")
-        md.append("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
-        for r in sorted(e2e["results"], key=lambda r: (spec_key(r["spec"]), r.get("backend", "main"))):
+        md.append("Startup is shown for the `full` evaluator only (the evaluator does not affect loading). *worker* is spawn, module load and the document transfer into the worker; *tables* is creating the component-table views (main thread) or copying the columns out of the worker.\n")
+        md.append("| fixture | format | backend | cells | components | fetch | worker | wasm init | core total | tables | first render | total (ms) |")
+        md.append("|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+        for r in sorted(e2e["results"], key=lambda r: (spec_key(r["spec"]), r.get("fmt", "json"), r.get("backend", "main"))):
             if r["evaluator"] != "full":
                 continue
             t = r["timings"] or {}
@@ -152,12 +154,15 @@ def main():
             manifest = num(t.get("manifest")) + num(t.get("manifestTransfer"))
             parts = [t.get("fetch"), t.get("workerSpawn"), t.get("wasmInit"), t.get("coreTotal"), manifest, t.get("firstRender")]
             total = sum(num(x) for x in parts)
-            md.append(f"| {r['spec']} | {r.get('backend', 'main')} | {r['nCells']} | {r['nComponents']} | " + " | ".join(f"{x:.1f}" if isinstance(x, (int, float)) and x == x else "–" for x in parts) + f" | {total:.1f} |")
+            md.append(f"| {r['spec']} | {r.get('fmt', 'json')} | {r.get('backend', 'main')} | {r['nCells']} | {r['nComponents']} | " + " | ".join(f"{x:.1f}" if isinstance(x, (int, float)) and x == x else "–" for x in parts) + f" | {total:.1f} |")
         md.append("")
         md.append("Per drag step, in ms. *Core* is the time inside the wasm request call, measured where the core runs. *Round trip* is until the changed cells are readable on the main thread. *Commit* is until React committed the resulting DOM updates. *Frame* is until the next animation frame.\n")
+        md.append("Tick timings are independent of the wire format, so only the binary-format runs are shown.\n")
         md.append("| fixture | backend | evaluator | changed cells | core p50 | round trip p50 | commit p50 | commit p90 | frame p50 | frame p90 | frame max |")
         md.append("|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|")
         for r in sorted(e2e["results"], key=lambda r: (spec_key(r["spec"]), r.get("backend", "main"), r["evaluator"])):
+            if r.get("fmt", "cdast") != "cdast":
+                continue
             k = r["tick"]
             rt = k.get("roundTrip", {}).get("p50", float("nan"))
             md.append(f"| {r['spec']} | {r.get('backend', 'main')} | {r['evaluator']} | {k['changed']['p50']:.0f} | {k['core']['p50']:.3f} | {rt:.2f} | {k['commit']['p50']:.2f} | {k['commit']['p90']:.2f} | {k['frame']['p50']:.2f} | {k['frame']['p90']:.2f} | {k['frame']['max']:.2f} |")

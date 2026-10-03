@@ -11,6 +11,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const SPECS = (process.env.CELLS_E2E_FIXTURES ?? "points-100,points-1000,points-10000,chain-1000,chain-10000,chain-100000,fanout-1000,fanout-10000,grid-1000x10,grid-1000x100").split(",");
 const EVALUATORS = (process.env.CELLS_E2E_EVALS ?? "dirty-closure,full").split(",");
 const BACKENDS = (process.env.CELLS_E2E_BACKENDS ?? "main,worker-sab,worker-msg").split(",");
+const FORMATS = (process.env.CELLS_E2E_FORMATS ?? "cdast").split(",");
 const STEPS = 120;
 
 function dragTarget(spec: string): string {
@@ -41,7 +42,7 @@ test.afterAll(() => {
   let merged = results;
   if (existsSync(file)) {
     const prev = JSON.parse(readFileSync(file, "utf8")).results as any[];
-    const key = (r: any) => `${r.spec}|${r.backend ?? "main"}|${r.evaluator}`;
+    const key = (r: any) => `${r.spec}|${r.fmt ?? "json"}|${r.backend ?? "main"}|${r.evaluator}`;
     const fresh = new Set(results.map(key));
     merged = [...prev.filter((r) => !fresh.has(key(r))), ...results];
   }
@@ -49,16 +50,17 @@ test.afterAll(() => {
 });
 
 for (const spec of SPECS) {
+  for (const fmt of FORMATS) {
   for (const backend of BACKENDS) {
   for (const evaluator of EVALUATORS) {
-    test(`${spec} [${backend}] [${evaluator}]`, async ({ page }) => {
+    test(`${spec} [${fmt}] [${backend}] [${evaluator}]`, async ({ page }) => {
       page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") console.log(`[browser ${m.type()}] ${m.text()}`); });
       page.on("pageerror", (e) => console.log(`[pageerror] ${e.message}`));
-      await page.goto(`/?doc=${spec}&eval=${evaluator}&backend=${backend}`);
+      await page.goto(`/?doc=${spec}&eval=${evaluator}&backend=${backend}&fmt=${fmt}`);
       await waitReady(page);
       const load = await page.evaluate(() => {
         const s = window.__cells!.store!;
-        return { timings: window.__cells!.timings, nCells: s.manifest.nCells, nComponents: s.manifest.components.length };
+        return { timings: window.__cells!.timings, nCells: s.comps.nCells, nComponents: s.comps.length };
       });
 
       const circle = page.locator(`circle[data-name="${dragTarget(spec)}"]`);
@@ -82,7 +84,7 @@ for (const spec of SPECS) {
       expect(samples.length).toBeGreaterThan(10);
 
       const r = {
-        spec, backend, evaluator, ...load,
+        spec, fmt, backend, evaluator, ...load,
         tick: {
           core: stats(samples.map((s: any) => s.core)),
           roundTrip: stats(samples.map((s: any) => s.roundTrip)),
@@ -92,8 +94,9 @@ for (const spec of SPECS) {
         },
       };
       results.push(r);
-      console.log(`${spec} [${backend}] [${evaluator}] cells=${load.nCells} core p50=${r.tick.core.p50.toFixed(3)}ms rt p50=${r.tick.roundTrip.p50.toFixed(2)}ms commit p50=${r.tick.commit.p50.toFixed(2)}ms frame p50=${r.tick.frame.p50.toFixed(2)}ms first render=${load.timings?.firstRender?.toFixed(1)}ms`);
+      console.log(`${spec} [${fmt}] [${backend}] [${evaluator}] cells=${load.nCells} core p50=${r.tick.core.p50.toFixed(3)}ms rt p50=${r.tick.roundTrip.p50.toFixed(2)}ms commit p50=${r.tick.commit.p50.toFixed(2)}ms frame p50=${r.tick.frame.p50.toFixed(2)}ms first render=${load.timings?.firstRender?.toFixed(1)}ms`);
     });
+  }
   }
   }
 }

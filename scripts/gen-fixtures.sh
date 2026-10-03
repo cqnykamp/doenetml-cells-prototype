@@ -13,5 +13,6 @@ for spec in "${specs[@]}"; do
   start=$(date +%s%N)
   node --max-old-space-size=8192 --stack-size=65500 scripts/parse-dast.mjs -i "fixtures/$spec.doenet" > "fixtures/$spec.json"
   ms=$(( ($(date +%s%N) - start) / 1000000 ))
-  printf '%-16s %8d bytes doenet %10d bytes json  parse %6d ms\n' "$spec" "$(stat -c %s fixtures/$spec.doenet)" "$(stat -c %s fixtures/$spec.json)" "$ms"
+  node --max-old-space-size=8192 --stack-size=65500 scripts/parse-dast.mjs --binary -i "fixtures/$spec.doenet" > "fixtures/$spec.cdast"
+  printf '%-16s %8d bytes doenet %10d bytes json %10d bytes cdast  parse %6d ms\n' "$spec" "$(stat -c %s fixtures/$spec.doenet)" "$(stat -c %s fixtures/$spec.json)" "$(stat -c %s fixtures/$spec.cdast)" "$ms"
 done

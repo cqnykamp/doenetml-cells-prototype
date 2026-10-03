@@ -3,7 +3,6 @@ import { fmt } from "./Point";
 
 export function NumberView({ idx }: { idx: number }) {
   const store = useStore();
-  const c = store.manifest.components[idx];
-  const v = useCell(c.props.value);
-  return <span data-comp={idx} data-name={c.name ?? undefined}>{fmt(v)}</span>;
+  const v = useCell(store.comps.cell(idx, "value"));
+  return <span data-comp={idx} data-name={store.comps.name(idx) ?? undefined}>{fmt(v)}</span>;
 }

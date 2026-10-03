@@ -2,7 +2,7 @@
 //! over wasm memory (see `cells_ptr`/`cells_len`), receives a one-time render
 //! manifest, and writes with cell-addressed requests. See ADR 0001.
 
-use cells_core::{Child, DirtyClosure, DirtyScan, Document, Evaluator, FullRecompute, Request};
+use cells_core::{DirtyClosure, DirtyScan, Document, Evaluator, FullRecompute, Request};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -15,11 +15,12 @@ pub struct Core {
 
 #[wasm_bindgen]
 impl Core {
-    /// Load a document from DAST JSON and compute its initial values.
+    /// Load a document from either wire format (DAST JSON or binary CDST,
+    /// detected by content) and compute its initial values.
     #[wasm_bindgen(constructor)]
-    pub fn new(dast_json: &str) -> Result<Core, JsError> {
+    pub fn new(dast: &[u8]) -> Result<Core, JsError> {
         console_error_panic_hook::set_once();
-        let (doc, timings) = Document::load_timed(dast_json).map_err(|e| JsError::new(&e.to_string()))?;
+        let (doc, timings) = Document::load_timed(dast).map_err(|e| JsError::new(&e.to_string()))?;
         let evaluator: Box<dyn Evaluator> = Box::new(DirtyClosure::new(&doc.program, doc.cells.len()));
         Ok(Core { doc, evaluator, timings, last_dropped: 0 })
     }
@@ -54,62 +55,75 @@ impl Core {
         )
     }
 
-    /// The render manifest: every component with its kind, name, prop cell
-    /// indices and children, as JSON. Sent once at load. Written directly
-    /// to a string: building a serde_json::Value tree first cost more than
-    /// the whole core load on 100k-component documents.
-    pub fn manifest_json(&self) -> String {
-        use std::fmt::Write;
-        let doc = &self.doc;
-        let mut out = String::with_capacity(doc.components.len() * 96);
-        let _ = write!(
-            out,
-            r#"{{"root":{},"nEssential":{},"nCells":{},"components":["#,
-            doc.root,
-            doc.n_essential,
-            doc.cells.len()
-        );
-        for (i, c) in doc.components.iter().enumerate() {
-            if i > 0 {
-                out.push(',');
-            }
-            let _ = write!(out, r#"{{"kind":"{}","name":"#, c.kind.tag());
-            match &c.name {
-                Some(n) => out.push_str(&serde_json::to_string(n).unwrap()),
-                None => out.push_str("null"),
-            }
-            out.push_str(r#","parent":"#);
-            match c.parent {
-                Some(p) => {
-                    let _ = write!(out, "{p}");
-                }
-                None => out.push_str("null"),
-            }
-            out.push_str(r#","props":{"#);
-            for (j, p) in c.props.iter().enumerate() {
-                if j > 0 {
-                    out.push(',');
-                }
-                let _ = write!(out, r#""{}":{}"#, p.name, p.cells[0]);
-            }
-            out.push_str(r#"},"children":["#);
-            for (j, ch) in c.children.iter().enumerate() {
-                if j > 0 {
-                    out.push(',');
-                }
-                match ch {
-                    Child::Component(idx) => {
-                        let _ = write!(out, r#"{{"c":{idx}}}"#);
-                    }
-                    Child::Text(t) => {
-                        let _ = write!(out, r#"{{"t":{}}}"#, serde_json::to_string(t).unwrap());
-                    }
-                }
-            }
-            out.push_str("]}");
-        }
-        out.push_str("]}");
-        out
+    // ---- component tables -------------------------------------------------
+    //
+    // The renderer reads the columnar component layer directly through typed
+    // array views over wasm memory, the same way it reads cells. There is no
+    // serialized manifest. Pointers are valid until the next allocating call.
+
+    pub fn root(&self) -> u32 {
+        self.doc.root
+    }
+
+    pub fn n_components(&self) -> usize {
+        self.doc.n_components()
+    }
+
+    /// `u8` per component: the `ComponentKind` discriminant, in the order of
+    /// `kind_tags()`.
+    pub fn comp_kind_ptr(&self) -> *const u8 {
+        self.doc.comps.kind.as_ptr() as *const u8
+    }
+
+    /// Tag names indexed by kind discriminant, JSON array.
+    pub fn kind_tags(&self) -> String {
+        serde_json::to_string(&cells_core::components::ComponentKind::ALL.iter().map(|k| k.tag()).collect::<Vec<_>>()).unwrap()
+    }
+
+    /// Prop names per kind, JSON array of arrays, in the order of `kind_tags()`.
+    pub fn kind_props(&self) -> String {
+        serde_json::to_string(&cells_core::components::ComponentKind::ALL.iter().map(|k| k.prop_defs().iter().map(|p| p.name).collect::<Vec<_>>()).collect::<Vec<_>>()).unwrap()
+    }
+
+    pub fn comp_name_ptr(&self) -> *const u32 {
+        self.doc.comps.name.as_ptr()
+    }
+    pub fn comp_parent_ptr(&self) -> *const u32 {
+        self.doc.comps.parent.as_ptr()
+    }
+    pub fn comp_prop_base_ptr(&self) -> *const u32 {
+        self.doc.comps.prop_base.as_ptr()
+    }
+    pub fn prop_cells_ptr(&self) -> *const u32 {
+        self.doc.comps.prop_cells.as_ptr()
+    }
+    pub fn prop_cells_len(&self) -> usize {
+        self.doc.comps.prop_cells.len()
+    }
+    pub fn comp_child_start_ptr(&self) -> *const u32 {
+        self.doc.comps.child_start.as_ptr()
+    }
+    pub fn comp_child_count_ptr(&self) -> *const u32 {
+        self.doc.comps.child_count.as_ptr()
+    }
+    pub fn child_list_ptr(&self) -> *const u32 {
+        self.doc.comps.child_list.as_ptr()
+    }
+    pub fn child_list_len(&self) -> usize {
+        self.doc.comps.child_list.len()
+    }
+    /// String table: `n_strings + 1` offsets into the UTF-8 byte blob.
+    pub fn string_offsets_ptr(&self) -> *const u32 {
+        self.doc.strings.offsets.as_ptr()
+    }
+    pub fn n_strings(&self) -> usize {
+        self.doc.strings.len()
+    }
+    pub fn string_bytes_ptr(&self) -> *const u8 {
+        self.doc.strings.bytes.as_ptr()
+    }
+    pub fn string_bytes_len(&self) -> usize {
+        self.doc.strings.bytes.len()
     }
 
     /// Apply cell-addressed requests. Returns the changed cell indices.

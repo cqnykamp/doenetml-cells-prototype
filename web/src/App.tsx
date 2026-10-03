@@ -39,11 +39,11 @@ export function App() {
   const [evaluator, setEvaluator] = useState(params.get("eval") ?? "dirty-closure");
   const [backend, setBackend] = useState<BackendKind>((params.get("backend") as BackendKind) ?? "main");
 
-  async function loadJson(json: string, t: Partial<LoadTimings>) {
+  async function loadBytes(bytes: Uint8Array, t: Partial<LoadTimings>) {
     setError(null);
     window.__cells!.ready = false;
     try {
-      const s = await loadDocument(json, backend, evaluator, t);
+      const s = await loadDocument(bytes, backend, evaluator, t);
       const t0 = performance.now();
       t.firstRender = NaN;
       setStore(s);
@@ -66,20 +66,23 @@ export function App() {
     }
   }
 
+  // Wire format: binary CDST by default, DAST JSON with ?fmt=json.
+  const fmt = params.get("fmt") === "json" ? "json" : "cdast";
+
   async function loadFixture(spec: string) {
     const t: Partial<LoadTimings> = {};
     const t0 = performance.now();
-    const json = await (await fetch(`/${spec}.json`)).text();
+    const bytes = new Uint8Array(await (await fetch(`/${spec}.${fmt}`)).arrayBuffer());
     t.fetch = performance.now() - t0;
-    await loadJson(json, t);
+    await loadBytes(bytes, t);
   }
 
   async function loadSource() {
     const t: Partial<LoadTimings> = {};
     const t0 = performance.now();
-    const json = await parseDoenetML(source.replace(/<\/?p>/g, ""));
-    t.fetch = performance.now() - t0; // parse time stands in for fetch here
-    await loadJson(json, t);
+    const bytes = await parseDoenetML(source.replace(/<\/?p>/g, ""));
+    t.fetch = performance.now() - t0; // parse + encode time stands in for fetch here
+    await loadBytes(bytes, t);
   }
 
   useEffect(() => {
@@ -124,7 +127,7 @@ export function App() {
       {store && (
         <StoreContext.Provider value={store}>
           <CommitReporter />
-          <Component idx={store.manifest.root} inGraph={false} />
+          <Component idx={store.comps.root} inGraph={false} />
         </StoreContext.Provider>
       )}
     </div>
@@ -136,8 +139,8 @@ function Timings({ t, store }: { t: Partial<LoadTimings>; store: CellStore | nul
   const f = (v?: number) => (v === undefined || Number.isNaN(v) ? "   …" : v.toFixed(2).padStart(8));
   return (
     <div className="timings">
-      {`cells ${store?.manifest.nCells ?? "?"}  essential ${store?.manifest.nEssential ?? "?"}  components ${store?.manifest.components.length ?? "?"}\n`}
-      {`backend ${t.backend}  fetch/parse ${f(t.fetch)}  worker ${f(t.workerSpawn)}  wasm init ${f(t.wasmInit)}  core total ${f(t.coreTotal)}  manifest ${f(t.manifest)} + ${f(t.manifestTransfer)}  first render ${f(t.firstRender)}  (ms)\n`}
+      {`cells ${store?.comps.nCells ?? "?"}  essential ${store?.comps.nEssential ?? "?"}  components ${store?.comps.length ?? "?"}\n`}
+      {`backend ${t.backend}  fetch/parse ${f(t.fetch)}  worker ${f(t.workerSpawn)}  wasm init ${f(t.wasmInit)}  core total ${f(t.coreTotal)}  tables ${f(t.manifest)} + ${f(t.manifestTransfer)}  first render ${f(t.firstRender)}  (ms)\n`}
       {c && `  core: deserialize ${f(c.deserialize)}  build ${f(c.build)}  schedule ${f(c.schedule)}  initial compute ${f(c.initial_compute)}`}
     </div>
   );

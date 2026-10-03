@@ -67,7 +67,12 @@ values. It changes nothing and is reported back with the tick.
 **Schedule** — The topological order in which derived cells are recomputed
 after essential cells change. Fixed once the document is loaded.
 
-**Render manifest** — The one-time description handed to the renderer at load:
-the component tree with each rendered prop's cell indices.
+**Component table** — The columnar description of components (kind, name,
+parent, children, prop cell indices) that the renderer reads directly, the
+same way it reads cells. It replaces an earlier serialized render manifest.
+
+**Wire format** — The encoding in which a parsed document reaches the core:
+either the DAST JSON of the current DoenetML worker or the compact binary
+form described in ADR 0002.
 
 **Cycle** — A dependency loop among cells. Rejected at load time.

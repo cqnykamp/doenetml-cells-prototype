@@ -2,18 +2,23 @@
 //! prop's value comes from, and its default. This is the only place that
 //! knows DoenetML tag vocabulary.
 
+/// `repr(u8)` so the renderer can read the kind column as a byte array; the
+/// discriminant order matches `ComponentKind::ALL`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
 pub enum ComponentKind {
-    Document,
-    Graph,
-    Point,
-    Number,
-    NumberInput,
+    Document = 0,
+    Graph = 1,
+    Point = 2,
+    Number = 3,
+    NumberInput = 4,
     /// Prototype-only tag that applies a numeric operator to referenced cells.
-    Op,
+    Op = 5,
 }
 
 impl ComponentKind {
+    pub const ALL: [ComponentKind; 6] = [Self::Document, Self::Graph, Self::Point, Self::Number, Self::NumberInput, Self::Op];
+
     pub fn from_tag(tag: &str) -> Option<Self> {
         Some(match tag {
             "document" => Self::Document,

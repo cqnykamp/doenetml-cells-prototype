@@ -7,23 +7,9 @@
 //  - worker-msg: wasm in a worker; changed indices and values posted per tick
 import init, { Core } from "./wasm/cells_wasm.js";
 import type { FromWorker, ToWorker, WorkerMode } from "./worker";
+import { ComponentTable, columnsFromCore } from "./components";
 
 export type BackendKind = "main" | "worker-sab" | "worker-msg";
-
-export interface ManifestChild { c?: number; t?: string }
-export interface ManifestComponent {
-  kind: string;
-  name: string | null;
-  parent: number | null;
-  props: Record<string, number>;
-  children: ManifestChild[];
-}
-export interface Manifest {
-  root: number;
-  nEssential: number;
-  nCells: number;
-  components: ManifestComponent[];
-}
 
 export interface LoadTimings {
   backend: BackendKind;
@@ -33,8 +19,9 @@ export interface LoadTimings {
   wasmInit: number;
   core: { deserialize: number; build: number; schedule: number; initial_compute: number };
   coreTotal: number;
+  /** building the component table views (main) or copying the columns out (worker) */
   manifest: number;
-  /** main-thread JSON.parse of the manifest plus, for workers, the message hop */
+  /** constructing the ComponentTable on the main thread */
   manifestTransfer: number;
   firstRender: number;
 }
@@ -119,7 +106,7 @@ class WorkerBackend implements Backend {
 }
 
 export class CellStore {
-  manifest: Manifest;
+  comps: ComponentTable;
   backend: Backend;
   kind: BackendKind;
   private listeners: (Set<Listener> | undefined)[];
@@ -131,11 +118,11 @@ export class CellStore {
   firstCommitAt: number | null = null;
   private pendingCommit: { start: number; sample: TickSample } | null = null;
 
-  constructor(backend: Backend, manifest: Manifest, kind: BackendKind) {
+  constructor(backend: Backend, comps: ComponentTable, kind: BackendKind) {
     this.backend = backend;
-    this.manifest = manifest;
+    this.comps = comps;
     this.kind = kind;
-    this.listeners = new Array(manifest.nCells);
+    this.listeners = new Array(comps.nCells);
   }
 
   cells(): Float64Array {
@@ -196,7 +183,8 @@ export class CellStore {
   }
 }
 
-export async function loadDocument(dastJson: string, kind: BackendKind, evaluator: string, timings: Partial<LoadTimings>): Promise<CellStore> {
+/** `bytes` is either DAST JSON (UTF-8) or the binary CDST wire format. */
+export async function loadDocument(bytes: Uint8Array, kind: BackendKind, evaluator: string, timings: Partial<LoadTimings>): Promise<CellStore> {
   timings.backend = kind;
   if (kind === "main") {
     let t = performance.now();
@@ -204,17 +192,19 @@ export async function loadDocument(dastJson: string, kind: BackendKind, evaluato
     timings.wasmInit = performance.now() - t;
     timings.workerSpawn = 0;
     t = performance.now();
-    const core = new Core(dastJson);
+    const core = new Core(bytes);
     core.set_evaluator(evaluator);
     timings.coreTotal = performance.now() - t;
     timings.core = JSON.parse(core.load_timings_json());
     t = performance.now();
-    const manifestJson = core.manifest_json();
+    // Views over wasm memory: the component layer never grows after load,
+    // but the cell array may be reallocated, so cells are re-viewed per read.
+    const cols = columnsFromCore(core, wasmMemory, false);
     timings.manifest = performance.now() - t;
     t = performance.now();
-    const manifest: Manifest = JSON.parse(manifestJson);
+    const comps = new ComponentTable(cols);
     timings.manifestTransfer = performance.now() - t;
-    return new CellStore(new MainBackend(core), manifest, kind);
+    return new CellStore(new MainBackend(core), comps, kind);
   }
 
   const mode: WorkerMode = kind === "worker-sab" ? "sab" : "msg";
@@ -228,19 +218,19 @@ export async function loadDocument(dastJson: string, kind: BackendKind, evaluato
       if (e.data.type === "loaded") resolve(e.data);
       else if (e.data.type === "error") reject(new Error(e.data.message));
     };
-    worker.postMessage({ type: "load", json: dastJson, mode, evaluator } satisfies ToWorker);
+    worker.postMessage({ type: "load", bytes, mode, evaluator } satisfies ToWorker, [bytes.buffer as ArrayBuffer]);
   });
   const total = performance.now() - t;
   timings.wasmInit = loaded.wasmInit;
   timings.coreTotal = loaded.coreTotal;
   timings.core = JSON.parse(loaded.coreTimings);
-  timings.manifest = loaded.manifestMs;
+  timings.manifest = loaded.columnsMs;
   // Everything in the round trip not accounted for by the worker's own stages:
-  // spawning, module load, the JSON copy in, and the manifest copy out.
-  timings.workerSpawn = total - loaded.wasmInit - loaded.coreTotal - loaded.manifestMs;
+  // spawning, module load, the document transfer in, and the columns out.
+  timings.workerSpawn = total - loaded.wasmInit - loaded.coreTotal - loaded.columnsMs;
   t = performance.now();
-  const manifest: Manifest = JSON.parse(loaded.manifest);
+  const comps = new ComponentTable(loaded.columns);
   timings.manifestTransfer = performance.now() - t;
   const view = loaded.sab ? new Float64Array(loaded.sab) : loaded.cells!;
-  return new CellStore(new WorkerBackend(worker, view), manifest, kind);
+  return new CellStore(new WorkerBackend(worker, view), comps, kind);
 }

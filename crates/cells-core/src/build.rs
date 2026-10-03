@@ -1,9 +1,11 @@
-//! Build a [`Document`] from a DAST: create components, resolve references,
-//! merge aliased props into shared cells, and emit the instruction list.
+//! Build a [`Document`] from a flat DAST: create components, resolve
+//! references, merge aliased props into shared cells, and emit the
+//! instruction list.
 //!
 //! Phases:
 //! A. Walk the DAST, creating a component per element and a placeholder per
-//!    `$ref` child. Allocate one *slot* per single-cell prop.
+//!    `$ref` child. Allocate one *slot* per single-cell prop; a component's
+//!    slots are contiguous, so `slot = slot_base[comp] + prop_index`.
 //! B. Give every slot a source: a literal, a default, an alias of another
 //!    slot, or an operator over other slots.
 //! C. Union-find over aliases: each class of aliased slots becomes one cell.
@@ -12,8 +14,8 @@
 use std::collections::HashMap;
 
 use crate::components::{ComponentKind, PropFrom};
-use crate::dast::{DastAttribute, DastElement, DastMacro, DastNode, DastRoot};
-use crate::document::{CellIdx, Child, CompIdx, Component, Document, Prop};
+use crate::dast::{Dast, NodeId, NodeKind, StrId, StringTable};
+use crate::document::{CellIdx, CompIdx, Components, Document, NONE, TEXT_BIT};
 use crate::error::{Error, Result};
 use crate::ops::{Instr, OpSpec};
 use crate::program::Program;
@@ -26,7 +28,8 @@ enum Source {
     Literal(f64),
     Default(f64),
     Alias(SlotId),
-    Op(OpSpec, Vec<SlotId>),
+    /// Operator over `op_inputs[start..start + n]`.
+    Op(OpSpec, u32, u8),
 }
 
 /// A built document whose program has not yet been scheduled.
@@ -34,163 +37,223 @@ pub struct Unscheduled {
     cells: Vec<f64>,
     n_essential: usize,
     instrs: Vec<Instr>,
-    components: Vec<Component>,
+    comps: Components,
+    strings: StringTable,
     root: CompIdx,
-    names: HashMap<String, CompIdx>,
-    /// Human-readable owner of each cell, e.g. "p1.x", for error messages.
-    /// Computed lazily because a cycle error is the only consumer.
+    /// Human-readable owner of a cell, e.g. "p1.x". Computed lazily because
+    /// a cycle error is the only consumer.
     cell_label: Box<dyn Fn(CellIdx) -> String>,
 }
 
 impl Unscheduled {
     pub fn schedule(self) -> Result<Document> {
         let n = self.cells.len();
-        let program = Program::schedule(self.instrs, n)
-            .map_err(|cell| Error::Cycle((self.cell_label)(cell)))?;
-        Ok(Document::new(self.cells, self.n_essential, program, self.components, self.root, self.names))
+        let program = Program::schedule(self.instrs, n).map_err(|cell| Error::Cycle((self.cell_label)(cell)))?;
+        Ok(Document::new(self.cells, self.n_essential, program, self.comps, self.strings, self.root))
     }
 }
 
-pub fn build(dast: &DastRoot) -> Result<Unscheduled> {
-    let mut b = Builder::default();
-    b.phase_a(dast)?;
+pub fn build(dast: &Dast) -> Result<Unscheduled> {
+    let mut b = Builder::new(dast);
+    b.phase_a()?;
     b.phase_a2_placeholders()?;
     b.phase_b_sources()?;
     b.phase_cd_cells()
 }
 
-#[derive(Default)]
 struct Builder<'a> {
-    components: Vec<Component>,
-    /// slots[comp][prop_index]
-    slots: Vec<Vec<SlotId>>,
+    dast: &'a Dast,
+    comps: Components,
+    /// First slot of each component, or NONE until allocated.
+    slot_base: Vec<u32>,
     sources: Vec<Source>,
-    /// (component, prop index) per slot, for error messages.
-    slot_owner: Vec<(CompIdx, u16)>,
-    names: HashMap<String, CompIdx>,
+    /// Owning component of each slot (prop index = slot - slot_base[comp]).
+    slot_comp: Vec<CompIdx>,
+    op_inputs: Vec<SlotId>,
+    names: HashMap<&'a str, CompIdx>,
     /// Explicit elements to process in phase B.
-    elements: Vec<(CompIdx, &'a DastElement)>,
+    elements: Vec<(CompIdx, NodeId)>,
     /// `$ref` children awaiting a kind.
-    pending: Vec<(CompIdx, &'a DastMacro)>,
+    pending: Vec<(CompIdx, NodeId)>,
     root: CompIdx,
 }
 
 impl<'a> Builder<'a> {
+    fn new(dast: &'a Dast) -> Self {
+        let n = dast.len();
+        Builder {
+            dast,
+            comps: Components {
+                kind: Vec::with_capacity(n),
+                name: Vec::with_capacity(n),
+                parent: Vec::with_capacity(n),
+                prop_base: Vec::new(),
+                prop_cells: Vec::new(),
+                child_start: Vec::with_capacity(n),
+                child_count: Vec::with_capacity(n),
+                child_list: Vec::with_capacity(n),
+            },
+            slot_base: Vec::with_capacity(n),
+            sources: Vec::with_capacity(n),
+            slot_comp: Vec::with_capacity(n),
+            op_inputs: Vec::new(),
+            names: HashMap::new(),
+            elements: Vec::with_capacity(n),
+            pending: Vec::new(),
+            root: 0,
+        }
+    }
+
     // ---- Phase A -----------------------------------------------------------
 
-    fn phase_a(&mut self, dast: &'a DastRoot) -> Result<()> {
-        let doc_el = dast.children.iter().find_map(|n| match n {
-            DastNode::Element(e) if e.name == "document" => Some(e),
-            _ => None,
-        });
+    fn phase_a(&mut self) -> Result<()> {
+        let d = self.dast;
+        let doc_el = d.children(Dast::ROOT).iter().copied().find(|&n| d.kind(n) == NodeKind::Element && d.str(n) == "document");
         match doc_el {
-            Some(el) => {
-                self.root = self.add_element(el, None)?.unwrap();
-            }
+            Some(el) => self.root = self.add_element(el, NONE)?.unwrap(),
             None => {
                 // Synthesize a root when the DAST was not normalized.
-                self.root = self.new_component(ComponentKind::Document, None, None)?;
-                let root = self.root;
-                self.add_children(&dast.children, root)?;
+                self.root = self.new_component(ComponentKind::Document, NONE, NONE)?;
+                let kids = self.add_children(d.children(Dast::ROOT), self.root)?;
+                self.set_children(self.root, &kids);
             }
         }
         Ok(())
     }
 
-    fn new_component(&mut self, kind: ComponentKind, name: Option<String>, parent: Option<CompIdx>) -> Result<CompIdx> {
-        let idx = self.components.len() as CompIdx;
-        if let Some(n) = &name
-            && self.names.insert(n.clone(), idx).is_some() {
-                return Err(Error::DuplicateName(n.clone()));
+    fn new_component(&mut self, kind: ComponentKind, name: StrId, parent: CompIdx) -> Result<CompIdx> {
+        let idx = self.comps.len() as CompIdx;
+        if name != NONE {
+            let n = self.dast.strings.get(name).trim();
+            if self.names.insert(n, idx).is_some() {
+                return Err(Error::DuplicateName(n.to_string()));
             }
-        self.components.push(Component { kind, name, parent, children: Vec::new(), props: Vec::new() });
-        self.slots.push(Vec::new());
+        }
+        self.comps.kind.push(kind);
+        self.comps.name.push(name);
+        self.comps.parent.push(parent);
+        self.comps.child_start.push(0);
+        self.comps.child_count.push(0);
+        self.slot_base.push(NONE);
         self.allocate_slots(idx);
         Ok(idx)
     }
 
     fn allocate_slots(&mut self, comp: CompIdx) {
-        let n = self.components[comp as usize].kind.prop_defs().len();
-        let first = self.sources.len() as SlotId;
+        let n = self.comps.kind[comp as usize].prop_defs().len();
+        self.slot_base[comp as usize] = self.sources.len() as u32;
         self.sources.extend(std::iter::repeat_n(Source::Unset, n));
-        self.slot_owner.extend((0..n as u16).map(|pi| (comp, pi)));
-        self.slots[comp as usize] = (first..first + n as SlotId).collect();
+        self.slot_comp.extend(std::iter::repeat_n(comp, n));
     }
 
-    /// Human-readable owner of a slot, e.g. "p1.x" or "<point>#12.y".
+    fn slot(&self, comp: CompIdx, prop_index: usize) -> SlotId {
+        self.slot_base[comp as usize] + prop_index as u32
+    }
+
+    fn set_children(&mut self, comp: CompIdx, kids: &[u32]) {
+        self.comps.child_start[comp as usize] = self.comps.child_list.len() as u32;
+        self.comps.child_count[comp as usize] = kids.len() as u32;
+        self.comps.child_list.extend_from_slice(kids);
+    }
+
+    fn comp_label(&self, comp: CompIdx) -> String {
+        let name = self.comps.name[comp as usize];
+        if name != NONE {
+            self.dast.strings.get(name).trim().to_string()
+        } else {
+            format!("<{}>#{}", self.comps.kind[comp as usize].tag(), comp)
+        }
+    }
+
     fn slot_label(&self, slot: SlotId) -> String {
-        let (comp, pi) = self.slot_owner[slot as usize];
-        let c = &self.components[comp as usize];
-        let owner = c.name.clone().unwrap_or_else(|| format!("<{}>#{}", c.kind.tag(), comp));
-        format!("{owner}.{}", c.kind.prop_defs()[pi as usize].name)
+        let comp = self.slot_comp[slot as usize];
+        let pi = (slot - self.slot_base[comp as usize]) as usize;
+        format!("{}.{}", self.comp_label(comp), self.comps.kind[comp as usize].prop_defs()[pi].name)
     }
 
-    fn add_element(&mut self, el: &'a DastElement, parent: Option<CompIdx>) -> Result<Option<CompIdx>> {
-        if el.name == "_dynamicChildren" {
+    fn add_element(&mut self, el: NodeId, parent: CompIdx) -> Result<Option<CompIdx>> {
+        let d = self.dast;
+        let tag = d.str(el);
+        if tag == "_dynamicChildren" {
             return Ok(None);
         }
-        let kind = ComponentKind::from_tag(&el.name).ok_or_else(|| Error::UnsupportedTag(el.name.clone()))?;
-        let name = el.attr("name").and_then(attr_text).map(|s| s.trim().to_string());
+        let kind = ComponentKind::from_tag(tag).ok_or_else(|| Error::UnsupportedTag(tag.to_string()))?;
+        let name = match d.attr(el, "name") {
+            Some(a) => match d.attr_children(a) {
+                [t] if d.kind(*t) == NodeKind::Text => d.str_id(*t),
+                _ => NONE,
+            },
+            None => NONE,
+        };
         let idx = self.new_component(kind, name, parent)?;
         self.elements.push((idx, el));
         // A number's children are its value, not rendered children.
-        if kind.prop_defs().iter().find(|d| d.from == PropFrom::Children).is_none() {
-            self.add_children(&el.children, idx)?;
+        if !kind.prop_defs().iter().any(|p| p.from == PropFrom::Children) {
+            let kids = self.add_children(d.children(el), idx)?;
+            self.set_children(idx, &kids);
         }
         Ok(Some(idx))
     }
 
-    fn add_children(&mut self, children: &'a [DastNode], parent: CompIdx) -> Result<()> {
-        for node in children {
-            match node {
-                DastNode::Element(e) => {
-                    if let Some(idx) = self.add_element(e, Some(parent))? {
-                        self.components[parent as usize].children.push(Child::Component(idx));
+    /// Returns the child list entries for `parent`.
+    fn add_children(&mut self, nodes: &[NodeId], parent: CompIdx) -> Result<Vec<u32>> {
+        let d = self.dast;
+        let mut kids = Vec::with_capacity(nodes.len());
+        for &n in nodes {
+            match d.kind(n) {
+                NodeKind::Element => {
+                    if let Some(idx) = self.add_element(n, parent)? {
+                        kids.push(idx);
                     }
                 }
                 // Whitespace-only text between elements carries no content and
                 // would otherwise become one DOM node per element.
-                DastNode::Text(t) if t.value.trim().is_empty() => {}
-                DastNode::Text(t) => {
-                    self.components[parent as usize].children.push(Child::Text(t.value.clone()));
+                NodeKind::Text if d.str(n).trim().is_empty() => {}
+                NodeKind::Text => kids.push(TEXT_BIT | d.str_id(n)),
+                NodeKind::Macro => {
+                    // Kind is unknown until names resolve; Document stands in.
+                    let idx = self.new_component(ComponentKind::Document, NONE, parent)?;
+                    kids.push(idx);
+                    self.pending.push((idx, n));
                 }
-                DastNode::Macro(m) => {
-                    // Kind is unknown until names resolve; use Document as a stand-in.
-                    let idx = self.new_component(ComponentKind::Document, None, Some(parent))?;
-                    self.components[parent as usize].children.push(Child::Component(idx));
-                    self.pending.push((idx, m));
-                }
-                DastNode::Other => {}
+                NodeKind::Other => {}
             }
         }
-        Ok(())
+        Ok(kids)
     }
 
     // ---- Phase A2: give `$ref` children a kind and alias their props -------
 
     fn phase_a2_placeholders(&mut self) -> Result<()> {
+        let d = self.dast;
         let pending = std::mem::take(&mut self.pending);
         for (idx, m) in pending {
-            match m.path.len() {
+            let path = d.macro_path(m);
+            match path.len() {
                 1 => {
-                    let referent = self.lookup(&m.path[0].name)?;
-                    let kind = self.components[referent as usize].kind;
+                    let referent = self.lookup(d.strings.get(path[0]))?;
+                    let kind = self.comps.kind[referent as usize];
                     if !kind.copyable() {
                         return Err(Error::UncopyableKind(kind.tag().into()));
                     }
-                    self.components[idx as usize].kind = kind;
+                    self.comps.kind[idx as usize] = kind;
                     self.allocate_slots(idx);
-                    for (i, &slot) in self.slots[idx as usize].clone().iter().enumerate() {
-                        self.sources[slot as usize] = Source::Alias(self.slots[referent as usize][i]);
+                    for pi in 0..kind.prop_defs().len() {
+                        let s = self.slot(idx, pi);
+                        self.sources[s as usize] = Source::Alias(self.slot(referent, pi));
                     }
                 }
                 2 => {
-                    self.components[idx as usize].kind = ComponentKind::Number;
+                    self.comps.kind[idx as usize] = ComponentKind::Number;
                     self.allocate_slots(idx);
                     let targets = self.resolve_ref(m)?;
-                    self.bind_alias(idx, 0, &targets, ComponentKind::Number, "value")?;
+                    if targets.len() != 1 {
+                        return Err(Error::ArityMismatch { kind: "number".into(), prop: "value".into(), expected: 1, got: targets.len() });
+                    }
+                    let s = self.slot(idx, 0);
+                    self.sources[s as usize] = Source::Alias(targets[0]);
                 }
-                _ => return Err(Error::PathTooDeep(m.display())),
+                _ => return Err(Error::PathTooDeep(d.macro_display(m))),
             }
         }
         Ok(())
@@ -199,19 +262,21 @@ impl<'a> Builder<'a> {
     // ---- Phase B: sources for explicit elements -----------------------------
 
     fn phase_b_sources(&mut self) -> Result<()> {
+        let d = self.dast;
         let elements = std::mem::take(&mut self.elements);
         for (idx, el) in elements {
-            let kind = self.components[idx as usize].kind;
-            let extend = match el.attr("extend") {
+            let kind = self.comps.kind[idx as usize];
+            let extend = match d.attr(el, "extend") {
                 Some(a) => {
-                    let m = single_macro(a).ok_or_else(|| Error::BadValue { attr: "extend".into(), text: attr_text(a).unwrap_or_default() })?;
-                    if m.path.len() != 1 {
-                        return Err(Error::PathTooDeep(m.display()));
+                    let m = self.single_macro(a).ok_or_else(|| Error::BadValue { attr: "extend".into(), text: self.attr_text(a).unwrap_or_default() })?;
+                    let path = d.macro_path(m);
+                    if path.len() != 1 {
+                        return Err(Error::PathTooDeep(d.macro_display(m)));
                     }
-                    let referent = self.lookup(&m.path[0].name)?;
-                    let rk = self.components[referent as usize].kind;
+                    let referent = self.lookup(d.strings.get(path[0]))?;
+                    let rk = self.comps.kind[referent as usize];
                     if rk != kind {
-                        return Err(Error::ExtendKindMismatch { referent: m.display(), referent_kind: rk.tag().into(), kind: kind.tag().into() });
+                        return Err(Error::ExtendKindMismatch { referent: d.macro_display(m), referent_kind: rk.tag().into(), kind: kind.tag().into() });
                     }
                     Some(referent)
                 }
@@ -221,18 +286,19 @@ impl<'a> Builder<'a> {
             // Virtual multi-cell attributes (a point's coords) bind several slots at once.
             let mut bound_by_virtual = vec![false; kind.prop_defs().len()];
             for (vname, parts) in virtual_attrs(kind) {
-                if let Some(a) = el.attr(vname) {
-                    let m = single_macro(a).ok_or_else(|| Error::BadValue { attr: vname.into(), text: attr_text(a).unwrap_or_default() })?;
+                if let Some(a) = d.attr(el, vname) {
+                    let m = self.single_macro(a).ok_or_else(|| Error::BadValue { attr: vname.into(), text: self.attr_text(a).unwrap_or_default() })?;
                     let targets = self.resolve_ref(m)?;
                     if targets.len() != parts.len() {
                         return Err(Error::ArityMismatch { kind: kind.tag().into(), prop: vname.into(), expected: parts.len(), got: targets.len() });
                     }
                     for (part, &t) in parts.iter().zip(&targets) {
                         let pi = kind.prop_index(part).unwrap();
-                        if el.has_attr(part) {
+                        if d.attr(el, part).is_some() {
                             return Err(Error::BadValue { attr: part.to_string(), text: format!("conflicts with {vname}") });
                         }
-                        self.sources[self.slots[idx as usize][pi] as usize] = Source::Alias(t);
+                        let s = self.slot(idx, pi);
+                        self.sources[s as usize] = Source::Alias(t);
                         bound_by_virtual[pi] = true;
                     }
                 }
@@ -242,22 +308,22 @@ impl<'a> Builder<'a> {
                 if bound_by_virtual[pi] {
                     continue;
                 }
-                let slot = self.slots[idx as usize][pi];
                 let source = match def.from {
-                    PropFrom::Attribute => match el.attr(def.name) {
-                        Some(a) => self.value_source(idx, pi, def.name, &a.children)?,
+                    PropFrom::Attribute => match d.attr(el, def.name) {
+                        Some(a) => self.value_source(kind, def.name, d.attr_children(a))?,
                         None => self.inherit_or_default(extend, pi, def.default),
                     },
                     PropFrom::Children => {
-                        if el.children.iter().all(is_blank) {
+                        if d.children(el).iter().all(|&n| self.is_blank(n)) {
                             self.inherit_or_default(extend, pi, def.default)
                         } else {
-                            self.value_source(idx, pi, def.name, &el.children)?
+                            self.value_source(kind, def.name, d.children(el))?
                         }
                     }
                     PropFrom::Derived => self.op_source(el)?,
                 };
-                self.sources[slot as usize] = source;
+                let s = self.slot(idx, pi);
+                self.sources[s as usize] = source;
             }
         }
         Ok(())
@@ -265,17 +331,17 @@ impl<'a> Builder<'a> {
 
     fn inherit_or_default(&self, extend: Option<CompIdx>, pi: usize, default: f64) -> Source {
         match extend {
-            Some(r) => Source::Alias(self.slots[r as usize][pi]),
+            Some(r) => Source::Alias(self.slot(r, pi)),
             None => Source::Default(default),
         }
     }
 
     /// A literal number or a single reference, as found in an attribute or in
     /// a number's children.
-    fn value_source(&mut self, idx: CompIdx, _pi: usize, attr: &str, nodes: &[DastNode]) -> Result<Source> {
-        let kind = self.components[idx as usize].kind;
-        let macros: Vec<&DastMacro> = nodes.iter().filter_map(|n| if let DastNode::Macro(m) = n { Some(m) } else { None }).collect();
-        let text: String = nodes.iter().filter_map(|n| if let DastNode::Text(t) = n { Some(t.value.as_str()) } else { None }).collect();
+    fn value_source(&mut self, kind: ComponentKind, attr: &str, nodes: &[NodeId]) -> Result<Source> {
+        let d = self.dast;
+        let macros: Vec<NodeId> = nodes.iter().copied().filter(|&n| d.kind(n) == NodeKind::Macro).collect();
+        let text: String = nodes.iter().filter(|&&n| d.kind(n) == NodeKind::Text).map(|&n| d.str(n)).collect();
         let text = text.trim();
         match (macros.len(), text.is_empty()) {
             (1, true) => {
@@ -285,31 +351,18 @@ impl<'a> Builder<'a> {
                 }
                 Ok(Source::Alias(targets[0]))
             }
-            (0, false) => text
-                .parse::<f64>()
-                .map(Source::Literal)
-                .map_err(|_| Error::BadValue { attr: attr.into(), text: text.into() }),
+            (0, false) => text.parse::<f64>().map(Source::Literal).map_err(|_| Error::BadValue { attr: attr.into(), text: text.into() }),
             _ => Err(Error::BadValue { attr: attr.into(), text: text.into() }),
         }
     }
 
-    fn bind_alias(&mut self, idx: CompIdx, pi: usize, targets: &[SlotId], kind: ComponentKind, prop: &str) -> Result<()> {
-        if targets.len() != 1 {
-            return Err(Error::ArityMismatch { kind: kind.tag().into(), prop: prop.into(), expected: 1, got: targets.len() });
-        }
-        let slot = self.slots[idx as usize][pi];
-        self.sources[slot as usize] = Source::Alias(targets[0]);
-        Ok(())
-    }
-
-    fn op_source(&mut self, el: &DastElement) -> Result<Source> {
-        let kind_text = el.attr("kind").and_then(attr_text).unwrap_or_default();
+    fn op_source(&mut self, el: NodeId) -> Result<Source> {
+        let d = self.dast;
+        let kind_text = d.attr(el, "kind").and_then(|a| self.attr_text(a)).unwrap_or_default();
         let kind_text = kind_text.trim();
         let param = |name: &str| -> Result<f64> {
-            let a = el.attr(name).ok_or_else(|| Error::MissingParam { kind: kind_text.into(), attr: name.into() })?;
-            attr_text(a)
-                .and_then(|t| t.trim().parse::<f64>().ok())
-                .ok_or_else(|| Error::BadLiteralParam(name.into()))
+            let a = d.attr(el, name).ok_or_else(|| Error::MissingParam { kind: kind_text.into(), attr: name.into() })?;
+            self.attr_text(a).and_then(|t| t.trim().parse::<f64>().ok()).ok_or_else(|| Error::BadLiteralParam(name.into()))
         };
         let spec = match kind_text {
             "add" => OpSpec::Add,
@@ -322,50 +375,88 @@ impl<'a> Builder<'a> {
             "lerp" => OpSpec::Lerp { t: param("t")? },
             other => return Err(Error::UnknownOp(other.into())),
         };
-        let mut inputs = Vec::new();
-        if let Some(args) = el.attr("args") {
-            for node in &args.children {
-                match node {
-                    DastNode::Macro(m) => {
-                        let targets = self.resolve_ref(m)?;
+        let start = self.op_inputs.len() as u32;
+        let mut count = 0usize;
+        if let Some(args) = d.attr(el, "args") {
+            for &node in d.attr_children(args) {
+                match d.kind(node) {
+                    NodeKind::Macro => {
+                        let targets = self.resolve_ref(node)?;
                         if targets.len() != 1 {
                             return Err(Error::ArityMismatch { kind: "op".into(), prop: "args".into(), expected: 1, got: targets.len() });
                         }
-                        inputs.push(targets[0]);
+                        self.op_inputs.push(targets[0]);
+                        count += 1;
                     }
-                    DastNode::Text(t) if t.value.trim().is_empty() => {}
-                    DastNode::Text(_) => return Err(Error::LiteralArg),
+                    NodeKind::Text if d.str(node).trim().is_empty() => {}
+                    NodeKind::Text => return Err(Error::LiteralArg),
                     _ => {}
                 }
             }
         }
-        if inputs.len() != spec.arity() {
-            return Err(Error::OpArity { kind: kind_text.into(), expected: spec.arity(), got: inputs.len() });
+        if count != spec.arity() {
+            return Err(Error::OpArity { kind: kind_text.into(), expected: spec.arity(), got: count });
         }
-        Ok(Source::Op(spec, inputs))
+        Ok(Source::Op(spec, start, count as u8))
     }
 
     fn lookup(&self, name: &str) -> Result<CompIdx> {
-        self.names.get(name).copied().ok_or_else(|| Error::UnknownName(name.into()))
+        self.names.get(name.trim()).copied().ok_or_else(|| Error::UnknownName(name.into()))
     }
 
     /// Slots named by `$name` or `$name.prop`.
-    fn resolve_ref(&self, m: &DastMacro) -> Result<Vec<SlotId>> {
-        let comp = self.lookup(&m.path[0].name)?;
-        let kind = self.components[comp as usize].kind;
-        let prop: &str = match m.path.len() {
-            1 => kind.default_prop().ok_or_else(|| Error::NoDefaultProp(m.path[0].name.clone()))?,
-            2 => &m.path[1].name,
-            _ => return Err(Error::PathTooDeep(m.display())),
+    fn resolve_ref(&self, m: NodeId) -> Result<Vec<SlotId>> {
+        let d = self.dast;
+        let path = d.macro_path(m);
+        let name = d.strings.get(path[0]);
+        let comp = self.lookup(name)?;
+        let kind = self.comps.kind[comp as usize];
+        let prop: &str = match path.len() {
+            1 => kind.default_prop().ok_or_else(|| Error::NoDefaultProp(name.into()))?,
+            2 => d.strings.get(path[1]),
+            _ => return Err(Error::PathTooDeep(d.macro_display(m))),
         };
-        let slots = &self.slots[comp as usize];
         if let Some(parts) = kind.virtual_prop(prop) {
-            return Ok(parts.iter().map(|p| slots[kind.prop_index(p).unwrap()]).collect());
+            return Ok(parts.iter().map(|p| self.slot(comp, kind.prop_index(p).unwrap())).collect());
         }
-        let pi = kind
-            .prop_index(prop)
-            .ok_or_else(|| Error::UnknownProp { name: m.path[0].name.clone(), prop: prop.into() })?;
-        Ok(vec![slots[pi]])
+        let pi = kind.prop_index(prop).ok_or_else(|| Error::UnknownProp { name: name.into(), prop: prop.into() })?;
+        Ok(vec![self.slot(comp, pi)])
+    }
+
+    fn attr_text(&self, a: u32) -> Option<String> {
+        let d = self.dast;
+        let mut s = String::new();
+        for &n in d.attr_children(a) {
+            match d.kind(n) {
+                NodeKind::Text => s.push_str(d.str(n)),
+                NodeKind::Macro => return None,
+                _ => {}
+            }
+        }
+        Some(s)
+    }
+
+    fn single_macro(&self, a: u32) -> Option<NodeId> {
+        let d = self.dast;
+        let mut found = None;
+        for &n in d.attr_children(a) {
+            match d.kind(n) {
+                NodeKind::Macro if found.is_none() => found = Some(n),
+                NodeKind::Macro => return None,
+                NodeKind::Text if d.str(n).trim().is_empty() => {}
+                NodeKind::Text => return None,
+                _ => {}
+            }
+        }
+        found
+    }
+
+    fn is_blank(&self, n: NodeId) -> bool {
+        match self.dast.kind(n) {
+            NodeKind::Text => self.dast.str(n).trim().is_empty(),
+            NodeKind::Other => true,
+            _ => false,
+        }
     }
 
     // ---- Phases C and D: alias classes become cells ------------------------
@@ -379,34 +470,32 @@ impl<'a> Builder<'a> {
             }
         }
         // The one non-alias slot in each class defines its cell.
-        let mut class_def: Vec<Option<SlotId>> = vec![None; n];
+        let mut class_def: Vec<u32> = vec![NONE; n];
         for (s, src) in self.sources.iter().enumerate() {
             match src {
                 Source::Alias(_) => {}
                 Source::Unset => unreachable!("slot {} never received a source", self.slot_label(s as SlotId)),
                 _ => {
                     let root = uf.find(s as SlotId) as usize;
-                    debug_assert!(class_def[root].is_none(), "two sources in one alias class");
-                    class_def[root] = Some(s as SlotId);
+                    debug_assert!(class_def[root] == NONE, "two sources in one alias class");
+                    class_def[root] = s as u32;
                 }
             }
         }
         for s in 0..n {
-            let root = uf.find(s as SlotId) as usize;
-            if class_def[root].is_none() {
+            if class_def[uf.find(s as SlotId) as usize] == NONE {
                 return Err(Error::Cycle(self.slot_label(s as SlotId)));
             }
         }
 
         // Number cells: essential classes first, then derived.
-        let mut slot_cell: Vec<CellIdx> = vec![u32::MAX; n];
+        let mut slot_cell: Vec<CellIdx> = vec![NONE; n];
         let mut cells = Vec::new();
         let mut cell_def_slot: Vec<SlotId> = Vec::new();
         let mut derived_defs = Vec::new();
         for s in 0..n {
             let root = uf.find(s as SlotId) as usize;
-            let def = class_def[root].unwrap() as usize;
-            if def != s {
+            if class_def[root] as usize != s {
                 continue; // not the defining slot of its class
             }
             match &self.sources[s] {
@@ -430,39 +519,39 @@ impl<'a> Builder<'a> {
 
         let mut instrs = Vec::with_capacity(derived_defs.len());
         for &s in &derived_defs {
-            let Source::Op(spec, inputs) = &self.sources[s] else { unreachable!() };
+            let Source::Op(spec, start, count) = &self.sources[s] else { unreachable!() };
+            let inputs = &self.op_inputs[*start as usize..*start as usize + *count as usize];
             let bound: Vec<CellIdx> = inputs.iter().map(|&i| cell_of(&mut uf, i)).collect();
             instrs.push(Instr { out: cell_of(&mut uf, s as SlotId), op: spec.bind(&bound) });
         }
 
-        for (ci, comp) in self.components.iter_mut().enumerate() {
-            comp.props = comp
-                .kind
-                .prop_defs()
-                .iter()
-                .zip(&self.slots[ci])
-                .map(|(def, &slot)| Prop { name: def.name, cells: vec![cell_of(&mut uf, slot)] })
-                .collect();
+        // Prop cells: contiguous per component, in slot order.
+        let n_comps = self.comps.len();
+        self.comps.prop_base = Vec::with_capacity(n_comps);
+        self.comps.prop_cells = Vec::with_capacity(n);
+        for c in 0..n_comps {
+            let np = self.comps.kind[c].prop_defs().len();
+            self.comps.prop_base.push(self.comps.prop_cells.len() as u32);
+            for pi in 0..np {
+                let s = self.slot_base[c] + pi as u32;
+                self.comps.prop_cells.push(cell_of(&mut uf, s));
+            }
         }
 
-        let slot_owner = self.slot_owner;
-        let comp_info: Vec<(Option<String>, ComponentKind)> =
-            self.components.iter().map(|c| (c.name.clone(), c.kind)).collect();
+        // Lazy labels for cycle errors.
+        let slot_comp = self.slot_comp;
+        let slot_base = self.slot_base;
+        let kinds = self.comps.kind.clone();
+        let names: Vec<Option<String>> = self.comps.name.iter().map(|&s| (s != NONE).then(|| self.dast.strings.get(s).trim().to_string())).collect();
         let cell_label = Box::new(move |cell: CellIdx| {
-            let (comp, pi) = slot_owner[cell_def_slot[cell as usize] as usize];
-            let (name, kind) = &comp_info[comp as usize];
-            let owner = name.clone().unwrap_or_else(|| format!("<{}>#{}", kind.tag(), comp));
-            format!("{owner}.{}", kind.prop_defs()[pi as usize].name)
+            let slot = cell_def_slot[cell as usize];
+            let comp = slot_comp[slot as usize];
+            let pi = (slot - slot_base[comp as usize]) as usize;
+            let owner = names[comp as usize].clone().unwrap_or_else(|| format!("<{}>#{}", kinds[comp as usize].tag(), comp));
+            format!("{owner}.{}", kinds[comp as usize].prop_defs()[pi].name)
         });
-        Ok(Unscheduled {
-            cells,
-            n_essential,
-            instrs,
-            components: self.components,
-            root: self.root,
-            names: self.names,
-            cell_label,
-        })
+
+        Ok(Unscheduled { cells, n_essential, instrs, comps: self.comps, strings: self.dast.strings.clone(), root: self.root, cell_label })
     }
 }
 
@@ -470,40 +559,6 @@ fn virtual_attrs(kind: ComponentKind) -> Vec<(&'static str, &'static [&'static s
     match kind {
         ComponentKind::Point => vec![("coords", kind.virtual_prop("coords").unwrap())],
         _ => vec![],
-    }
-}
-
-fn attr_text(a: &DastAttribute) -> Option<String> {
-    let mut s = String::new();
-    for n in &a.children {
-        match n {
-            DastNode::Text(t) => s.push_str(&t.value),
-            DastNode::Macro(_) => return None,
-            _ => {}
-        }
-    }
-    Some(s)
-}
-
-fn single_macro(a: &DastAttribute) -> Option<&DastMacro> {
-    let mut found = None;
-    for n in &a.children {
-        match n {
-            DastNode::Macro(m) if found.is_none() => found = Some(m),
-            DastNode::Macro(_) => return None,
-            DastNode::Text(t) if t.value.trim().is_empty() => {}
-            DastNode::Text(_) => return None,
-            _ => {}
-        }
-    }
-    found
-}
-
-fn is_blank(n: &DastNode) -> bool {
-    match n {
-        DastNode::Text(t) => t.value.trim().is_empty(),
-        DastNode::Other => true,
-        _ => false,
     }
 }
 

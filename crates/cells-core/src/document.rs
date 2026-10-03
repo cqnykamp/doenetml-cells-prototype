@@ -1,35 +1,64 @@
 //! The loaded document: the cell array, the program that derives cells, and
-//! the component naming layer over cell indices.
+//! the columnar component layer that names cells for references and the
+//! renderer.
 
+use std::cell::OnceCell;
 use std::collections::HashMap;
 use std::time::Duration;
 
 use crate::components::ComponentKind;
+use crate::dast::{StrId, StringTable};
 use crate::program::Program;
 
 pub type CellIdx = u32;
 pub type CompIdx = u32;
 
-#[derive(Debug, Clone)]
-pub struct Prop {
-    pub name: &'static str,
-    pub cells: Vec<CellIdx>,
+pub const NONE: u32 = u32::MAX;
+/// Set on a `child_list` entry whose low bits are a string id, not a component.
+pub const TEXT_BIT: u32 = 1 << 31;
+
+/// Components as parallel arrays indexed by `CompIdx`. Props are implicit:
+/// component `c` of kind `k` owns `prop_cells[prop_base[c] + i]` for each
+/// `i` in `k.prop_defs()`.
+#[derive(Debug, Clone, Default)]
+pub struct Components {
+    pub kind: Vec<ComponentKind>,
+    /// String id of the name, or `NONE`.
+    pub name: Vec<StrId>,
+    pub parent: Vec<CompIdx>,
+    pub prop_base: Vec<u32>,
+    pub prop_cells: Vec<CellIdx>,
+    pub child_start: Vec<u32>,
+    pub child_count: Vec<u32>,
+    /// Component indices, or `TEXT_BIT | string id` for text children.
+    pub child_list: Vec<u32>,
 }
 
-#[derive(Debug, Clone)]
-pub enum Child {
+impl Components {
+    pub fn len(&self) -> usize {
+        self.kind.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.kind.is_empty()
+    }
+
+    pub fn heap_bytes(&self) -> usize {
+        self.kind.capacity() * std::mem::size_of::<ComponentKind>()
+            + 4 * (self.name.capacity()
+                + self.parent.capacity()
+                + self.prop_base.capacity()
+                + self.prop_cells.capacity()
+                + self.child_start.capacity()
+                + self.child_count.capacity()
+                + self.child_list.capacity())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Child<'a> {
     Component(CompIdx),
-    Text(String),
-}
-
-#[derive(Debug, Clone)]
-pub struct Component {
-    pub kind: ComponentKind,
-    pub name: Option<String>,
-    pub parent: Option<CompIdx>,
-    pub children: Vec<Child>,
-    /// Single-cell props in `kind.prop_defs()` order.
-    pub props: Vec<Prop>,
+    Text(&'a str),
 }
 
 #[derive(Debug, Clone)]
@@ -39,10 +68,12 @@ pub struct Document {
     /// Number of essential cells; `cells[..n_essential]` are essential.
     pub n_essential: usize,
     pub program: Program,
-    pub components: Vec<Component>,
+    pub comps: Components,
+    /// Names and text, shared with the DAST they came from.
+    pub strings: StringTable,
     /// Index of the root `<document>` component.
     pub root: CompIdx,
-    names: HashMap<String, CompIdx>,
+    name_map: OnceCell<HashMap<String, CompIdx>>,
 }
 
 /// A renderer's ask to change one cell to a value.
@@ -71,27 +102,25 @@ pub struct LoadTimings {
 }
 
 impl Document {
-    pub(crate) fn new(
-        cells: Vec<f64>,
-        n_essential: usize,
-        program: Program,
-        components: Vec<Component>,
-        root: CompIdx,
-        names: HashMap<String, CompIdx>,
-    ) -> Self {
-        Document { cells, n_essential, program, components, root, names }
+    pub(crate) fn new(cells: Vec<f64>, n_essential: usize, program: Program, comps: Components, strings: StringTable, root: CompIdx) -> Self {
+        Document { cells, n_essential, program, comps, strings, root, name_map: OnceCell::new() }
     }
 
     /// Load from DAST JSON and compute initial values.
     pub fn from_dast_json(json: &str) -> crate::Result<Document> {
-        Ok(Self::load_timed(json)?.0)
+        Ok(Self::load_timed(json.as_bytes())?.0)
     }
 
-    /// Load from DAST JSON, timing each stage separately.
-    pub fn load_timed(json: &str) -> crate::Result<(Document, LoadTimings)> {
+    /// Load from either wire format (JSON or binary), detected by content.
+    pub fn from_bytes(bytes: &[u8]) -> crate::Result<Document> {
+        Ok(Self::load_timed(bytes)?.0)
+    }
+
+    /// Load from either wire format, timing each stage separately.
+    pub fn load_timed(bytes: &[u8]) -> crate::Result<(Document, LoadTimings)> {
         let mut t = LoadTimings::default();
         let clock = web_time::Instant::now();
-        let dast = crate::dast::parse_json(json)?;
+        let dast = crate::dast::load(bytes)?;
         t.deserialize = clock.elapsed();
 
         let clock = web_time::Instant::now();
@@ -108,7 +137,7 @@ impl Document {
         Ok((doc, t))
     }
 
-    pub fn from_dast(dast: &crate::dast::DastRoot) -> crate::Result<Document> {
+    pub fn from_dast(dast: &crate::dast::Dast) -> crate::Result<Document> {
         let mut doc = crate::build::build(dast)?.schedule()?;
         doc.recompute();
         Ok(doc)
@@ -163,22 +192,58 @@ impl Document {
         tick
     }
 
+    // ---- component accessors --------------------------------------------
+
+    pub fn n_components(&self) -> usize {
+        self.comps.len()
+    }
+
+    pub fn kind(&self, c: CompIdx) -> ComponentKind {
+        self.comps.kind[c as usize]
+    }
+
+    pub fn name(&self, c: CompIdx) -> Option<&str> {
+        let s = self.comps.name[c as usize];
+        (s != NONE).then(|| self.strings.get(s).trim())
+    }
+
+    pub fn parent(&self, c: CompIdx) -> Option<CompIdx> {
+        let p = self.comps.parent[c as usize];
+        (p != NONE).then_some(p)
+    }
+
+    pub fn children(&self, c: CompIdx) -> impl Iterator<Item = Child<'_>> + '_ {
+        let (s, n) = (self.comps.child_start[c as usize] as usize, self.comps.child_count[c as usize] as usize);
+        self.comps.child_list[s..s + n].iter().map(move |&e| {
+            if e & TEXT_BIT != 0 { Child::Text(self.strings.get(e & !TEXT_BIT)) } else { Child::Component(e) }
+        })
+    }
+
+    /// Cells of the single-cell props of `c`, in `kind.prop_defs()` order.
+    pub fn comp_cells(&self, c: CompIdx) -> &[CellIdx] {
+        let base = self.comps.prop_base[c as usize] as usize;
+        &self.comps.prop_cells[base..base + self.kind(c).prop_defs().len()]
+    }
+
     pub fn component(&self, name: &str) -> Option<CompIdx> {
-        self.names.get(name).copied()
+        self.name_map
+            .get_or_init(|| (0..self.comps.len() as CompIdx).filter_map(|c| self.name(c).map(|n| (n.to_string(), c))).collect())
+            .get(name)
+            .copied()
     }
 
     pub fn component_names(&self) -> impl Iterator<Item = (&str, CompIdx)> {
-        self.names.iter().map(|(k, v)| (k.as_str(), *v))
+        (0..self.comps.len() as CompIdx).filter_map(|c| self.name(c).map(|n| (n, c)))
     }
 
     /// Cells of a prop, including virtual props such as a point's `coords`.
     pub fn prop_cells(&self, comp: CompIdx, prop: &str) -> Option<Vec<CellIdx>> {
-        let c = &self.components[comp as usize];
-        if let Some(parts) = c.kind.virtual_prop(prop) {
+        let kind = self.kind(comp);
+        if let Some(parts) = kind.virtual_prop(prop) {
             return parts.iter().map(|p| self.prop_cells(comp, p).map(|v| v[0])).collect();
         }
-        let i = c.kind.prop_index(prop)?;
-        Some(c.props[i].cells.clone())
+        let i = kind.prop_index(prop)?;
+        Some(vec![self.comp_cells(comp)[i]])
     }
 
     /// The single cell behind `name.prop`.
@@ -190,40 +255,28 @@ impl Document {
     pub fn value(&self, name: &str, prop: &str) -> Option<f64> {
         self.cell(name, prop).map(|c| self.cells[c as usize])
     }
+
+    pub fn memory_estimate(&self) -> MemoryEstimate {
+        MemoryEstimate {
+            cells: self.cells.capacity() * 8,
+            program: self.program.instrs.capacity() * std::mem::size_of::<crate::ops::Instr>() + self.program.producer.capacity() * 4,
+            components: self.comps.heap_bytes(),
+            strings: self.strings.heap_bytes(),
+        }
+    }
 }
 
-/// Rough heap footprint of a loaded document, by part.
+/// Heap footprint of a loaded document, by part.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct MemoryEstimate {
     pub cells: usize,
     pub program: usize,
     pub components: usize,
+    pub strings: usize,
 }
 
 impl MemoryEstimate {
     pub fn total(&self) -> usize {
-        self.cells + self.program + self.components
-    }
-}
-
-impl Document {
-    pub fn memory_estimate(&self) -> MemoryEstimate {
-        use std::mem::size_of;
-        let components = self
-            .components
-            .iter()
-            .map(|c| {
-                size_of::<Component>()
-                    + c.name.as_ref().map_or(0, |n| n.capacity())
-                    + c.children.iter().map(|ch| size_of::<Child>() + if let Child::Text(t) = ch { t.capacity() } else { 0 }).sum::<usize>()
-                    + c.props.iter().map(|p| size_of::<Prop>() + p.cells.capacity() * size_of::<CellIdx>()).sum::<usize>()
-            })
-            .sum::<usize>()
-            + self.names.keys().map(|k| k.capacity() + size_of::<(String, CompIdx)>()).sum::<usize>();
-        MemoryEstimate {
-            cells: self.cells.capacity() * size_of::<f64>(),
-            program: self.program.instrs.capacity() * size_of::<crate::ops::Instr>() + self.program.producer.capacity() * size_of::<u32>(),
-            components,
-        }
+        self.cells + self.program + self.components + self.strings
     }
 }

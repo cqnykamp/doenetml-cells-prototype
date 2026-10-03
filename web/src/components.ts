@@ -1,0 +1,134 @@
+// Columnar component table, read straight from the core's arrays (ADR 0001
+// extended: the renderer reads components the same way it reads cells).
+// For the main-thread backend the typed arrays are views over wasm memory;
+// for worker backends they are copies posted once at load.
+
+export interface ComponentColumns {
+  root: number;
+  nCells: number;
+  nEssential: number;
+  kindTags: string[];
+  kindProps: string[][];
+  kind: Uint8Array;
+  name: Uint32Array;
+  parent: Uint32Array;
+  propBase: Uint32Array;
+  propCells: Uint32Array;
+  childStart: Uint32Array;
+  childCount: Uint32Array;
+  childList: Uint32Array;
+  stringOffsets: Uint32Array;
+  stringBytes: Uint8Array;
+}
+
+export const NONE = 0xffffffff;
+export const TEXT_BIT = 0x80000000;
+
+export type Child = { c: number } | { t: string };
+
+export class ComponentTable {
+  private decoder = new TextDecoder();
+  private strCache = new Map<number, string>();
+  private propIndex: Map<string, number>[];
+
+  constructor(public cols: ComponentColumns) {
+    this.propIndex = cols.kindProps.map((names) => new Map(names.map((n, i) => [n, i])));
+  }
+
+  get root() {
+    return this.cols.root;
+  }
+  get length() {
+    return this.cols.kind.length;
+  }
+  get nCells() {
+    return this.cols.nCells;
+  }
+  get nEssential() {
+    return this.cols.nEssential;
+  }
+
+  string(id: number): string {
+    let s = this.strCache.get(id);
+    if (s === undefined) {
+      const { stringOffsets: o, stringBytes: b } = this.cols;
+      s = this.decoder.decode(b.subarray(o[id], o[id + 1]));
+      this.strCache.set(id, s);
+    }
+    return s;
+  }
+
+  kind(c: number): string {
+    return this.cols.kindTags[this.cols.kind[c]];
+  }
+
+  name(c: number): string | null {
+    const s = this.cols.name[c];
+    return s === NONE ? null : this.string(s).trim();
+  }
+
+  parent(c: number): number | null {
+    const p = this.cols.parent[c];
+    return p === NONE ? null : p;
+  }
+
+  /** Cell index of prop `name` on component `c`. */
+  cell(c: number, name: string): number {
+    const i = this.propIndex[this.cols.kind[c]].get(name);
+    if (i === undefined) throw new Error(`component ${c} (${this.kind(c)}) has no prop ${name}`);
+    return this.cols.propCells[this.cols.propBase[c] + i];
+  }
+
+  children(c: number): Child[] {
+    const { childStart, childCount, childList } = this.cols;
+    const s = childStart[c], n = childCount[c];
+    const out: Child[] = new Array(n);
+    for (let i = 0; i < n; i++) {
+      const e = childList[s + i];
+      out[i] = e & TEXT_BIT ? { t: this.string(e & ~TEXT_BIT) } : { c: e };
+    }
+    return out;
+  }
+
+  /** First component with this name, for tests and tooling. */
+  byName(name: string): number | null {
+    for (let c = 0; c < this.length; c++) if (this.name(c) === name) return c;
+    return null;
+  }
+}
+
+/** Build the columns from a loaded wasm core; `copy` detaches them from wasm memory. */
+export function columnsFromCore(core: any, memory: WebAssembly.Memory, copy: boolean): ComponentColumns {
+  const n = core.n_components();
+  const u32 = (ptr: number, len: number) => new Uint32Array(memory.buffer, ptr, len);
+  const u8 = (ptr: number, len: number) => new Uint8Array(memory.buffer, ptr, len);
+  const nStrings = core.n_strings();
+  const cols: ComponentColumns = {
+    root: core.root(),
+    nCells: core.cells_len(),
+    nEssential: core.n_essential(),
+    kindTags: JSON.parse(core.kind_tags()),
+    kindProps: JSON.parse(core.kind_props()),
+    kind: u8(core.comp_kind_ptr(), n),
+    name: u32(core.comp_name_ptr(), n),
+    parent: u32(core.comp_parent_ptr(), n),
+    propBase: u32(core.comp_prop_base_ptr(), n),
+    propCells: u32(core.prop_cells_ptr(), core.prop_cells_len()),
+    childStart: u32(core.comp_child_start_ptr(), n),
+    childCount: u32(core.comp_child_count_ptr(), n),
+    childList: u32(core.child_list_ptr(), core.child_list_len()),
+    stringOffsets: u32(core.string_offsets_ptr(), nStrings + 1),
+    stringBytes: u8(core.string_bytes_ptr(), core.string_bytes_len()),
+  };
+  if (copy) {
+    for (const k of ["kind", "name", "parent", "propBase", "propCells", "childStart", "childCount", "childList", "stringOffsets", "stringBytes"] as const) {
+      (cols as any)[k] = (cols as any)[k].slice();
+    }
+  }
+  return cols;
+}
+
+/** Buffers to transfer when posting copied columns across threads. */
+export function columnBuffers(cols: ComponentColumns): ArrayBuffer[] {
+  return [cols.kind, cols.name, cols.parent, cols.propBase, cols.propCells, cols.childStart, cols.childCount, cols.childList, cols.stringOffsets, cols.stringBytes].map((a) => a.buffer as ArrayBuffer);
+}

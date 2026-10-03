@@ -19,15 +19,14 @@ export function toGraph(f: GraphFrame, px: number, py: number): [number, number]
 
 export function Graph({ idx }: { idx: number }) {
   const store = useStore();
-  const c = store.manifest.components[idx];
-  const xmin = useCell(c.props.xmin), xmax = useCell(c.props.xmax);
-  const ymin = useCell(c.props.ymin), ymax = useCell(c.props.ymax);
+  const xmin = useCell(store.comps.cell(idx, "xmin")), xmax = useCell(store.comps.cell(idx, "xmax"));
+  const ymin = useCell(store.comps.cell(idx, "ymin")), ymax = useCell(store.comps.cell(idx, "ymax"));
   const svg = useRef<SVGSVGElement>(null);
   const frame: GraphFrame = { xmin, xmax, ymin, ymax, width: 400, height: 400, svg };
   const [ox, oy] = toPixel(frame, 0, 0);
   return (
     <GraphContext.Provider value={frame}>
-      <svg ref={svg} className="graph" width={frame.width} height={frame.height} data-comp={idx} data-name={c.name ?? undefined}>
+      <svg ref={svg} className="graph" width={frame.width} height={frame.height} data-comp={idx} data-name={store.comps.name(idx) ?? undefined}>
         <line x1={0} x2={frame.width} y1={oy} y2={oy} stroke="#ccc" />
         <line x1={ox} x2={ox} y1={0} y2={frame.height} stroke="#ccc" />
         <Children idx={idx} inGraph={true} />

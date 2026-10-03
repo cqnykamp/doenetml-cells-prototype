@@ -4,18 +4,16 @@ import { toGraph, toPixel, useGraph } from "./Graph";
 
 export function Point({ idx, inGraph }: { idx: number; inGraph: boolean }) {
   const store = useStore();
-  const c = store.manifest.components[idx];
-  const x = useCell(c.props.x);
-  const y = useCell(c.props.y);
+  const x = useCell(store.comps.cell(idx, "x"));
+  const y = useCell(store.comps.cell(idx, "y"));
   if (!inGraph) {
-    return <span data-comp={idx} data-name={c.name ?? undefined}>({fmt(x)}, {fmt(y)})</span>;
+    return <span data-comp={idx} data-name={store.comps.name(idx) ?? undefined}>({fmt(x)}, {fmt(y)})</span>;
   }
   return <GraphPoint idx={idx} x={x} y={y} />;
 }
 
 function GraphPoint({ idx, x, y }: { idx: number; x: number; y: number }) {
   const store = useStore();
-  const c = store.manifest.components[idx];
   const frame = useGraph();
   const dragging = useRef(false);
   const [px, py] = toPixel(frame, x, y);
@@ -24,7 +22,7 @@ function GraphPoint({ idx, x, y }: { idx: number; x: number; y: number }) {
     if (!dragging.current) return;
     const rect = frame.svg.current!.getBoundingClientRect();
     const [gx, gy] = toGraph(frame, e.clientX - rect.left, e.clientY - rect.top);
-    store.request([[c.props.x, gx], [c.props.y, gy]]);
+    store.request([[store.comps.cell(idx, "x"), gx], [store.comps.cell(idx, "y"), gy]]);
   };
   return (
     <circle
@@ -34,7 +32,7 @@ function GraphPoint({ idx, x, y }: { idx: number; x: number; y: number }) {
       fill="#1f77b4"
       stroke="#fff"
       data-comp={idx}
-      data-name={c.name ?? undefined}
+      data-name={store.comps.name(idx) ?? undefined}
       style={{ cursor: "grab" }}
       onPointerDown={(e) => {
         dragging.current = true;

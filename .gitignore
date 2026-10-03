@@ -1,6 +1,7 @@
 target/
 node_modules/
 fixtures/*.json
+fixtures/*.cdast
 results/raw/
 web/dist/
 web/src/wasm/

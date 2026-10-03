@@ -4,17 +4,19 @@
 //  - "msg": after each tick the worker posts the changed indices and values,
 //           and the main thread applies them to its own copy.
 // Requests always travel by postMessage (cell-addressed, see ADR 0001).
+// Component columns are copied out once at load.
 import init, { Core } from "./wasm/cells_wasm.js";
+import { columnBuffers, columnsFromCore, type ComponentColumns } from "./components";
 
 export type WorkerMode = "sab" | "msg";
 
 export type ToWorker =
-  | { type: "load"; json: string; mode: WorkerMode; evaluator: string }
+  | { type: "load"; bytes: Uint8Array; mode: WorkerMode; evaluator: string }
   | { type: "request"; id: number; cells: Uint32Array; values: Float64Array }
   | { type: "setEvaluator"; name: string };
 
 export type FromWorker =
-  | { type: "loaded"; manifest: string; coreTimings: string; wasmInit: number; coreTotal: number; manifestMs: number; sab?: SharedArrayBuffer; cells?: Float64Array }
+  | { type: "loaded"; columns: ComponentColumns; coreTimings: string; wasmInit: number; coreTotal: number; columnsMs: number; sab?: SharedArrayBuffer; cells?: Float64Array }
   | { type: "tick"; id: number; changed: Uint32Array; values?: Float64Array; coreMs: number; dropped: number }
   | { type: "error"; message: string };
 
@@ -36,21 +38,21 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
       if (!memory) memory = (await init()).memory;
       const wasmInit = performance.now() - t;
       t = performance.now();
-      core = new Core(m.json);
+      core = new Core(m.bytes);
       core.set_evaluator(m.evaluator);
       const coreTotal = performance.now() - t;
       t = performance.now();
-      const manifest = core.manifest_json();
-      const manifestMs = performance.now() - t;
-      const base = { type: "loaded" as const, manifest, coreTimings: core.load_timings_json(), wasmInit, coreTotal, manifestMs };
+      const columns = columnsFromCore(core, memory, true);
+      const columnsMs = performance.now() - t;
+      const base = { type: "loaded" as const, columns, coreTimings: core.load_timings_json(), wasmInit, coreTotal, columnsMs };
       if (mode === "sab") {
         const sab = new SharedArrayBuffer(core.cells_len() * 8);
         shared = new Float64Array(sab);
         shared.set(view());
-        (self as any).postMessage({ ...base, sab });
+        (self as any).postMessage({ ...base, sab }, columnBuffers(columns));
       } else {
         const cells = view().slice();
-        (self as any).postMessage({ ...base, cells }, [cells.buffer]);
+        (self as any).postMessage({ ...base, cells }, [cells.buffer, ...columnBuffers(columns)]);
       }
     } else if (m.type === "request") {
       const t = performance.now();

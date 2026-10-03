@@ -1,6 +1,6 @@
-import { useLayoutEffect, useSyncExternalStore } from "react";
+import { useLayoutEffect, useMemo, useSyncExternalStore } from "react";
 import { useStore } from "../hooks";
-import type { ManifestChild } from "../core";
+import type { Child } from "../components";
 import { Graph } from "./Graph";
 import { Point } from "./Point";
 import { NumberView } from "./Number";
@@ -8,8 +8,7 @@ import { NumberInput } from "./NumberInput";
 
 export function Component({ idx, inGraph }: { idx: number; inGraph: boolean }) {
   const store = useStore();
-  const c = store.manifest.components[idx];
-  switch (c.kind) {
+  switch (store.comps.kind(idx)) {
     case "document":
       return <div className="doc"><Children idx={idx} inGraph={false} /></div>;
     case "graph":
@@ -32,17 +31,17 @@ const CHUNK = 32;
 
 export function Children({ idx, inGraph }: { idx: number; inGraph: boolean }) {
   const store = useStore();
-  const c = store.manifest.components[idx];
-  return <ChildRange items={c.children} from={0} to={c.children.length} inGraph={inGraph} />;
+  const items = useMemo(() => store.comps.children(idx), [store, idx]);
+  return <ChildRange items={items} from={0} to={items.length} inGraph={inGraph} />;
 }
 
-function ChildRange({ items, from, to, inGraph }: { items: ManifestChild[]; from: number; to: number; inGraph: boolean }) {
+function ChildRange({ items, from, to, inGraph }: { items: Child[]; from: number; to: number; inGraph: boolean }) {
   const n = to - from;
   if (n <= CHUNK) {
     return (
       <>
         {items.slice(from, to).map((ch, i) =>
-          ch.c !== undefined ? <Component key={from + i} idx={ch.c} inGraph={inGraph} /> : <span key={from + i}>{ch.t}</span>,
+          "c" in ch ? <Component key={from + i} idx={ch.c} inGraph={inGraph} /> : <span key={from + i}>{ch.t}</span>,
         )}
       </>
     );

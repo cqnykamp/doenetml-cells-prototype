@@ -6,6 +6,12 @@ pub fn fixtures_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures")
 }
 
+/// The binary wire-format bytes of a fixture, if `scripts/gen-fixtures.sh`
+/// produced them.
+pub fn fixture_binary(spec: &str) -> Option<Vec<u8>> {
+    std::fs::read(fixtures_dir().join(format!("{spec}.cdast"))).ok()
+}
+
 /// (spec, DAST JSON) for every fixture, sorted by spec name. Set
 /// `CELLS_FIXTURES` to a comma-separated list of specs to restrict the set.
 pub fn fixtures() -> Vec<(String, String)> {

@@ -4,6 +4,8 @@ use thiserror::Error;
 pub enum Error {
     #[error("invalid DAST JSON: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("invalid binary DAST: {0}")]
+    WireFormat(String),
     #[error("unsupported tag <{0}>")]
     UnsupportedTag(String),
     #[error("duplicate name '{0}'")]

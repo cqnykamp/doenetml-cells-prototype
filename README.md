@@ -6,8 +6,9 @@ vocabulary, and `docs/adr/` for recorded decisions.
 
 ## Layout
 
-- `crates/cells-core` — the core: DAST import, reference resolution, alias
-  merging, operator program, scheduler.
+- `crates/cells-core` — the core: flat columnar DAST (JSON or binary `CDST`
+  wire format, ADR 0002), reference resolution, alias merging, columnar
+  component tables, operator program, scheduler.
 - `crates/cells-wasm` — wasm-bindgen binding: zero-copy cell view, render
   manifest, cell-addressed requests (see `docs/adr/0001-*`).
 - `crates/cells-docgen` — synthetic DoenetML generator (points, chain, fanout,
@@ -18,7 +19,9 @@ vocabulary, and `docs/adr/` for recorded decisions.
   numberInput) and the Playwright end-to-end measurement.
 - `scripts/parse-dast.mjs` — runs the existing TypeScript DoenetML parser from
   a sibling DoenetML checkout (`DOENETML_DIR`, default `../../ml`) and prints
-  normalized DAST JSON.
+  normalized DAST JSON, or the binary wire format with `--binary`.
+- `scripts/cdast-encode.mjs` — the DAST to binary encoder, shared by the
+  script and the web app.
 - `scripts/gen-fixtures.sh` — generates `fixtures/*.doenet` and `*.json`.
 - `scripts/render-results.py` — collects criterion, stats and e2e output into
   `results/raw/` and regenerates `RESULTS.md` (commentary in `results/NOTES.md`).
@@ -29,7 +32,7 @@ vocabulary, and `docs/adr/` for recorded decisions.
 cargo test                      # needs `node` on PATH and a built DoenetML parser
 echo '<point name="p" x="1"/>' | node scripts/parse-dast.mjs
 
-scripts/gen-fixtures.sh         # ~1 minute; writes fixtures/
+scripts/gen-fixtures.sh         # ~1 minute; writes fixtures/*.{doenet,json,cdast}
 cargo bench -p cells-bench      # ~30 minutes for the full sweep
 cargo run --release -p cells-bench --bin stats > results/raw/stats.jsonl
 
@@ -39,4 +42,5 @@ scripts/render-results.py                           # regenerate RESULTS.md
 ```
 
 Restrict a run with `CELLS_FIXTURES=chain-1000,points-100 cargo bench ...` or
-`CELLS_E2E_FIXTURES=... CELLS_E2E_EVALS=full pnpm e2e`.
+`CELLS_E2E_FIXTURES=... CELLS_E2E_EVALS=full CELLS_E2E_BACKENDS=main CELLS_E2E_FORMATS=cdast,json pnpm e2e`.
+The current-core baseline is `cd web && node baseline/measure.mjs`.

@@ -4,20 +4,23 @@ use cells_core::Document;
 
 fn main() {
     for (spec, json) in cells_bench::fixtures() {
-        let (doc, t) = Document::load_timed(&json).unwrap();
+        let (doc, t) = Document::load_timed(json.as_bytes()).unwrap();
         let m = doc.memory_estimate();
+        let bin_bytes = std::fs::read(cells_bench::fixtures_dir().join(format!("{spec}.cdast"))).map(|b| b.len()).unwrap_or(0);
         println!(
             "{}",
             serde_json::json!({
                 "spec": spec,
                 "json_bytes": json.len(),
+                "binary_bytes": bin_bytes,
                 "cells": doc.cells.len(),
                 "essential": doc.n_essential,
                 "instrs": doc.program.len(),
-                "components": doc.components.len(),
+                "components": doc.n_components(),
                 "bytes_cells": m.cells,
                 "bytes_program": m.program,
                 "bytes_components": m.components,
+                "bytes_strings": m.strings,
                 "bytes_total": m.total(),
                 "load_ms": {
                     "deserialize": t.deserialize.as_secs_f64() * 1e3,

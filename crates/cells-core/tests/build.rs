@@ -1,11 +1,17 @@
 use cells_core::components::ComponentKind;
 use cells_core::reference;
-use cells_core::test_utils::load;
+use cells_core::test_utils::{load, load_via_binary};
 use cells_core::{Child, Document, Error};
 
 fn load_ok(src: &str) -> Document {
     let doc = load(src).unwrap_or_else(|e| panic!("load failed: {e}\n{src}"));
     assert_eq!(reference::check(&doc), None, "scheduled values disagree with reference evaluator");
+    // The binary wire format must produce the identical document.
+    let bin = load_via_binary(src).unwrap_or_else(|e| panic!("binary load failed: {e}\n{src}"));
+    assert_eq!(bin.cells.len(), doc.cells.len());
+    assert!(bin.cells.iter().zip(&doc.cells).all(|(a, b)| a == b || (a.is_nan() && b.is_nan())));
+    assert_eq!(bin.program.instrs, doc.program.instrs);
+    assert_eq!(bin.n_components(), doc.n_components());
     doc
 }
 
@@ -26,15 +32,10 @@ fn bare_component_reference_shares_every_cell() {
     // four graph bounds plus two coordinates; the copy adds none
     assert_eq!(doc.cells.len(), 6);
     let g = doc.component("g").unwrap();
-    let kids: Vec<_> = doc.components[g as usize]
-        .children
-        .iter()
-        .filter_map(|c| if let Child::Component(i) = c { Some(*i) } else { None })
-        .collect();
+    let kids: Vec<_> = doc.children(g).filter_map(|c| if let Child::Component(i) = c { Some(i) } else { None }).collect();
     assert_eq!(kids.len(), 2);
-    let copy = &doc.components[kids[1] as usize];
-    assert_eq!(copy.kind, ComponentKind::Point);
-    assert_eq!(copy.name, None);
+    assert_eq!(doc.kind(kids[1]), ComponentKind::Point);
+    assert_eq!(doc.name(kids[1]), None);
     assert_eq!(doc.prop_cells(kids[1], "coords"), doc.prop_cells(kids[0], "coords"));
 }
 
@@ -73,14 +74,12 @@ fn number_children_literal_reference_and_bare_text_reference() {
     assert_eq!(doc.cell("b", "value"), doc.cell("p1", "x"));
     assert!(doc.value("c", "value").unwrap().is_nan());
     // The bare $p1.y became an anonymous number aliasing p1.y.
-    let root = &doc.components[doc.root as usize];
-    let anon = root
-        .children
-        .iter()
-        .filter_map(|c| if let Child::Component(i) = c { Some(&doc.components[*i as usize]) } else { None })
-        .find(|c| c.name.is_none() && c.kind == ComponentKind::Number)
+    let anon = doc
+        .children(doc.root)
+        .filter_map(|c| if let Child::Component(i) = c { Some(i) } else { None })
+        .find(|&c| doc.name(c).is_none() && doc.kind(c) == ComponentKind::Number)
         .expect("anonymous number");
-    assert_eq!(anon.props[0].cells, vec![doc.cell("p1", "y").unwrap()]);
+    assert_eq!(doc.comp_cells(anon), &[doc.cell("p1", "y").unwrap()]);
     // p1.x, p1.y, a, c
     assert_eq!(doc.cells.len(), 4);
 }
@@ -132,7 +131,7 @@ fn graph_defaults_and_tree() {
     assert_eq!(doc.value("g", "xmax"), Some(10.0));
     assert_eq!(doc.value("p", "x"), Some(0.0));
     let p = doc.component("p").unwrap();
-    assert_eq!(doc.components[p as usize].parent, doc.component("g"));
+    assert_eq!(doc.parent(p), doc.component("g"));
     assert_eq!(doc.cells.len(), 6);
 }
 
@@ -165,7 +164,30 @@ fn error_cases() {
 #[test]
 fn load_timed_reports_stages() {
     let json = cells_core::test_utils::dast_json(r#"<numberInput name="a" value="2"/><op kind="negate" args="$a"/>"#);
-    let (doc, t) = Document::load_timed(&json).unwrap();
+    let (doc, t) = Document::load_timed(json.as_bytes()).unwrap();
     assert_eq!(doc.cells.len(), 2);
     assert!(t.deserialize.as_nanos() > 0);
+}
+
+#[test]
+fn text_children_survive_and_whitespace_is_dropped() {
+    let doc = load_ok("<point name=\"p\" x=\"1\"/>\nhello $p.x world\n<number name=\"n\">2</number>");
+    let kids: Vec<String> = doc
+        .children(doc.root)
+        .map(|c| match c {
+            Child::Component(i) => format!("<{}>", doc.kind(i).tag()),
+            Child::Text(t) => format!("{t:?}"),
+        })
+        .collect();
+    assert_eq!(kids, vec!["<point>", "\"\\nhello \"", "<number>", "\" world\\n\"", "<number>"]);
+}
+
+#[test]
+fn binary_wire_format_rejects_garbage() {
+    assert!(matches!(cells_core::dast::Dast::from_binary(b"CDST\x01\x00\x00\x00junk").unwrap_err(), Error::WireFormat(_)));
+    let mut good = cells_core::dast::Dast::from_json(&cells_core::test_utils::dast_json("<point/>")).unwrap().to_binary();
+    // Corrupt a child index.
+    let n = good.len();
+    good[n - 1] = 0xff;
+    assert!(matches!(cells_core::dast::Dast::from_binary(&good).unwrap_err(), Error::WireFormat(_)));
 }
