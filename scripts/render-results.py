@@ -139,6 +139,20 @@ def main():
             l, ns = max(chains)
             md.append(f"Longest measured chain: {l} operators at {fmt_ms(ns)} ms per tick (full recompute). Linear extrapolation puts the 50 ms budget at roughly {int(l * 50e6 / ns):,} serial operators, ignoring the renderer.\n")
 
+    rb = crit.get("rebuild", {}).get("count-change", {})
+    if rb:
+        md.append("## Structural tick: rebuild on an iteration-count change (ms, criterion mean)\n")
+        md.append("One request that changes a repeat's `length` input by one, followed by the whole-document rebuild it triggers (ADR 0004): build, schedule and recompute, with essential values carried over by key. Native, no renderer.\n")
+        md.append("| fixture | components | cells | rebuild tick |")
+        md.append("|---|---:|---:|---:|")
+        for s in specs:
+            d = rb.get(s)
+            if not d:
+                continue
+            st_ = stats.get(s, {})
+            md.append(f"| {s} | {st_.get('components', '')} | {st_.get('cells', '')} | {fmt_ms(d['mean_ns'])} |")
+        md.append("")
+
     e2e = collect_e2e()
     if e2e:
         md.append("## Browser end to end (headless Chromium, Playwright)\n")
@@ -168,6 +182,25 @@ def main():
             md.append(f"| {r['spec']} | {r.get('backend', 'main')} | {r['evaluator']} | {k['changed']['p50']:.0f} | {k['core']['p50']:.3f} | {rt:.2f} | {k['commit']['p50']:.2f} | {k['commit']['p90']:.2f} | {k['frame']['p50']:.2f} | {k['frame']['p90']:.2f} | {k['frame']['max']:.2f} |")
         md.append("")
 
+        rebuilds = [r for r in e2e["results"] if r.get("rebuild") and r.get("fmt", "cdast") == "cdast"]
+        if rebuilds:
+            md.append("Structural ticks: the repeat's `length` input is changed by one, 20 times, so every request rebuilds the document in the core and the renderer re-reads the component table. *Core* includes the rebuild. *Remount* rows throw the React tree away and rebuild it; the others key children by stable component identity and update in place.\n")
+            md.append("| fixture | backend | remount | cells | components | core p50 | round trip p50 | commit p50 | commit p90 | frame p50 | frame p90 |")
+            md.append("|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|")
+            for r in sorted(rebuilds, key=lambda r: (spec_key(r["spec"]), r.get("backend", "main"), r.get("remount", False))):
+                k = r["rebuild"]
+                md.append(f"| {r['spec']} | {r.get('backend', 'main')} | {'yes' if r.get('remount') else 'no'} | {r['nCells']} | {r['nComponents']} | {k['core']['p50']:.2f} | {k['roundTrip']['p50']:.2f} | {k['commit']['p50']:.1f} | {k['commit']['p90']:.1f} | {k['frame']['p50']:.1f} | {k['frame']['p90']:.1f} |")
+            md.append("")
+        toggles = [r for r in e2e["results"] if r.get("toggle") and r.get("fmt", "cdast") == "cdast"]
+        if toggles:
+            md.append("Boolean toggles: one `booleanInput` bound to every point's `hide`, flipped 20 times. The 0/1 cell is an ordinary `f64` cell; the cost is the renderer mounting and unmounting N circles.\n")
+            md.append("| fixture | backend | changed cells | core p50 | commit p50 | frame p50 | frame p90 |")
+            md.append("|---|---|---:|---:|---:|---:|---:|")
+            for r in sorted(toggles, key=lambda r: (spec_key(r["spec"]), r.get("backend", "main"))):
+                k = r["toggle"]
+                md.append(f"| {r['spec']} | {r.get('backend', 'main')} | {k['changed']['p50']:.0f} | {k['core']['p50']:.3f} | {k['commit']['p50']:.1f} | {k['frame']['p50']:.1f} | {k['frame']['p90']:.1f} |")
+            md.append("")
+
     base = collect_latest("baseline-*.json")
     if base:
         md.append("## Baseline: the current DoenetML core (JS core, standalone bundle)\n")
@@ -178,9 +211,20 @@ def main():
             if r.get("error"):
                 md.append(f"| {r['spec']} | failed: {r['error']} | | | | | | |")
                 continue
+            if "slider" in r:
+                continue
             a = r["action"]
             md.append(f"| {r['spec']} | {r['init_ms']:.0f} | {r.get('first_point_ms', float('nan')):.0f} | {a['core']['p50']:.2f} | {a['core']['p90']:.2f} | {a['dom']['p50']:.2f} | {a['frame']['p50']:.2f} | {r['drag']['ms_per_move']:.1f} |")
         md.append("")
+        sliders = [r for r in base["results"] if r.get("slider")]
+        if sliders:
+            md.append("Slider-driven documents in the current core, through the slider's own `changeValue` action. For `sliderchain` the slider is bound through the chain to a mathInput; for `repeat` the slider is the repeat's `length`, so each action changes the number of points (the current core's replacement update, the prototype's rebuild).\n")
+            md.append("| fixture | init (ms) | first point in DOM (ms) | changeValue p50 | changeValue p90 | DOM p50 | frame p50 |")
+            md.append("|---|---:|---:|---:|---:|---:|---:|")
+            for r in sorted(sliders, key=lambda r: spec_key(r["spec"])):
+                a = r["slider"]
+                md.append(f"| {r['spec']} | {r['init_ms']:.0f} | {r.get('first_point_ms', float('nan')):.0f} | {a['core']['p50']:.2f} | {a['core']['p90']:.2f} | {a['dom']['p50']:.2f} | {a['frame']['p50']:.2f} |")
+            md.append("")
 
     (ROOT / "RESULTS.md").write_text("\n".join(md))
     print(f"wrote RESULTS.md and {RAW / (stamp + '-bench.json')}")

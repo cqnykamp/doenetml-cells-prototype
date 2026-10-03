@@ -6,6 +6,8 @@ export function Point({ idx, inGraph }: { idx: number; inGraph: boolean }) {
   const store = useStore();
   const x = useCell(store.comps.cell(idx, "x"));
   const y = useCell(store.comps.cell(idx, "y"));
+  const hide = useCell(store.comps.cell(idx, "hide"));
+  if (hide !== 0 && !Number.isNaN(hide)) return null;
   if (!inGraph) {
     return <span data-comp={idx} data-name={store.comps.name(idx) ?? undefined}>({fmt(x)}, {fmt(y)})</span>;
   }

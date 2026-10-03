@@ -86,6 +86,140 @@ pub fn grid(n: usize, l: usize) -> String {
     s + &points
 }
 
+/// A slider bound through a chain of L operators to an input, with a point
+/// showing the slider's value. Dragging the slider inverts through the
+/// slider's own snap chain and then through the L operators to the input.
+/// Cells: L + 1 (chain) + 3 + 11 (slider) + 2 + 4.
+pub fn slider_chain(l: usize) -> String {
+    let mut s = String::from("<numberInput name=\"n\" value=\"1\"/>\n");
+    let mut prev = "n".to_string();
+    for i in 0..l {
+        let name = format!("c{i}");
+        let op = match i % 3 {
+            0 => "kind=\"offset\" k=\"1\"",
+            1 => "kind=\"scale\" k=\"1.0001\"",
+            _ => "kind=\"negate\"",
+        };
+        let _ = writeln!(s, "<op name=\"{name}\" {op} args=\"${prev}\"/>");
+        prev = name;
+    }
+    let _ = writeln!(s, "<slider name=\"s\" from=\"-9\" to=\"9\" step=\"0.5\" bindValueTo=\"${prev}\"/>");
+    let _ = writeln!(s, "<graph name=\"g\"><point name=\"p\" x=\"$s\" y=\"0\"/></graph>");
+    s
+}
+
+/// K sliders, each bound to the previous one with a different step, the
+/// first holding the stored value; a point shows the last. Dragging the
+/// last slider runs K snap chains in sequence.
+pub fn slider_stack(k: usize) -> String {
+    let mut s = String::from("<slider name=\"s0\" from=\"-9\" to=\"9\" step=\"0.25\" initialValue=\"1\"/>\n");
+    for i in 1..k {
+        let step = if i % 2 == 0 { "0.25" } else { "0.5" };
+        let _ = writeln!(s, "<slider name=\"s{i}\" from=\"-9\" to=\"9\" step=\"{step}\" bindValueTo=\"$s{}\"/>", i - 1);
+    }
+    let _ = writeln!(s, "<graph name=\"g\"><point name=\"p\" x=\"$s{}\" y=\"0\"/></graph>", k.saturating_sub(1));
+    s
+}
+
+/// N points from a repeat whose length is a numberInput, each with a
+/// derived y, plus a collect of the points into a second graph. Changing the
+/// input rebuilds the document; dragging a point goes through the alias
+/// into the iteration's own essential cells. Cells per iteration: x, y,
+/// scaled y (3) plus the hidden sequence value chain (4).
+pub fn repeat(n: usize) -> String {
+    // Spread the points across the graph whatever N is.
+    let step = 18.0 / n.max(2) as f64;
+    // The default cap is 10,000 iterations; lift it for the larger sizes.
+    let cap = n.max(10_000) * 2;
+    format!(
+        "<numberInput name=\"n\" value=\"{n}\"/>\n\
+<graph name=\"g\">\n\
+  <repeatForSequence name=\"r\" from=\"-9\" step=\"{step}\" length=\"$n\" maxNumber=\"{cap}\" valueName=\"v\">\n\
+    <op name=\"h\" kind=\"scale\" k=\"0.5\" args=\"$v\"/>\n\
+    <point name=\"p\" x=\"$v\" y=\"$h\"/>\n\
+    <point name=\"q\" x=\"0\" y=\"0\"/>\n\
+  </repeatForSequence>\n\
+</graph>\n\
+<graph name=\"g2\"><collect name=\"c\" componentType=\"point\" from=\"$g\"/></graph>\n"
+    )
+}
+
+/// A lagged recurrence: x_k = 1.001 * x_(k-2), seeded from an input where
+/// the lag has no referent, with a point per iteration. Dragging the last
+/// point inverts down the chain into the seed. Cells per iteration: 4.
+pub fn recur(n: usize) -> String {
+    let cap = n.max(10_000) * 2;
+    format!(
+        "<numberInput name=\"n\" value=\"{n}\"/>\n\
+<numberInput name=\"seed\" value=\"1\"/>\n\
+<graph name=\"g\">\n\
+  <repeatForSequence name=\"r\" length=\"$n\" maxNumber=\"{cap}\" indexName=\"i\">\n\
+    <op name=\"prev\" kind=\"default\" args=\"$r[$i-2].x $seed\"/>\n\
+    <op name=\"x\" kind=\"scale\" k=\"1.001\" args=\"$prev\"/>\n\
+    <point name=\"p\" x=\"$x\" y=\"0\"/>\n\
+  </repeatForSequence>\n\
+</graph>\n"
+    )
+}
+
+/// Like `chain`, but every other operator is a `round`, so half the cells
+/// carry an integer invariant and every drag inverts through L/2 projections.
+/// Compared against `chain-L` to show integer-valued cells cost nothing.
+pub fn intchain(l: usize) -> String {
+    let mut s = String::from("<numberInput name=\"n\" value=\"1\"/>\n");
+    let mut prev = "n".to_string();
+    for i in 0..l {
+        let name = format!("c{i}");
+        let op = if i + 1 == l {
+            "kind=\"clamp\" lo=\"-9\" hi=\"9\""
+        } else if i % 2 == 0 {
+            "kind=\"offset\" k=\"0.5\""
+        } else {
+            "kind=\"round\""
+        };
+        let _ = writeln!(s, "<op name=\"{name}\" {op} args=\"${prev}\"/>");
+        prev = name;
+    }
+    let _ = writeln!(s, "<graph name=\"g\"><point name=\"p\" x=\"${prev}\" y=\"$n\"/></graph>");
+    s
+}
+
+/// N points whose `hide` is bound to one booleanInput. Toggling it changes
+/// N cells and mounts or unmounts N circles.
+pub fn hidden(n: usize) -> String {
+    let mut s = String::from("<booleanInput name=\"b\" value=\"false\"/>\n<graph name=\"g\">\n");
+    for i in 0..n {
+        let _ = writeln!(s, "  <point name=\"p{i}\" x=\"{}\" y=\"{}\" hide=\"$b\"/>", (i % 17) as i64 - 8, ((i * 7) % 17) as i64 - 8);
+    }
+    s.push_str("</graph>\n");
+    s
+}
+
+/// `chain`, written with `<math>` instead of `<op>`: the same three
+/// operations as math text, lowered to the same operators at build time, so
+/// the tick cost should match `chain-L` exactly. The final clamp stays an
+/// `<op>` because it has no math syntax.
+pub fn mathchain(l: usize) -> String {
+    let mut s = String::from("<numberInput name=\"n\" value=\"1\"/>\n");
+    let mut prev = "n".to_string();
+    for i in 0..l {
+        let name = format!("c{i}");
+        if i + 1 == l {
+            let _ = writeln!(s, "<op name=\"{name}\" kind=\"clamp\" lo=\"-9\" hi=\"9\" args=\"${prev}\"/>");
+        } else {
+            let body = match i % 3 {
+                0 => format!("${prev} + 1"),
+                1 => format!("1.0001 ${prev}"),
+                _ => format!("-${prev}"),
+            };
+            let _ = writeln!(s, "<math name=\"{name}\">{body}</math>");
+        }
+        prev = name;
+    }
+    let _ = writeln!(s, "<graph name=\"g\"><point name=\"p\" x=\"${prev}\" y=\"$n\"/></graph>");
+    s
+}
+
 /// Parse a CLI-style spec such as `chain-1000` or `grid-100x10`.
 pub fn from_spec(spec: &str) -> Option<String> {
     let (shape, size) = spec.split_once('-')?;
@@ -94,6 +228,13 @@ pub fn from_spec(spec: &str) -> Option<String> {
         "chain" => chain(size.parse().ok()?),
         "fanout" => fanout(size.parse().ok()?),
         "aliases" => aliases(size.parse().ok()?),
+        "sliderchain" => slider_chain(size.parse().ok()?),
+        "sliderstack" => slider_stack(size.parse().ok()?),
+        "repeat" => repeat(size.parse().ok()?),
+        "recur" => recur(size.parse().ok()?),
+        "intchain" => intchain(size.parse().ok()?),
+        "mathchain" => mathchain(size.parse().ok()?),
+        "hidden" => hidden(size.parse().ok()?),
         "grid" => {
             let (n, l) = size.split_once('x')?;
             grid(n.parse().ok()?, l.parse().ok()?)
@@ -109,7 +250,59 @@ pub const DEFAULT_SWEEP: &[&str] = &[
     "fanout-10", "fanout-100", "fanout-1000", "fanout-10000", "fanout-50000",
     "aliases-10", "aliases-1000", "aliases-10000",
     "grid-100x10", "grid-1000x10", "grid-100x100", "grid-1000x100",
+    "sliderchain-10", "sliderchain-1000", "sliderchain-100000",
+    "sliderstack-10", "sliderstack-1000",
+    "repeat-100", "repeat-1000", "repeat-10000", "repeat-50000",
+    "recur-100", "recur-1000", "recur-10000",
+    "intchain-1000", "intchain-100000",
+    "mathchain-1000", "mathchain-100000",
+    "hidden-1000",
 ];
+
+/// The current-core counterpart of a spec, for the baseline measurement.
+/// Shapes with a direct translation go through `to_legacy`; the slider and
+/// repeat shapes are written for the current core directly so its actions
+/// (`changeValue` on a slider) can drive them. See `web/baseline/measure.mjs`.
+pub fn legacy_from_spec(spec: &str) -> Option<String> {
+    let (shape, size) = spec.split_once('-')?;
+    let n: usize = size.split('x').next()?.parse().ok()?;
+    Some(match shape {
+        // A slider bound through a chain of L numbers to a mathInput.
+        "sliderchain" => {
+            let mut s = String::from("<mathInput name=\"n\" prefill=\"1\"/>\n");
+            let mut prev = "n".to_string();
+            for i in 0..n {
+                let name = format!("c{i}");
+                let expr = match i % 3 {
+                    0 => format!("${prev} + 1"),
+                    1 => format!("1.0001 * ${prev}"),
+                    _ => format!("-${prev}"),
+                };
+                let _ = writeln!(s, "<number name=\"{name}\">{expr}</number>");
+                prev = name;
+            }
+            let _ = writeln!(s, "<slider name=\"s\" from=\"-9\" to=\"9\" step=\"0.5\" bindValueTo=\"${prev}\"/>");
+            let _ = writeln!(s, "<graph name=\"g\"><point name=\"p\" x=\"$s\" y=\"0\"/></graph>");
+            s
+        }
+        // N points from a repeat whose length a slider drives, as in `repeat`.
+        "repeat" => {
+            let step = 18.0 / n.max(2) as f64;
+            format!(
+                "<slider name=\"n\" from=\"0\" to=\"{max}\" step=\"1\" initialValue=\"{n}\"/>\n\
+<graph name=\"g\">\n\
+  <repeatForSequence name=\"r\" from=\"-9\" step=\"{step}\" length=\"$n\" valueName=\"v\">\n\
+    <point name=\"p\">($v, 0.5$v)</point>\n\
+    <point name=\"q\">(0, 0)</point>\n\
+  </repeatForSequence>\n\
+</graph>\n\
+<graph name=\"g2\"><collect name=\"c\" componentType=\"point\" from=\"$g\"/></graph>\n",
+                max = n * 2
+            )
+        }
+        _ => to_legacy(&from_spec(spec)?),
+    })
+}
 
 /// Translate a generated document into DoenetML the current core accepts:
 /// each `<op>` becomes a `<number>` with the equivalent math expression.
@@ -153,6 +346,11 @@ pub fn to_legacy(doc: &str) -> String {
                     "sub" => format!("{a} - {b}"),
                     "mul" => format!("{a} * {b}"),
                     "negate" => format!("-{a}"),
+                    "round" => format!("round({a})"),
+                    "floor" => format!("floor({a})"),
+                    "div" => format!("{a} / {b}"),
+                    "min" => format!("min({a}, {b})"),
+                    "max" => format!("max({a}, {b})"),
                     "scale" => format!("{} * {a}", attr("k").unwrap_or_default()),
                     "offset" => format!("{a} + {}", attr("k").unwrap_or_default()),
                     "lerp" => {

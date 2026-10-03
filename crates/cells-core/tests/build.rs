@@ -16,10 +16,10 @@ fn load_ok(src: &str) -> Document {
 }
 
 #[test]
-fn three_cells_for_three_coordinates() {
+fn three_cells_for_three_coordinates_plus_one_hide_per_point() {
     let doc = load_ok(r#"<point name="p1" x="1" y="2"/><point name="p2" x="5" y="$p1.y"/>"#);
-    assert_eq!(doc.cells.len(), 3);
-    assert_eq!(doc.n_essential, 3);
+    assert_eq!(doc.cells.len(), 5);
+    assert_eq!(doc.n_essential, 5);
     assert_eq!(doc.cell("p1", "y"), doc.cell("p2", "y"));
     assert_ne!(doc.cell("p1", "x"), doc.cell("p2", "x"));
     assert_eq!(doc.value("p2", "y"), Some(2.0));
@@ -29,8 +29,8 @@ fn three_cells_for_three_coordinates() {
 #[test]
 fn bare_component_reference_shares_every_cell() {
     let doc = load_ok(r#"<graph name="g"><point name="p1" x="1" y="2"/>$p1</graph>"#);
-    // four graph bounds plus two coordinates; the copy adds none
-    assert_eq!(doc.cells.len(), 6);
+    // four graph bounds plus two coordinates and a hide; the copy adds none
+    assert_eq!(doc.cells.len(), 7);
     let g = doc.component("g").unwrap();
     let kids: Vec<_> = doc.children(g).filter_map(|c| if let Child::Component(i) = c { Some(i) } else { None }).collect();
     assert_eq!(kids.len(), 2);
@@ -42,7 +42,7 @@ fn bare_component_reference_shares_every_cell() {
 #[test]
 fn extend_with_override_shares_only_unoverridden_props() {
     let doc = load_ok(r#"<point name="p1" x="1" y="2"/><point name="p2" extend="$p1" y="3"/>"#);
-    assert_eq!(doc.cells.len(), 3);
+    assert_eq!(doc.cells.len(), 4);
     assert_eq!(doc.cell("p1", "x"), doc.cell("p2", "x"));
     assert_ne!(doc.cell("p1", "y"), doc.cell("p2", "y"));
     assert_eq!(doc.value("p2", "y"), Some(3.0));
@@ -51,7 +51,7 @@ fn extend_with_override_shares_only_unoverridden_props() {
 #[test]
 fn coords_attribute_aliases_both_cells() {
     let doc = load_ok(r#"<point name="p1" x="1" y="2"/><point name="q" coords="$p1"/><point name="r" coords="$p1.coords"/>"#);
-    assert_eq!(doc.cells.len(), 2);
+    assert_eq!(doc.cells.len(), 5);
     assert_eq!(doc.cell("q", "x"), doc.cell("p1", "x"));
     assert_eq!(doc.cell("r", "y"), doc.cell("p1", "y"));
 }
@@ -59,7 +59,7 @@ fn coords_attribute_aliases_both_cells() {
 #[test]
 fn number_input_feeds_point_through_default_prop() {
     let mut doc = load_ok(r#"<numberInput name="n" value="4"/><point name="p" x="$n"/>"#);
-    assert_eq!(doc.cells.len(), 2);
+    assert_eq!(doc.cells.len(), 3);
     assert_eq!(doc.cell("n", "value"), doc.cell("p", "x"));
     assert_eq!(doc.value("p", "x"), Some(4.0));
     let c = doc.cell("n", "value").unwrap();
@@ -81,7 +81,7 @@ fn number_children_literal_reference_and_bare_text_reference() {
         .expect("anonymous number");
     assert_eq!(doc.comp_cells(anon), &[doc.cell("p1", "y").unwrap()]);
     // p1.x, p1.y, a, c
-    assert_eq!(doc.cells.len(), 4);
+    assert_eq!(doc.cells.len(), 5);
 }
 
 #[test]
@@ -96,8 +96,8 @@ fn operators_compute_and_propagate() {
            <op name="n" kind="negate" args="$a"/><op name="o" kind="offset" k="1" args="$a"/>
            <point name="p" x="$t" y="$u"/>"#,
     );
-    assert_eq!(doc.n_essential, 2);
-    assert_eq!(doc.cells.len(), 10);
+    assert_eq!(doc.n_essential, 3);
+    assert_eq!(doc.cells.len(), 11);
     assert_eq!(doc.value("s", "value"), Some(7.0));
     assert_eq!(doc.value("t", "value"), Some(70.0));
     assert_eq!(doc.value("u", "value"), Some(50.0));
@@ -132,7 +132,7 @@ fn graph_defaults_and_tree() {
     assert_eq!(doc.value("p", "x"), Some(0.0));
     let p = doc.component("p").unwrap();
     assert_eq!(doc.parent(p), doc.component("g"));
-    assert_eq!(doc.cells.len(), 6);
+    assert_eq!(doc.cells.len(), 7);
 }
 
 #[test]
@@ -190,4 +190,15 @@ fn binary_wire_format_rejects_garbage() {
     let n = good.len();
     good[n - 1] = 0xff;
     assert!(matches!(cells_core::dast::Dast::from_binary(&good).unwrap_err(), Error::WireFormat(_)));
+}
+
+#[test]
+fn boolean_input_drives_a_point_hide_as_a_zero_one_cell() {
+    let mut doc = load_ok(r#"<booleanInput name="b" value="true"/><graph><point name="p" x="1" y="2" hide="$b"/></graph>"#);
+    assert_eq!(doc.value("b", "value"), Some(1.0));
+    assert_eq!(doc.cell("p", "hide"), doc.cell("b", "value"), "hide aliases the boolean's cell");
+    doc.request(&[cells_core::Request { cell: doc.cell("p", "hide").unwrap(), value: 0.0 }]);
+    assert_eq!(doc.value("b", "value"), Some(0.0));
+    let doc = load_ok(r#"<point name="p"/>"#);
+    assert_eq!(doc.value("p", "hide"), Some(0.0));
 }

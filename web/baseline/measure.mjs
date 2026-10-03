@@ -65,6 +65,29 @@ window.__actions = async (name, steps) => {
   obs.disconnect();
   return samples;
 };
+// Time slider changeValue actions (the current core's slider inverse, then
+// whatever the slider is bound to), alternating between two values. For a
+// repeat whose length the slider drives, each action is a structural change.
+window.__sliderActions = async (name, values, steps) => {
+  const idx = await window.resolvePath1(name);
+  const graph = document.querySelector(".jxgbox");
+  let lastMutation = 0;
+  const obs = new MutationObserver(() => { lastMutation = performance.now(); });
+  obs.observe(graph, { attributes: true, childList: true, subtree: true });
+  const samples = [];
+  for (let i = 1; i <= steps; i++) {
+    const t = performance.now();
+    await window.callAction1({ actionName: "changeValue", componentIdx: idx, args: { value: values[i % values.length] } });
+    const core = performance.now() - t;
+    await new Promise((r) => requestAnimationFrame(r));
+    const frame = performance.now() - t;
+    // Let the DOM settle before the next action.
+    await new Promise((r) => setTimeout(r, 20));
+    samples.push({ core, frame, dom: lastMutation > t ? lastMutation - t : NaN });
+  }
+  obs.disconnect();
+  return samples;
+};
 window.__countMutations = (on) => {
   if (on) { window.__mut = 0; window.__obs = new MutationObserver((ms) => { window.__mut++; }); window.__obs.observe(document.querySelector(".jxgbox"), { attributes: true, subtree: true }); }
   else { window.__obs.disconnect(); return window.__mut; }
@@ -126,6 +149,24 @@ for (const spec of SPECS) {
   }
   const firstPoint = Date.now() - t0;
   const ellipses = await page.locator(".jxgbox ellipse").count();
+
+  if (spec.startsWith("sliderchain") || spec.startsWith("repeat")) {
+    // Slider-driven shapes: time the slider's changeValue action instead of movePoint.
+    const isRepeat = spec.startsWith("repeat");
+    const n = Number(spec.split("-")[1]);
+    const values = isRepeat ? [n - 1, n] : [3, 3.5];
+    const steps = isRepeat ? 20 : STEPS;
+    const actions = await page.evaluate(({ name, values, steps }) => window.__sliderActions(name, values, steps), { name: isRepeat ? "n" : "s", values, steps });
+    const r = {
+      spec, init_ms: state.init, first_point_ms: firstPoint, ellipses,
+      slider: { core: stats(actions.map((s) => s.core)), dom: stats(actions.map((s) => s.dom)), frame: stats(actions.map((s) => s.frame)), structural: isRepeat },
+    };
+    results.push(r);
+    console.log(`${spec}: init ${state.init.toFixed(0)} ms, first point ${firstPoint} ms; slider changeValue${isRepeat ? " (changes N)" : ""} p50 ${r.slider.core.p50.toFixed(2)} ms, dom p50 ${r.slider.dom.p50.toFixed(2)} ms, frame p50 ${r.slider.frame.p50.toFixed(2)} ms`);
+    await page.close();
+    continue;
+  }
+
   const name = spec.startsWith("chain") ? "p" : "p0";
   const actions = await page.evaluate(({ name, steps }) => window.__actions(name, steps), { name, steps: STEPS });
 

@@ -19,3 +19,7 @@ harness = false
 [[bench]]
 name = "tick"
 harness = false
+
+[[bench]]
+name = "rebuild"
+harness = false

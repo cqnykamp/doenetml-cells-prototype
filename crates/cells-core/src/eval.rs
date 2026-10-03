@@ -54,9 +54,13 @@ impl Evaluator for DirtyScan {
         }
         for ins in &program.instrs {
             let (a, b) = ins.op.input_pair();
-            let any_dirty = self.dirty[a as usize] | b.is_some_and(|b| self.dirty[b as usize]);
+            let mut any_dirty = self.dirty[a as usize] | b.is_some_and(|b| self.dirty[b as usize]);
+            let extra = ins.op.extra_range();
+            if !extra.is_empty() {
+                any_dirty |= program.extra[extra].iter().any(|&c| self.dirty[c as usize]);
+            }
             if any_dirty {
-                let new = ins.op.eval(cells);
+                let new = ins.op.eval(cells, &program.arena);
                 let out = ins.out as usize;
                 if differs(new, cells[out]) {
                     cells[out] = new;
@@ -84,7 +88,7 @@ impl DirtyClosure {
     pub fn new(program: &Program, n_cells: usize) -> Self {
         let mut dependents = vec![Vec::new(); n_cells];
         for (i, ins) in program.instrs.iter().enumerate() {
-            for input in ins.op.inputs() {
+            for input in ins.op.inputs(&program.extra) {
                 dependents[input as usize].push(i as u32);
             }
         }
@@ -114,7 +118,7 @@ impl Evaluator for DirtyClosure {
         while let Some(Reverse(i)) = self.heap.pop() {
             self.queued[i as usize] = false;
             let ins = &program.instrs[i as usize];
-            let new = ins.op.eval(cells);
+            let new = ins.op.eval(cells, &program.arena);
             let out = ins.out as usize;
             if differs(new, cells[out]) {
                 cells[out] = new;

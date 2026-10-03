@@ -7,16 +7,27 @@ vocabulary, and `docs/adr/` for recorded decisions.
 ## Layout
 
 - `crates/cells-core` — the core: flat columnar DAST (JSON or binary `CDST`
-  wire format, ADR 0002), reference resolution, alias merging, columnar
-  component tables, operator program, scheduler.
+  wire format, ADR 0002), scoped reference resolution with indexed paths
+  (`$r[3].p.x`), repeat expansion and whole-document rebuild (ADR 0004),
+  alias merging, columnar component tables, operator program with projection
+  inverses (ADR 0003), scheduler, and an expression arena for `<math>`
+  (numeric expressions lower to operators; symbolic ones are handles).
 - `crates/cells-wasm` — wasm-bindgen binding: zero-copy cell view, render
   manifest, cell-addressed requests (see `docs/adr/0001-*`).
 - `crates/cells-docgen` — synthetic DoenetML generator (points, chain, fanout,
-  aliases, grid) used for all benchmarks.
+  aliases, grid; plan 2 adds sliderchain, sliderstack, repeat, recur,
+  intchain, mathchain, hidden) used for all benchmarks, plus the
+  current-core counterparts for the baseline (`--legacy`).
 - `crates/cells-bench` — criterion benches (`startup`, `tick`) and a `stats`
   binary for structure and memory.
 - `web/` — Vite + React renderers (SVG graph with draggable points, number,
-  numberInput) and the Playwright end-to-end measurement.
+  numberInput, slider, booleanInput, math, repeat and collect) and the
+  Playwright end-to-end measurement, including structural ticks (rebuilds).
+
+Tags the core understands: `document`, `graph`, `point` (x, y, hide),
+`number`, `numberInput`, `booleanInput`, `slider` (numeric mode), `math`,
+`evaluate`, `repeatForSequence`, `collect`, and the prototype-only `op`.
+See `docs/plan-2.md` for the second round's scope and decisions.
 - `scripts/parse-dast.mjs` — runs the existing TypeScript DoenetML parser from
   a sibling DoenetML checkout (`DOENETML_DIR`, default `../../ml`) and prints
   normalized DAST JSON, or the binary wire format with `--binary`.
@@ -33,7 +44,7 @@ cargo test                      # needs `node` on PATH and a built DoenetML pars
 echo '<point name="p" x="1"/>' | node scripts/parse-dast.mjs
 
 scripts/gen-fixtures.sh         # ~1 minute; writes fixtures/*.{doenet,json,cdast}
-cargo bench -p cells-bench      # ~30 minutes for the full sweep
+cargo bench -p cells-bench      # ~30 minutes for the full sweep (startup, tick, rebuild)
 cargo run --release -p cells-bench --bin stats > results/raw/stats.jsonl
 
 cd web && pnpm install && pnpm wasm && pnpm dev     # interactive renderer at :5173

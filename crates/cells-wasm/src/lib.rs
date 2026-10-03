@@ -11,6 +11,10 @@ pub struct Core {
     evaluator: Box<dyn Evaluator>,
     timings: cells_core::LoadTimings,
     last_dropped: u32,
+    last_rebuilt: bool,
+    last_rebuild_error: Option<String>,
+    /// ms spent inside the rebuild during the last tick, if one happened.
+    last_rebuild_ms: f64,
 }
 
 #[wasm_bindgen]
@@ -22,7 +26,7 @@ impl Core {
         console_error_panic_hook::set_once();
         let (doc, timings) = Document::load_timed(dast).map_err(|e| JsError::new(&e.to_string()))?;
         let evaluator: Box<dyn Evaluator> = Box::new(DirtyClosure::new(&doc.program, doc.cells.len()));
-        Ok(Core { doc, evaluator, timings, last_dropped: 0 })
+        Ok(Core { doc, evaluator, timings, last_dropped: 0, last_rebuilt: false, last_rebuild_error: None, last_rebuild_ms: 0.0 })
     }
 
     /// Pointer to the cell array inside wasm memory. Valid until the next
@@ -47,11 +51,13 @@ impl Core {
     pub fn load_timings_json(&self) -> String {
         let t = &self.timings;
         format!(
-            r#"{{"deserialize":{},"build":{},"schedule":{},"initial_compute":{}}}"#,
+            r#"{{"deserialize":{},"build":{},"schedule":{},"initial_compute":{},"passes":{},"structural_depth":{}}}"#,
             t.deserialize.as_secs_f64() * 1e3,
             t.build.as_secs_f64() * 1e3,
             t.schedule.as_secs_f64() * 1e3,
-            t.initial_compute.as_secs_f64() * 1e3
+            t.initial_compute.as_secs_f64() * 1e3,
+            t.passes,
+            t.structural_depth
         )
     }
 
@@ -112,6 +118,13 @@ impl Core {
     pub fn child_list_len(&self) -> usize {
         self.doc.comps.child_list.len()
     }
+    /// Stable identity across rebuilds: DAST node (NONE if synthesized) and scope.
+    pub fn comp_node_ptr(&self) -> *const u32 {
+        self.doc.comps.node.as_ptr()
+    }
+    pub fn comp_scope_ptr(&self) -> *const u32 {
+        self.doc.comps.scope.as_ptr()
+    }
     /// String table: `n_strings + 1` offsets into the UTF-8 byte blob.
     pub fn string_offsets_ptr(&self) -> *const u32 {
         self.doc.strings.offsets.as_ptr()
@@ -126,16 +139,61 @@ impl Core {
         self.doc.strings.bytes.len()
     }
 
-    /// Apply cell-addressed requests. Returns the changed cell indices.
+    /// Apply cell-addressed requests. Returns the changed cell indices. When
+    /// the tick rebuilt the document (`last_rebuilt`), the list is empty and
+    /// every pointer and length above must be re-read.
     pub fn request(&mut self, cells: &[u32], values: &[f64]) -> Vec<u32> {
         let reqs: Vec<Request> = cells.iter().zip(values).map(|(&cell, &value)| Request { cell, value }).collect();
+        let n_before = self.doc.program.len();
+        let clock = web_time::Instant::now();
         let tick = self.doc.request_with(self.evaluator.as_mut(), &reqs);
         self.last_dropped = tick.dropped.len() as u32;
+        self.last_rebuilt = tick.rebuilt;
+        self.last_rebuild_error = tick.rebuild_error;
+        self.last_rebuild_ms = 0.0;
+        if tick.rebuilt {
+            // The whole tick is the rebuild when the program changed shape;
+            // the evaluator's dependency tables are for the old program.
+            self.last_rebuild_ms = clock.elapsed().as_secs_f64() * 1e3;
+            let _ = n_before;
+            let name = self.evaluator.name().to_string();
+            self.set_evaluator(&name).unwrap();
+        }
         tick.changed
     }
 
     pub fn last_dropped(&self) -> u32 {
         self.last_dropped
+    }
+
+    pub fn last_rebuilt(&self) -> bool {
+        self.last_rebuilt
+    }
+
+    pub fn last_rebuild_ms(&self) -> f64 {
+        self.last_rebuild_ms
+    }
+
+    pub fn last_rebuild_error(&self) -> Option<String> {
+        self.last_rebuild_error.clone()
+    }
+
+    /// Infix text of the expression a math cell's handle names, for display.
+    pub fn expr_text(&self, handle: f64) -> String {
+        if handle.is_nan() || handle < 0.0 || handle as usize >= self.doc.program.arena.nodes.len() {
+            return String::new();
+        }
+        self.doc.program.arena.display(handle as u32, &|c| format!("[{c}]"))
+    }
+
+    /// Build passes the load took to settle repeat counts.
+    pub fn passes(&self) -> u32 {
+        self.timings.passes
+    }
+
+    /// Authoring warnings for the loaded document, JSON array of strings.
+    pub fn warnings_json(&self) -> String {
+        serde_json::to_string(&self.doc.warnings()).unwrap()
     }
 
     /// Choose the recompute strategy: "full", "dirty-scan" or "dirty-closure".

@@ -18,16 +18,15 @@ impl<'a> ReferenceEvaluator<'a> {
     }
 
     pub fn value(&self, cell: CellIdx) -> f64 {
-        if self.doc.is_essential(cell) {
-            return self.doc.cells[cell as usize];
-        }
-        let ins = &self.doc.program.instrs[self.producer[&cell]];
+        // Essential and fixed cells have no producer.
+        let Some(&p) = self.producer.get(&cell) else { return self.doc.cells[cell as usize] };
+        let ins = &self.doc.program.instrs[p];
         // Build a scratch view where only this instruction's inputs are filled.
         let mut scratch = vec![f64::NAN; self.doc.cells.len()];
-        for input in ins.op.inputs() {
+        for input in ins.op.inputs(&self.doc.program.extra) {
             scratch[input as usize] = self.value(input);
         }
-        ins.op.eval(&scratch)
+        ins.op.eval(&scratch, &self.doc.program.arena)
     }
 
     /// Every derived cell, recomputed from scratch.

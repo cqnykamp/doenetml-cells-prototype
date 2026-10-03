@@ -44,13 +44,46 @@ fn unary_inverses_round_trip() {
     assert_eq!(doc.value("n", "value"), Some(0.25));
 }
 
+/// ADR 0003: idempotent operators invert by projection, so the essential
+/// cell receives the clamped value, not the raw request.
 #[test]
-fn clamp_inverts_as_identity_and_forward_pass_clamps() {
+fn clamp_inverts_by_projection() {
     let mut doc = load(r#"<numberInput name="n" value="0"/><op name="cl" kind="clamp" lo="-1" hi="1" args="$n"/>"#).unwrap();
     let tick = doc.request(&[req(&doc, "cl", "value", 5.0)]);
-    assert_eq!(doc.value("n", "value"), Some(5.0));
+    assert_eq!(doc.value("n", "value"), Some(1.0));
     assert_eq!(doc.value("cl", "value"), Some(1.0));
     assert_eq!(tick.changed.len(), 2);
+}
+
+#[test]
+fn round_floor_min_max_div_inverses() {
+    let mut doc = load(
+        r#"<numberInput name="a" value="2"/><numberInput name="b" value="5"/>
+           <op name="r" kind="round" args="$a"/>
+           <op name="f" kind="floor" args="$a"/>
+           <op name="mn" kind="min" args="$a $b"/>
+           <op name="mx" kind="max" args="$a $b"/>
+           <op name="d" kind="div" args="$a $b"/>"#,
+    )
+    .unwrap();
+    doc.request(&[req(&doc, "r", "value", 3.7)]);
+    assert_eq!(doc.value("a", "value"), Some(4.0));
+    doc.request(&[req(&doc, "f", "value", 3.7)]);
+    assert_eq!(doc.value("a", "value"), Some(3.0));
+    doc.request(&[req(&doc, "mn", "value", 9.0)]);
+    assert_eq!(doc.value("a", "value"), Some(5.0));
+    doc.request(&[req(&doc, "mx", "value", -9.0)]);
+    assert_eq!(doc.value("a", "value"), Some(5.0));
+    round_trip(&mut doc, "d", "value", 2.0);
+    assert_eq!(doc.value("a", "value"), Some(10.0));
+    // A non-finite ask on Round is outside its domain and is dropped.
+    let tick = doc.request(&[req(&doc, "r", "value", f64::NAN)]);
+    assert_eq!(tick.dropped.len(), 1);
+    assert_eq!(doc.value("a", "value"), Some(10.0));
+    // NaN propagates through min/max instead of being ignored.
+    doc.request(&[req(&doc, "b", "value", f64::NAN)]);
+    assert!(doc.value("mn", "value").unwrap().is_nan());
+    assert_eq!(reference::check(&doc), None);
 }
 
 #[test]

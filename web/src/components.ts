@@ -17,6 +17,9 @@ export interface ComponentColumns {
   childStart: Uint32Array;
   childCount: Uint32Array;
   childList: Uint32Array;
+  /** stable identity across rebuilds: DAST node (NONE if synthesized) and scope */
+  node: Uint32Array;
+  scope: Uint32Array;
   stringOffsets: Uint32Array;
   stringBytes: Uint8Array;
 }
@@ -79,6 +82,14 @@ export class ComponentTable {
     return this.cols.propCells[this.cols.propBase[c] + i];
   }
 
+  /** A key that identifies the component across rebuilds. Synthesized
+   * components (copies made by `$ref` children or collects) have no DAST
+   * node, so they are keyed by their position under the parent instead. */
+  key(c: number, positionInParent: number): string {
+    const n = this.cols.node[c];
+    return n === NONE ? `#${positionInParent}` : `${n}:${this.cols.scope[c]}`;
+  }
+
   children(c: number): Child[] {
     const { childStart, childCount, childList } = this.cols;
     const s = childStart[c], n = childCount[c];
@@ -117,11 +128,13 @@ export function columnsFromCore(core: any, memory: WebAssembly.Memory, copy: boo
     childStart: u32(core.comp_child_start_ptr(), n),
     childCount: u32(core.comp_child_count_ptr(), n),
     childList: u32(core.child_list_ptr(), core.child_list_len()),
+    node: u32(core.comp_node_ptr(), n),
+    scope: u32(core.comp_scope_ptr(), n),
     stringOffsets: u32(core.string_offsets_ptr(), nStrings + 1),
     stringBytes: u8(core.string_bytes_ptr(), core.string_bytes_len()),
   };
   if (copy) {
-    for (const k of ["kind", "name", "parent", "propBase", "propCells", "childStart", "childCount", "childList", "stringOffsets", "stringBytes"] as const) {
+    for (const k of ["kind", "name", "parent", "propBase", "propCells", "childStart", "childCount", "childList", "node", "scope", "stringOffsets", "stringBytes"] as const) {
       (cols as any)[k] = (cols as any)[k].slice();
     }
   }
@@ -130,5 +143,5 @@ export function columnsFromCore(core: any, memory: WebAssembly.Memory, copy: boo
 
 /** Buffers to transfer when posting copied columns across threads. */
 export function columnBuffers(cols: ComponentColumns): ArrayBuffer[] {
-  return [cols.kind, cols.name, cols.parent, cols.propBase, cols.propCells, cols.childStart, cols.childCount, cols.childList, cols.stringOffsets, cols.stringBytes].map((a) => a.buffer as ArrayBuffer);
+  return [cols.kind, cols.name, cols.parent, cols.propBase, cols.propCells, cols.childStart, cols.childCount, cols.childList, cols.node, cols.scope, cols.stringOffsets, cols.stringBytes].map((a) => a.buffer as ArrayBuffer);
 }

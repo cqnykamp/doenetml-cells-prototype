@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { CellStore, loadDocument, type BackendKind, type LoadTimings } from "./core";
 import { StoreContext } from "./hooks";
 import { CommitReporter, Component } from "./renderers";
@@ -9,6 +9,9 @@ const FIXTURES = [
   "chain-10", "chain-100", "chain-1000", "chain-10000", "chain-100000",
   "fanout-10", "fanout-100", "fanout-1000", "fanout-10000",
   "aliases-1000", "grid-100x10", "grid-1000x10", "grid-1000x100",
+  "sliderchain-10", "sliderchain-1000", "sliderchain-100000", "sliderstack-10", "sliderstack-1000",
+  "repeat-100", "repeat-1000", "repeat-10000", "repeat-50000", "recur-100", "recur-1000", "recur-10000",
+  "intchain-1000", "intchain-100000", "mathchain-1000", "mathchain-100000", "hidden-1000",
 ];
 
 const SAMPLE = `<graph name="g">
@@ -17,7 +20,20 @@ const SAMPLE = `<graph name="g">
   <op name="neg" kind="negate" args="$p1.x"/>
   <point name="p3" x="$neg" y="-3"/>
 </graph>
-<p>n = <numberInput name="n" value="4"/>, p1 = $p1, p2.x = $p2.x, p3 = $p3</p>`;
+<p>n = <numberInput name="n" value="4"/>, p1 = $p1, p2.x = $p2.x, p3 = $p3</p>
+<p>slider bound to n: <slider name="s" from="-10" to="10" step="0.5" bindValueTo="$n"/></p>
+<p>count: <slider name="cnt" from="0" to="12" step="1" initialValue="4"/></p>
+<graph name="g2">
+  <repeatForSequence name="r" from="-8" to="8" length="$cnt" valueName="v" indexName="i">
+    <op name="h" kind="scale" k="0.5" args="$v"/>
+    <point name="p" x="$v" y="$h"/>
+  </repeatForSequence>
+  <point name="third" coords="$r[3].p"/>
+</graph>
+<p>math: <math name="m">3$n + 2</math> is numeric and lowers; <math name="f">x^2 - $n</math> stays symbolic;
+  f at n: <evaluate name="e" function="$f" input="$n"/></p>
+<p>hide p1: <booleanInput name="hideP1"/></p>
+<graph><point extend="$p1" hide="$hideP1"/></graph>`;
 
 declare global {
   interface Window {
@@ -144,15 +160,28 @@ export function App() {
             <span>Rendered document</span>
           </div>
           {error && <div className="error">{error}</div>}
-          {store && (
-            <StoreContext.Provider value={store}>
-              <CommitReporter />
-              <Component idx={store.comps.root} inGraph={false} />
-            </StoreContext.Provider>
-          )}
+          {store && <DocumentRoot store={store} />}
         </section>
       </div>
     </div>
+  );
+}
+
+/** Re-renders the whole tree when a tick rebuilt the document. Children
+ * are keyed by stable identity, so this is an update pass over surviving
+ * components, not a remount (set `?remount=1` to compare with remounting). */
+function DocumentRoot({ store }: { store: CellStore }) {
+  const version = useSyncExternalStore(
+    (fn) => store.subscribeStructure(fn),
+    () => store.structureVersion,
+  );
+  const remount = new URLSearchParams(location.search).get("remount") === "1";
+  const value = useMemo(() => ({ store, version }), [store, version]);
+  return (
+    <StoreContext.Provider value={value}>
+      <CommitReporter />
+      <Component key={remount ? version : 0} idx={store.comps.root} inGraph={false} />
+    </StoreContext.Provider>
   );
 }
 
@@ -163,7 +192,7 @@ function Timings({ t, store }: { t: Partial<LoadTimings>; store: CellStore | nul
     <div className="timings">
       {`cells ${store?.comps.nCells ?? "?"}  essential ${store?.comps.nEssential ?? "?"}  components ${store?.comps.length ?? "?"}\n`}
       {`backend ${t.backend}  fetch/parse ${f(t.fetch)}  worker ${f(t.workerSpawn)}  wasm init ${f(t.wasmInit)}  core total ${f(t.coreTotal)}  tables ${f(t.manifest)} + ${f(t.manifestTransfer)}  first render ${f(t.firstRender)}  (ms)\n`}
-      {c && `  core: deserialize ${f(c.deserialize)}  build ${f(c.build)}  schedule ${f(c.schedule)}  initial compute ${f(c.initial_compute)}`}
+      {c && `  core: deserialize ${f(c.deserialize)}  build ${f(c.build)}  schedule ${f(c.schedule)}  initial compute ${f(c.initial_compute)}  passes ${c.passes}  structural depth ${c.structural_depth}`}
     </div>
   );
 }

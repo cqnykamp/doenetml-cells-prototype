@@ -31,3 +31,9 @@ columnar as well (see `Components` in `document.rs`).
   core consumes requires bumping it on both sides.
 - Position information and node kinds the core does not use are dropped at
   encode time, so this format cannot round-trip back to DoenetML text.
+
+## Update (plan 2)
+
+Version 2 adds, per macro path part, the `[index]` expressions as ranges of
+ordinary nodes, so `$r[3].p.x` and `$r[$i-2].x` reach the core. Version 1
+files still load (with no indices).

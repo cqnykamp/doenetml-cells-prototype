@@ -7,7 +7,7 @@
 //  - worker-msg: wasm in a worker; changed indices and values posted per tick
 import init, { Core } from "./wasm/cells_wasm.js";
 import type { FromWorker, ToWorker, WorkerMode } from "./worker";
-import { ComponentTable, columnsFromCore } from "./components";
+import { ComponentTable, columnsFromCore, type ComponentColumns } from "./components";
 
 export type BackendKind = "main" | "worker-sab" | "worker-msg";
 
@@ -17,7 +17,7 @@ export interface LoadTimings {
   /** worker spawn (worker backends only) */
   workerSpawn: number;
   wasmInit: number;
-  core: { deserialize: number; build: number; schedule: number; initial_compute: number };
+  core: { deserialize: number; build: number; schedule: number; initial_compute: number; passes: number; structural_depth: number };
   coreTotal: number;
   /** building the component table views (main) or copying the columns out (worker) */
   manifest: number;
@@ -29,6 +29,8 @@ export interface LoadTimings {
 export interface TickSample {
   /** ms inside Core.request (inversion + recompute), measured where the core runs */
   core: number;
+  /** the tick changed a repeat's count and rebuilt the document */
+  rebuilt: boolean;
   /** ms from request start until the changed cells are available on the main thread */
   roundTrip: number;
   /** ms from request start until the React commit for that request */
@@ -40,10 +42,20 @@ export interface TickSample {
 
 type Listener = () => void;
 
+/** What one request produced. After a rebuild, `columns` is the new
+ * component table and every cell index the renderer held is stale. */
+export interface TickResult {
+  changed: Uint32Array;
+  rebuilt: boolean;
+  columns?: ComponentColumns;
+}
+
 interface Backend {
   cells(): Float64Array;
-  /** Resolves with changed indices once the main-thread cell view is up to date. */
-  request(cells: Uint32Array, values: Float64Array, onCore: (ms: number) => void): Promise<Uint32Array> | Uint32Array;
+  /** Infix text of an expression handle, when the core is on this thread. */
+  exprText?(handle: number): string;
+  /** Resolves once the main-thread cell view is up to date. */
+  request(cells: Uint32Array, values: Float64Array, onCore: (ms: number) => void): Promise<TickResult> | TickResult;
   setEvaluator(name: string): void;
 }
 
@@ -58,35 +70,45 @@ class MainBackend implements Backend {
     return new Float64Array(wasmMemory!.buffer, this.core.cells_ptr(), this.core.cells_len());
   }
   cells() {
-    if (this.view.buffer !== wasmMemory!.buffer || this.view.byteOffset !== this.core.cells_ptr()) this.view = this.make();
+    if (this.view.buffer !== wasmMemory!.buffer || this.view.byteOffset !== this.core.cells_ptr() || this.view.length !== this.core.cells_len()) this.view = this.make();
     return this.view;
   }
-  request(cells: Uint32Array, values: Float64Array, onCore: (ms: number) => void) {
+  request(cells: Uint32Array, values: Float64Array, onCore: (ms: number) => void): TickResult {
     const t = performance.now();
     const changed = this.core.request(cells, values);
     onCore(performance.now() - t);
-    return changed;
+    const rebuilt = this.core.last_rebuilt();
+    if (this.core.last_rebuild_error()) console.error("rebuild failed:", this.core.last_rebuild_error());
+    return { changed, rebuilt, columns: rebuilt ? columnsFromCore(this.core, wasmMemory!, false) : undefined };
   }
   setEvaluator(name: string) {
     this.core.set_evaluator(name);
+  }
+  exprText(handle: number) {
+    return this.core.expr_text(handle);
   }
 }
 
 class WorkerBackend implements Backend {
   private view: Float64Array;
   private nextId = 1;
-  private pending = new Map<number, { resolve: (c: Uint32Array) => void; onCore: (ms: number) => void }>();
+  private pending = new Map<number, { resolve: (c: TickResult) => void; onCore: (ms: number) => void }>();
   constructor(private worker: Worker, view: Float64Array) {
     this.view = view;
     worker.onmessage = (e: MessageEvent<FromWorker>) => {
       const m = e.data;
       if (m.type !== "tick") return;
-      if (m.values) for (let i = 0; i < m.changed.length; i++) this.view[m.changed[i]] = m.values[i];
+      if (m.rebuilt) {
+        // The cell array was replaced wholesale: new shared buffer or full copy.
+        this.view = m.sab ? new Float64Array(m.sab) : m.cells!;
+      } else if (m.values) {
+        for (let i = 0; i < m.changed.length; i++) this.view[m.changed[i]] = m.values[i];
+      }
       const p = this.pending.get(m.id);
       if (p) {
         this.pending.delete(m.id);
         p.onCore(m.coreMs);
-        p.resolve(m.changed);
+        p.resolve({ changed: m.changed, rebuilt: m.rebuilt, columns: m.columns });
       }
     };
   }
@@ -95,7 +117,7 @@ class WorkerBackend implements Backend {
   }
   request(cells: Uint32Array, values: Float64Array, onCore: (ms: number) => void) {
     const id = this.nextId++;
-    return new Promise<Uint32Array>((resolve) => {
+    return new Promise<TickResult>((resolve) => {
       this.pending.set(id, { resolve, onCore });
       this.worker.postMessage({ type: "request", id, cells, values } satisfies ToWorker, [cells.buffer, values.buffer]);
     });
@@ -111,6 +133,9 @@ export class CellStore {
   kind: BackendKind;
   private listeners: (Set<Listener> | undefined)[];
   private anyListeners = new Set<Listener>();
+  private structureListeners = new Set<Listener>();
+  /** Incremented when a tick rebuilt the document; the renderer remounts. */
+  structureVersion = 0;
   samples: TickSample[] = [];
   /** Incremented on every applied tick; lets a component re-render per tick. */
   version = 0;
@@ -143,8 +168,17 @@ export class CellStore {
     return () => this.anyListeners.delete(fn);
   }
 
+  subscribeStructure(fn: Listener): () => void {
+    this.structureListeners.add(fn);
+    return () => this.structureListeners.delete(fn);
+  }
+
   setEvaluator(name: string) {
     this.backend.setEvaluator(name);
+  }
+
+  exprText(handle: number): string | null {
+    return this.backend.exprText?.(handle) ?? null;
   }
 
   /** Cell-addressed write. Listeners fire once the changed cells are readable here. */
@@ -152,19 +186,30 @@ export class CellStore {
     const start = performance.now();
     const cells = new Uint32Array(pairs.map((p) => p[0]));
     const values = new Float64Array(pairs.map((p) => p[1]));
-    const sample: TickSample = { core: NaN, roundTrip: NaN, commit: NaN, frame: NaN, changed: 0 };
+    const sample: TickSample = { core: NaN, rebuilt: false, roundTrip: NaN, commit: NaN, frame: NaN, changed: 0 };
     this.samples.push(sample);
-    const apply = (changed: Uint32Array) => {
+    const apply = ({ changed, rebuilt, columns }: TickResult) => {
       sample.roundTrip = performance.now() - start;
       sample.changed = changed.length;
+      sample.rebuilt = rebuilt;
       this.pendingCommit = { start, sample };
       this.version++;
       requestAnimationFrame(() => {
         sample.frame = performance.now() - start;
       });
-      for (let i = 0; i < changed.length; i++) {
-        const set = this.listeners[changed[i]];
-        if (set) for (const fn of set) fn();
+      if (rebuilt) {
+        // Every cell index and component index is new: replace the table,
+        // drop per-cell subscriptions (their components are about to
+        // unmount) and tell the renderer to remount from the root.
+        this.comps = new ComponentTable(columns!);
+        this.listeners = new Array(this.comps.nCells);
+        this.structureVersion++;
+        for (const fn of this.structureListeners) fn();
+      } else {
+        for (let i = 0; i < changed.length; i++) {
+          const set = this.listeners[changed[i]];
+          if (set) for (const fn of set) fn();
+        }
       }
       for (const fn of this.anyListeners) fn();
     };
@@ -196,6 +241,7 @@ export async function loadDocument(bytes: Uint8Array, kind: BackendKind, evaluat
     core.set_evaluator(evaluator);
     timings.coreTotal = performance.now() - t;
     timings.core = JSON.parse(core.load_timings_json());
+    for (const w of JSON.parse(core.warnings_json()) as string[]) console.warn(w);
     t = performance.now();
     // Views over wasm memory: the component layer never grows after load,
     // but the cell array may be reallocated, so cells are re-viewed per read.

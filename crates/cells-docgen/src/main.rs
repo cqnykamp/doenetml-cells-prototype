@@ -1,5 +1,5 @@
 //! Usage: cells-docgen <spec>            print one document (e.g. chain-1000)
-//!        cells-docgen --legacy <spec>   same, with <op> rewritten as <number> math
+//!        cells-docgen --legacy <spec>   the current-core counterpart (see `legacy_from_spec`)
 //!        cells-docgen --sweep           print the default sweep specs, one per line
 fn main() {
     let mut args = std::env::args().skip(1);
@@ -14,8 +14,9 @@ fn main() {
         }
         return;
     }
-    match cells_docgen::from_spec(&arg) {
-        Some(doc) => print!("{}", if legacy { cells_docgen::to_legacy(&doc) } else { doc }),
+    let doc = if legacy { cells_docgen::legacy_from_spec(&arg) } else { cells_docgen::from_spec(&arg) };
+    match doc {
+        Some(doc) => print!("{doc}"),
         None => {
             eprintln!("usage: cells-docgen <points|chain|fanout|aliases>-<N> | grid-<N>x<L> | --sweep");
             std::process::exit(2);

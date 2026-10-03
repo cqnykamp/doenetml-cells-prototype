@@ -17,7 +17,7 @@ export type ToWorker =
 
 export type FromWorker =
   | { type: "loaded"; columns: ComponentColumns; coreTimings: string; wasmInit: number; coreTotal: number; columnsMs: number; sab?: SharedArrayBuffer; cells?: Float64Array }
-  | { type: "tick"; id: number; changed: Uint32Array; values?: Float64Array; coreMs: number; dropped: number }
+  | { type: "tick"; id: number; changed: Uint32Array; values?: Float64Array; coreMs: number; dropped: number; rebuilt: boolean; columns?: ComponentColumns; sab?: SharedArrayBuffer; cells?: Float64Array }
   | { type: "error"; message: string };
 
 let core: Core | null = null;
@@ -40,6 +40,7 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
       t = performance.now();
       core = new Core(m.bytes);
       core.set_evaluator(m.evaluator);
+      for (const w of JSON.parse(core.warnings_json()) as string[]) console.warn(w);
       const coreTotal = performance.now() - t;
       t = performance.now();
       const columns = columnsFromCore(core, memory, true);
@@ -59,13 +60,26 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
       const changed = core!.request(m.cells, m.values);
       const coreMs = performance.now() - t;
       const v = view();
-      if (mode === "sab") {
+      if (core!.last_rebuilt()) {
+        // Everything is new: post the columns again and a fresh cell array.
+        const columns = columnsFromCore(core!, memory!, true);
+        const base = { type: "tick" as const, id: m.id, changed, coreMs, dropped: core!.last_dropped(), rebuilt: true, columns };
+        if (mode === "sab") {
+          const sab = new SharedArrayBuffer(core!.cells_len() * 8);
+          shared = new Float64Array(sab);
+          shared.set(v);
+          (self as any).postMessage({ ...base, sab }, [changed.buffer, ...columnBuffers(columns)]);
+        } else {
+          const cells = v.slice();
+          (self as any).postMessage({ ...base, cells }, [changed.buffer, cells.buffer, ...columnBuffers(columns)]);
+        }
+      } else if (mode === "sab") {
         for (let i = 0; i < changed.length; i++) shared![changed[i]] = v[changed[i]];
-        (self as any).postMessage({ type: "tick", id: m.id, changed, coreMs, dropped: core!.last_dropped() }, [changed.buffer]);
+        (self as any).postMessage({ type: "tick", id: m.id, changed, coreMs, dropped: core!.last_dropped(), rebuilt: false }, [changed.buffer]);
       } else {
         const values = new Float64Array(changed.length);
         for (let i = 0; i < changed.length; i++) values[i] = v[changed[i]];
-        (self as any).postMessage({ type: "tick", id: m.id, changed, values, coreMs, dropped: core!.last_dropped() }, [changed.buffer, values.buffer]);
+        (self as any).postMessage({ type: "tick", id: m.id, changed, values, coreMs, dropped: core!.last_dropped(), rebuilt: false }, [changed.buffer, values.buffer]);
       }
     } else if (m.type === "setEvaluator") {
       core!.set_evaluator(m.name);

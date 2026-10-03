@@ -1,6 +1,7 @@
 //! The instruction list and its topological schedule.
 
 use crate::document::CellIdx;
+use crate::expr::Arena;
 use crate::ops::Instr;
 
 /// Instructions in a valid evaluation order: every instruction's inputs are
@@ -9,14 +10,18 @@ use crate::ops::Instr;
 pub struct Program {
     pub instrs: Vec<Instr>,
     /// producer[cell] = index into `instrs` of the instruction writing that
-    /// cell, or `u32::MAX` for essential cells.
+    /// cell, or `u32::MAX` for essential and fixed cells.
     pub producer: Vec<u32>,
+    /// Symbolic expressions that `Evaluate`/`EvalAt` instructions read.
+    pub arena: Arena,
+    /// Extra inputs of `Evaluate`/`EvalAt` instructions (expression cell leaves).
+    pub extra: Vec<CellIdx>,
 }
 
 impl Program {
     /// Orders `instrs` topologically. Returns the cell index of an output
     /// involved in a cycle on failure.
-    pub fn schedule(instrs: Vec<Instr>, n_cells: usize) -> std::result::Result<Program, CellIdx> {
+    pub fn schedule(instrs: Vec<Instr>, n_cells: usize, arena: Arena, extra: Vec<CellIdx>) -> std::result::Result<Program, CellIdx> {
         // producer[cell] = index of the instruction that writes it, if any
         let mut producer = vec![u32::MAX; n_cells];
         for (i, ins) in instrs.iter().enumerate() {
@@ -28,7 +33,7 @@ impl Program {
         let mut indegree = vec![0u32; n];
         let mut dependents: Vec<Vec<u32>> = vec![Vec::new(); n];
         for (i, ins) in instrs.iter().enumerate() {
-            for input in ins.op.inputs() {
+            for input in ins.op.inputs(&extra) {
                 let p = producer[input as usize];
                 if p != u32::MAX {
                     indegree[i] += 1;
@@ -56,7 +61,7 @@ impl Program {
         for (i, ins) in order.iter().enumerate() {
             producer[ins.out as usize] = i as u32;
         }
-        Ok(Program { instrs: order, producer })
+        Ok(Program { instrs: order, producer, arena, extra })
     }
 
     /// Recompute every derived cell, appending the indices whose value
@@ -65,7 +70,7 @@ impl Program {
     pub fn run_all_tracking(&self, cells: &mut [f64], changed: &mut Vec<CellIdx>) {
         for ins in &self.instrs {
             let out = ins.out as usize;
-            let new = ins.op.eval(cells);
+            let new = ins.op.eval(cells, &self.arena);
             let old = cells[out];
             if new != old && !(new.is_nan() && old.is_nan()) {
                 cells[out] = new;
@@ -91,7 +96,7 @@ impl Program {
     #[inline]
     pub fn run_all(&self, cells: &mut [f64]) {
         for ins in &self.instrs {
-            cells[ins.out as usize] = ins.op.eval(cells);
+            cells[ins.out as usize] = ins.op.eval(cells, &self.arena);
         }
     }
 

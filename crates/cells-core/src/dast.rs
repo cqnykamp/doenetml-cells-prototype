@@ -7,7 +7,9 @@
 //!
 //! Node 0 is a synthetic root element whose children are the document's
 //! top-level nodes. Macros (`$a.b`) reuse the attribute range fields to index
-//! the `path` array instead.
+//! the `path` array instead; each path part may carry `[index]` expressions
+//! (`$r[3].p`, `$r[$i-2]`) whose value nodes live in `children` like any
+//! other node list.
 
 use std::collections::HashMap;
 
@@ -90,7 +92,16 @@ pub struct Dast {
     attr_c_count: Vec<u32>,
     children: Vec<NodeId>,
     path: Vec<StrId>,
+    /// Per path part: range into `idx_c_*` of its `[index]` expressions.
+    path_i_start: Vec<u32>,
+    path_i_count: Vec<u32>,
+    /// Per index expression: range into `children` of its value nodes.
+    idx_c_start: Vec<u32>,
+    idx_c_count: Vec<u32>,
 }
+
+/// Position of one part of a macro path in the `path` arrays.
+pub type PathPart = u32;
 
 impl Dast {
     pub const ROOT: NodeId = 0;
@@ -152,6 +163,29 @@ impl Dast {
         &self.path[s..s + c]
     }
 
+    /// Positions of a macro's path parts, for `part_indices`.
+    #[inline]
+    pub fn macro_parts(&self, n: NodeId) -> std::ops::Range<PathPart> {
+        let s = self.a_start[n as usize];
+        s..s + self.a_count[n as usize]
+    }
+
+    /// The `[index]` expressions of one path part, each as its value nodes
+    /// (`$r[3]` gives one index holding a text node; `$r[$i-2]` gives one
+    /// index holding a macro and a text node).
+    pub fn part_indices(&self, part: PathPart) -> impl Iterator<Item = &[NodeId]> + '_ {
+        let (s, c) = (self.path_i_start[part as usize] as usize, self.path_i_count[part as usize] as usize);
+        (s..s + c).map(move |i| {
+            let (cs, cc) = (self.idx_c_start[i] as usize, self.idx_c_count[i] as usize);
+            &self.children[cs..cs + cc]
+        })
+    }
+
+    /// Whether any part of the macro path carries an index.
+    pub fn macro_has_index(&self, n: NodeId) -> bool {
+        self.macro_parts(n).any(|p| self.path_i_count[p as usize] > 0)
+    }
+
     pub fn macro_display(&self, n: NodeId) -> String {
         self.macro_path(n).iter().map(|&p| self.strings.get(p)).collect::<Vec<_>>().join(".")
     }
@@ -168,7 +202,11 @@ impl Dast {
                 + self.attr_c_start.capacity()
                 + self.attr_c_count.capacity()
                 + self.children.capacity()
-                + self.path.capacity())
+                + self.path.capacity()
+                + self.path_i_start.capacity()
+                + self.path_i_count.capacity()
+                + self.idx_c_start.capacity()
+                + self.idx_c_count.capacity())
     }
 
     // ---- construction ----------------------------------------------------
@@ -207,7 +245,7 @@ impl Dast {
         }
         let mut r = Reader { b: bytes, pos: 4 };
         let version = r.u32();
-        if version != 1 {
+        if version != 1 && version != 2 {
             return Err(bad("unsupported version"));
         }
         let n_strings = r.u32() as usize;
@@ -216,7 +254,17 @@ impl Dast {
         let n_attrs = r.u32() as usize;
         let n_children = r.u32() as usize;
         let n_path = r.u32() as usize;
-        let need = 8 + 6 * 4 + (n_strings + 1) * 4 + strings_len.div_ceil(4) * 4 + n_nodes.div_ceil(4) * 4 + n_nodes * 4 * 5 + n_attrs * 4 * 3 + n_children * 4 + n_path * 4;
+        // Version 2 adds per-part index ranges and the index expressions.
+        let n_index = if version >= 2 {
+            if bytes.len() < r.pos + 4 {
+                return Err(bad("truncated"));
+            }
+            r.u32() as usize
+        } else {
+            0
+        };
+        let extra = if version >= 2 { n_path * 4 * 2 + n_index * 4 * 2 } else { 0 };
+        let need = r.pos + (n_strings + 1) * 4 + strings_len.div_ceil(4) * 4 + n_nodes.div_ceil(4) * 4 + n_nodes * 4 * 5 + n_attrs * 4 * 3 + n_children * 4 + n_path * 4 + extra;
         if bytes.len() < need {
             return Err(bad("truncated"));
         }
@@ -239,6 +287,10 @@ impl Dast {
             attr_c_count: r.u32s(n_attrs),
             children: r.u32s(n_children),
             path: r.u32s(n_path),
+            path_i_start: if version >= 2 { r.u32s(n_path) } else { vec![0; n_path] },
+            path_i_count: if version >= 2 { r.u32s(n_path) } else { vec![0; n_path] },
+            idx_c_start: if version >= 2 { r.u32s(n_index) } else { Vec::new() },
+            idx_c_count: if version >= 2 { r.u32s(n_index) } else { Vec::new() },
         };
         // Bounds checks so accessors can index without panicking on bad input.
         let ns = dast.strings.len() as u32;
@@ -264,6 +316,16 @@ impl Dast {
                 return Err(bad("attribute child range out of range"));
             }
         }
+        for p in 0..n_path {
+            if dast.path_i_start[p] as usize + dast.path_i_count[p] as usize > n_index {
+                return Err(bad("path index range out of range"));
+            }
+        }
+        for i in 0..n_index {
+            if dast.idx_c_start[i] as usize + dast.idx_c_count[i] as usize > n_children {
+                return Err(bad("index child range out of range"));
+            }
+        }
         Ok(dast)
     }
 
@@ -271,7 +333,7 @@ impl Dast {
     pub fn to_binary(&self) -> Vec<u8> {
         let mut out = Vec::with_capacity(64 + self.strings.bytes.len() + self.len() * 24);
         out.extend_from_slice(b"CDST");
-        for v in [1u32, self.strings.len() as u32, self.strings.bytes.len() as u32, self.len() as u32, self.attr_name.len() as u32, self.children.len() as u32, self.path.len() as u32] {
+        for v in [2u32, self.strings.len() as u32, self.strings.bytes.len() as u32, self.len() as u32, self.attr_name.len() as u32, self.children.len() as u32, self.path.len() as u32, self.idx_c_start.len() as u32] {
             out.extend_from_slice(&v.to_le_bytes());
         }
         let u32s = |out: &mut Vec<u8>, v: &[u32]| for x in v { out.extend_from_slice(&x.to_le_bytes()) };
@@ -280,7 +342,7 @@ impl Dast {
         while out.len() % 4 != 0 { out.push(0); }
         out.extend_from_slice(&self.kind);
         while out.len() % 4 != 0 { out.push(0); }
-        for v in [&self.str_, &self.a_start, &self.a_count, &self.c_start, &self.c_count, &self.attr_name, &self.attr_c_start, &self.attr_c_count, &self.children, &self.path] {
+        for v in [&self.str_, &self.a_start, &self.a_count, &self.c_start, &self.c_count, &self.attr_name, &self.attr_c_start, &self.attr_c_count, &self.children, &self.path, &self.path_i_start, &self.path_i_count, &self.idx_c_start, &self.idx_c_count] {
             u32s(&mut out, v);
         }
         out
@@ -416,7 +478,8 @@ impl<'de, 'b> DeserializeSeed<'de> for NodeSeed<'b> {
                 let mut kind = NodeKind::Other;
                 let mut name: Option<StrId> = None;
                 let mut value: Option<StrId> = None;
-                let mut path: Vec<StrId> = Vec::new();
+                // (name, index expressions as node lists) per path part
+                let mut path: Vec<(StrId, Vec<Vec<NodeId>>)> = Vec::new();
                 // (name, children) per attribute
                 let mut attrs: Vec<(StrId, Vec<NodeId>)> = Vec::new();
                 let mut kids: Vec<NodeId> = Vec::new();
@@ -468,7 +531,16 @@ impl<'de, 'b> DeserializeSeed<'de> for NodeSeed<'b> {
                     NodeKind::Macro => {
                         b.dast.a_start[id as usize] = b.dast.path.len() as u32;
                         b.dast.a_count[id as usize] = path.len() as u32;
-                        b.dast.path.extend_from_slice(&path);
+                        for (name, indices) in path {
+                            b.dast.path.push(name);
+                            b.dast.path_i_start.push(b.dast.idx_c_start.len() as u32);
+                            b.dast.path_i_count.push(indices.len() as u32);
+                            for nodes in indices {
+                                b.dast.idx_c_start.push(b.dast.children.len() as u32);
+                                b.dast.idx_c_count.push(nodes.len() as u32);
+                                b.dast.children.extend_from_slice(&nodes);
+                            }
+                        }
                     }
                     _ => {}
                 }
@@ -482,28 +554,110 @@ impl<'de, 'b> DeserializeSeed<'de> for NodeSeed<'b> {
 struct PathSeed<'b>(&'b mut JsonBuilder);
 
 impl<'de, 'b> DeserializeSeed<'de> for PathSeed<'b> {
-    type Value = Vec<StrId>;
+    type Value = Vec<(StrId, Vec<Vec<NodeId>>)>;
     fn deserialize<D: de::Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
         struct V<'b>(&'b mut JsonBuilder);
         impl<'de, 'b> Visitor<'de> for V<'b> {
-            type Value = Vec<StrId>;
+            type Value = Vec<(StrId, Vec<Vec<NodeId>>)>;
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 f.write_str("a macro path array")
             }
             fn visit_seq<A: SeqAccess<'de>>(self, mut s: A) -> Result<Self::Value, A::Error> {
-                #[derive(serde::Deserialize)]
-                struct Part<'a> {
-                    #[serde(borrow)]
-                    name: std::borrow::Cow<'a, str>,
-                }
                 let mut v = Vec::new();
-                while let Some(p) = s.next_element::<Part>()? {
-                    v.push(self.0.intern(&p.name));
+                while let Some(p) = s.next_element_seed(PartSeed(self.0))? {
+                    v.push(p);
                 }
                 Ok(v)
             }
         }
         d.deserialize_seq(V(self.0))
+    }
+}
+
+/// One path part: `{name, index: [{value: [nodes]}, ...]}`.
+struct PartSeed<'b>(&'b mut JsonBuilder);
+
+impl<'de, 'b> DeserializeSeed<'de> for PartSeed<'b> {
+    type Value = (StrId, Vec<Vec<NodeId>>);
+    fn deserialize<D: de::Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
+        struct V<'b>(&'b mut JsonBuilder);
+        impl<'de, 'b> Visitor<'de> for V<'b> {
+            type Value = (StrId, Vec<Vec<NodeId>>);
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("a path part object")
+            }
+            fn visit_map<A: MapAccess<'de>>(self, mut m: A) -> Result<Self::Value, A::Error> {
+                let mut name = None;
+                let mut indices = Vec::new();
+                while let Some(key) = m.next_key::<std::borrow::Cow<str>>()? {
+                    match key.as_ref() {
+                        "name" => {
+                            let s: std::borrow::Cow<str> = m.next_value()?;
+                            name = Some(self.0.intern(&s));
+                        }
+                        "index" => indices = m.next_value_seed(IndexListSeed(self.0))?,
+                        _ => {
+                            m.next_value::<de::IgnoredAny>()?;
+                        }
+                    }
+                }
+                let name = name.unwrap_or_else(|| self.0.intern(""));
+                Ok((name, indices))
+            }
+        }
+        d.deserialize_map(V(self.0))
+    }
+}
+
+/// `[{type: "index", value: [nodes]}, ...]`
+struct IndexListSeed<'b>(&'b mut JsonBuilder);
+
+impl<'de, 'b> DeserializeSeed<'de> for IndexListSeed<'b> {
+    type Value = Vec<Vec<NodeId>>;
+    fn deserialize<D: de::Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
+        struct V<'b>(&'b mut JsonBuilder);
+        impl<'de, 'b> Visitor<'de> for V<'b> {
+            type Value = Vec<Vec<NodeId>>;
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("an index array")
+            }
+            fn visit_seq<A: SeqAccess<'de>>(self, mut s: A) -> Result<Self::Value, A::Error> {
+                let mut v = Vec::new();
+                while let Some(nodes) = s.next_element_seed(IndexSeed(self.0))? {
+                    v.push(nodes);
+                }
+                Ok(v)
+            }
+        }
+        d.deserialize_seq(V(self.0))
+    }
+}
+
+/// One index object: only its `value` node list matters.
+struct IndexSeed<'b>(&'b mut JsonBuilder);
+
+impl<'de, 'b> DeserializeSeed<'de> for IndexSeed<'b> {
+    type Value = Vec<NodeId>;
+    fn deserialize<D: de::Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
+        struct V<'b>(&'b mut JsonBuilder);
+        impl<'de, 'b> Visitor<'de> for V<'b> {
+            type Value = Vec<NodeId>;
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("an index object")
+            }
+            fn visit_map<A: MapAccess<'de>>(self, mut m: A) -> Result<Self::Value, A::Error> {
+                let mut nodes = Vec::new();
+                while let Some(key) = m.next_key::<std::borrow::Cow<str>>()? {
+                    if key == "value" {
+                        nodes = m.next_value_seed(NodeListSeed(self.0))?;
+                    } else {
+                        m.next_value::<de::IgnoredAny>()?;
+                    }
+                }
+                Ok(nodes)
+            }
+        }
+        d.deserialize_map(V(self.0))
     }
 }
 

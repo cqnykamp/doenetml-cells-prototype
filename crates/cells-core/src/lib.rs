@@ -10,12 +10,13 @@ pub mod dast;
 pub mod document;
 pub mod error;
 pub mod eval;
+pub mod expr;
 pub mod ops;
 pub mod program;
 pub mod reference;
 pub mod test_utils;
 
-pub use document::{CellIdx, Child, CompIdx, Components, Document, LoadTimings, Request, Tick, NONE, TEXT_BIT};
+pub use document::{CellIdx, Child, CompIdx, Components, Document, EssentialKey, LoadTimings, Repeat, Request, ScopeId, Structure, Tick, NONE, TEXT_BIT};
 pub use error::{Error, Result};
 pub use eval::{DirtyClosure, DirtyScan, Evaluator, FullRecompute};
 pub use ops::{Instr, Op};

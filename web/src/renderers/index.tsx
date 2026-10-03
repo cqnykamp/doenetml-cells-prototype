@@ -5,6 +5,9 @@ import { Graph } from "./Graph";
 import { Point } from "./Point";
 import { NumberView } from "./Number";
 import { NumberInput } from "./NumberInput";
+import { Slider } from "./Slider";
+import { BooleanInput } from "./BooleanInput";
+import { MathView } from "./Math";
 
 export function Component({ idx, inGraph }: { idx: number; inGraph: boolean }) {
   const store = useStore();
@@ -19,6 +22,21 @@ export function Component({ idx, inGraph }: { idx: number; inGraph: boolean }) {
       return <NumberView idx={idx} />;
     case "numberInput":
       return <NumberInput idx={idx} />;
+    case "slider":
+      return <Slider idx={idx} />;
+    case "booleanInput":
+      return <BooleanInput idx={idx} />;
+    case "math":
+      return <MathView idx={idx} />;
+    case "evaluate":
+      return <NumberView idx={idx} />;
+    // A repeat's children are every iteration's expanded template; a
+    // collect's are copies of what it gathered. Both render inline.
+    case "repeatForSequence":
+    case "collect":
+      return <Children idx={idx} inGraph={inGraph} />;
+    case "sequenceValue":
+      return <NumberView idx={idx} />;
     default:
       return null; // <op> has no rendering
   }
@@ -31,17 +49,22 @@ const CHUNK = 32;
 
 export function Children({ idx, inGraph }: { idx: number; inGraph: boolean }) {
   const store = useStore();
-  const items = useMemo(() => store.comps.children(idx), [store, idx]);
+  // The table is replaced by a rebuild; `structureVersion` re-reads it.
+  const items = useMemo(() => store.comps.children(idx), [store, store.comps, idx]);
   return <ChildRange items={items} from={0} to={items.length} inGraph={inGraph} />;
 }
 
+/** Children are keyed by stable component identity (DAST node and scope),
+ * not by index, so after a rebuild React updates surviving components in
+ * place and mounts only the iterations that appeared. */
 function ChildRange({ items, from, to, inGraph }: { items: Child[]; from: number; to: number; inGraph: boolean }) {
+  const store = useStore();
   const n = to - from;
   if (n <= CHUNK) {
     return (
       <>
         {items.slice(from, to).map((ch, i) =>
-          "c" in ch ? <Component key={from + i} idx={ch.c} inGraph={inGraph} /> : <span key={from + i}>{ch.t}</span>,
+          "c" in ch ? <Component key={store.comps.key(ch.c, from + i)} idx={ch.c} inGraph={inGraph} /> : <span key={from + i}>{ch.t}</span>,
         )}
       </>
     );

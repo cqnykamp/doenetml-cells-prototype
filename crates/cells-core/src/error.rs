@@ -38,6 +38,22 @@ pub enum Error {
     LiteralArg,
     #[error("dependency cycle involving component '{0}'")]
     Cycle(String),
+    #[error("index in '${0}' is not a constant: only literal integers and iteration index names (plus or minus a literal) are supported")]
+    DynamicIndex(String),
+    #[error("bad index in '${0}'")]
+    BadIndex(String),
+    #[error("'${0}' cannot be indexed; only repeats and collects can")]
+    NotIndexable(String),
+    #[error("'${0}' names an iteration with {1} component children, so it needs a child name")]
+    AmbiguousIteration(String, usize),
+    #[error("<collect> componentType '{0}' is not a known tag")]
+    BadCollectType(String),
+    #[error("<collect> needs a 'from' reference and a 'componentType'")]
+    BadCollect,
+    #[error("document structure did not settle after {0} rebuilds")]
+    UnstableStructure(usize),
+    #[error("cannot parse math '{text}': {reason}")]
+    BadMath { text: String, reason: String },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
