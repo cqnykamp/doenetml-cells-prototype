@@ -16,9 +16,15 @@ export default defineConfig({
       "@doenet/static-assets/entity-map": resolve(doenetml, "packages/static-assets/dist/entity-map.js"),
     },
   },
+  // COOP/COEP make the page cross-origin isolated so SharedArrayBuffer exists.
   server: {
     port: 5173,
     fs: { allow: [repoRoot, doenetml] },
+    headers: { "Cross-Origin-Opener-Policy": "same-origin", "Cross-Origin-Embedder-Policy": "require-corp" },
   },
+  preview: {
+    headers: { "Cross-Origin-Opener-Policy": "same-origin", "Cross-Origin-Embedder-Policy": "require-corp" },
+  },
+  worker: { format: "es" },
   build: { target: "esnext" },
 });

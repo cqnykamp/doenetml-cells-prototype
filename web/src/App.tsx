@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CellStore, loadDocument, type LoadTimings } from "./core";
+import { CellStore, loadDocument, type BackendKind, type LoadTimings } from "./core";
 import { StoreContext } from "./hooks";
 import { CommitReporter, Component } from "./renderers";
 import { parseDoenetML } from "./parse";
@@ -37,13 +37,13 @@ export function App() {
   const [source, setSource] = useState(SAMPLE);
   const [error, setError] = useState<string | null>(null);
   const [evaluator, setEvaluator] = useState(params.get("eval") ?? "dirty-closure");
+  const [backend, setBackend] = useState<BackendKind>((params.get("backend") as BackendKind) ?? "main");
 
   async function loadJson(json: string, t: Partial<LoadTimings>) {
     setError(null);
     window.__cells!.ready = false;
     try {
-      const s = await loadDocument(json, t);
-      s.core.set_evaluator(evaluator);
+      const s = await loadDocument(json, backend, evaluator, t);
       const t0 = performance.now();
       t.firstRender = NaN;
       setStore(s);
@@ -102,10 +102,18 @@ export function App() {
         </label>
         <label>
           Evaluator:{" "}
-          <select value={evaluator} onChange={(e) => { setEvaluator(e.target.value); store?.core.set_evaluator(e.target.value); }}>
+          <select value={evaluator} onChange={(e) => { setEvaluator(e.target.value); store?.setEvaluator(e.target.value); }}>
             <option>dirty-closure</option>
             <option>dirty-scan</option>
             <option>full</option>
+          </select>
+        </label>
+        <label>
+          Backend:{" "}
+          <select value={backend} onChange={(e) => setBackend(e.target.value as BackendKind)}>
+            <option value="main">main thread</option>
+            <option value="worker-sab">worker + SharedArrayBuffer</option>
+            <option value="worker-msg">worker + postMessage</option>
           </select>
         </label>
         <button onClick={loadSource}>Load source</button>
@@ -129,7 +137,7 @@ function Timings({ t, store }: { t: Partial<LoadTimings>; store: CellStore | nul
   return (
     <div className="timings">
       {`cells ${store?.manifest.nCells ?? "?"}  essential ${store?.manifest.nEssential ?? "?"}  components ${store?.manifest.components.length ?? "?"}\n`}
-      {`fetch/parse ${f(t.fetch)}  wasm init ${f(t.wasmInit)}  core total ${f(t.coreTotal)}  manifest ${f(t.manifest)}  first render ${f(t.firstRender)}  (ms)\n`}
+      {`backend ${t.backend}  fetch/parse ${f(t.fetch)}  worker ${f(t.workerSpawn)}  wasm init ${f(t.wasmInit)}  core total ${f(t.coreTotal)}  manifest ${f(t.manifest)} + ${f(t.manifestTransfer)}  first render ${f(t.firstRender)}  (ms)\n`}
       {c && `  core: deserialize ${f(c.deserialize)}  build ${f(c.build)}  schedule ${f(c.schedule)}  initial compute ${f(c.initial_compute)}`}
     </div>
   );

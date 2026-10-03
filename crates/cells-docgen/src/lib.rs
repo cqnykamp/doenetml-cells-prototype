@@ -110,3 +110,90 @@ pub const DEFAULT_SWEEP: &[&str] = &[
     "aliases-10", "aliases-1000", "aliases-10000",
     "grid-100x10", "grid-1000x10", "grid-100x100", "grid-1000x100",
 ];
+
+/// Translate a generated document into DoenetML the current core accepts:
+/// each `<op>` becomes a `<number>` with the equivalent math expression.
+/// Clamp has no one-line equivalent and becomes a plain copy, so chains lose
+/// their final clamp; the values differ but the dependency shape is the same.
+pub fn to_legacy(doc: &str) -> String {
+    let mut out = String::new();
+    // The current core rejects non-graphical children of <graph>, so numbers
+    // that the generator placed inside a graph are hoisted above it.
+    let mut graph_lines: Vec<String> = Vec::new();
+    let mut hoisted: Vec<String> = Vec::new();
+    let mut in_graph = false;
+    for line in doc.lines() {
+        // Split lines that hold an <op .../> followed by another element.
+        let mut pieces: Vec<&str> = Vec::new();
+        let mut rest = line;
+        while let Some(i) = rest.find("/><") {
+            pieces.push(&rest[..i + 2]);
+            rest = &rest[i + 2..];
+        }
+        pieces.push(rest);
+        for piece in pieces {
+            let t = piece.trim();
+            if t.is_empty() {
+                continue;
+            }
+            let translated = if let Some(rest) = t.strip_prefix("<op ") {
+                let attr = |k: &str| -> Option<String> {
+                    let pat = format!("{k}=\"");
+                    let i = rest.find(&pat)? + pat.len();
+                    let j = rest[i..].find('"')? + i;
+                    Some(rest[i..j].to_string())
+                };
+                let name = attr("name").unwrap_or_default();
+                let kind = attr("kind").unwrap_or_default();
+                let args: Vec<String> = attr("args").unwrap_or_default().split_whitespace().map(String::from).collect();
+                let a = args.first().cloned().unwrap_or_default();
+                let b = args.get(1).cloned().unwrap_or_default();
+                let expr = match kind.as_str() {
+                    "add" => format!("{a} + {b}"),
+                    "sub" => format!("{a} - {b}"),
+                    "mul" => format!("{a} * {b}"),
+                    "negate" => format!("-{a}"),
+                    "scale" => format!("{} * {a}", attr("k").unwrap_or_default()),
+                    "offset" => format!("{a} + {}", attr("k").unwrap_or_default()),
+                    "lerp" => {
+                        let t = attr("t").unwrap_or_default();
+                        format!("{a} + {t} * ({b} - {a})")
+                    }
+                    _ => a.clone(), // clamp and unknown: plain copy
+                };
+                Some(format!("<number name=\"{name}\">{expr}</number>"))
+            } else {
+                None
+            };
+            let is_number = translated.is_some();
+            // The current core has no numberInput; mathInput with prefill is
+            // the equivalent input.
+            let text = translated.unwrap_or_else(|| t.replace("<numberInput ", "<mathInput ").replace(" value=\"", " prefill=\""));
+            let starts_graph = t.starts_with("<graph");
+            let ends_graph = t.contains("</graph>");
+            if starts_graph {
+                in_graph = true;
+            }
+            if in_graph && is_number {
+                hoisted.push(text);
+            } else if in_graph {
+                graph_lines.push(text);
+            } else {
+                out.push_str(&text);
+                out.push('\n');
+            }
+            if ends_graph {
+                in_graph = false;
+                for h in hoisted.drain(..) {
+                    out.push_str(&h);
+                    out.push('\n');
+                }
+                for g in graph_lines.drain(..) {
+                    out.push_str(&g);
+                    out.push('\n');
+                }
+            }
+        }
+    }
+    out
+}

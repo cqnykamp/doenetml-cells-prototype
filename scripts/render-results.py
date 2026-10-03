@@ -36,11 +36,14 @@ def collect_stats():
         return {}
     return {json.loads(l)["spec"]: json.loads(l) for l in p.read_text().splitlines() if l.strip()}
 
-def collect_e2e():
-    files = sorted(RAW.glob("e2e-*.json"))
+def collect_latest(pattern):
+    files = sorted(RAW.glob(pattern))
     if not files:
         return None
     return json.loads(files[-1].read_text())
+
+def collect_e2e():
+    return collect_latest("e2e-*.json")
 
 def cpu_name():
     try:
@@ -138,20 +141,40 @@ def main():
     if e2e:
         md.append("## Browser end to end (headless Chromium, Playwright)\n")
         md.append(f"Measured on {e2e['date']}: load the fixture, then drag the target point for {e2e['steps']} pointer moves. Startup here includes fetching the JSON, wasm instantiation, the core stages, manifest construction and React's first render.\n")
-        md.append("| fixture | evaluator | cells | components | fetch | wasm init | core total | manifest | first render | total (ms) |")
-        md.append("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|")
-        for r in sorted(e2e["results"], key=lambda r: (spec_key(r["spec"]), r["evaluator"])):
+        md.append("Startup is shown for the `full` evaluator only (the evaluator does not affect loading). *worker* is spawn, module load and the JSON copy into the worker; *manifest* is building it in wasm plus parsing it on the main thread.\n")
+        md.append("| fixture | backend | cells | components | fetch | worker | wasm init | core total | manifest | first render | total (ms) |")
+        md.append("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+        for r in sorted(e2e["results"], key=lambda r: (spec_key(r["spec"]), r.get("backend", "main"))):
+            if r["evaluator"] != "full":
+                continue
             t = r["timings"] or {}
-            parts = [t.get("fetch"), t.get("wasmInit"), t.get("coreTotal"), t.get("manifest"), t.get("firstRender")]
-            total = sum(x for x in parts if isinstance(x, (int, float)) and x == x)
-            md.append(f"| {r['spec']} | {r['evaluator']} | {r['nCells']} | {r['nComponents']} | " + " | ".join(f"{x:.1f}" if isinstance(x, (int, float)) and x == x else "–" for x in parts) + f" | {total:.1f} |")
+            num = lambda x: x if isinstance(x, (int, float)) and x == x else 0.0
+            manifest = num(t.get("manifest")) + num(t.get("manifestTransfer"))
+            parts = [t.get("fetch"), t.get("workerSpawn"), t.get("wasmInit"), t.get("coreTotal"), manifest, t.get("firstRender")]
+            total = sum(num(x) for x in parts)
+            md.append(f"| {r['spec']} | {r.get('backend', 'main')} | {r['nCells']} | {r['nComponents']} | " + " | ".join(f"{x:.1f}" if isinstance(x, (int, float)) and x == x else "–" for x in parts) + f" | {total:.1f} |")
         md.append("")
-        md.append("Per drag step, in ms. *Core* is the time inside the wasm request call. *Commit* is from the request until React committed the resulting DOM updates. *Frame* is from the request until the next animation frame.\n")
-        md.append("| fixture | evaluator | changed cells | core p50 | core p90 | commit p50 | commit p90 | frame p50 | frame p90 | frame max |")
-        md.append("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|")
-        for r in sorted(e2e["results"], key=lambda r: (spec_key(r["spec"]), r["evaluator"])):
+        md.append("Per drag step, in ms. *Core* is the time inside the wasm request call, measured where the core runs. *Round trip* is until the changed cells are readable on the main thread. *Commit* is until React committed the resulting DOM updates. *Frame* is until the next animation frame.\n")
+        md.append("| fixture | backend | evaluator | changed cells | core p50 | round trip p50 | commit p50 | commit p90 | frame p50 | frame p90 | frame max |")
+        md.append("|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|")
+        for r in sorted(e2e["results"], key=lambda r: (spec_key(r["spec"]), r.get("backend", "main"), r["evaluator"])):
             k = r["tick"]
-            md.append(f"| {r['spec']} | {r['evaluator']} | {k['changed']['p50']:.0f} | {k['core']['p50']:.3f} | {k['core']['p90']:.3f} | {k['commit']['p50']:.2f} | {k['commit']['p90']:.2f} | {k['frame']['p50']:.2f} | {k['frame']['p90']:.2f} | {k['frame']['max']:.2f} |")
+            rt = k.get("roundTrip", {}).get("p50", float("nan"))
+            md.append(f"| {r['spec']} | {r.get('backend', 'main')} | {r['evaluator']} | {k['changed']['p50']:.0f} | {k['core']['p50']:.3f} | {rt:.2f} | {k['commit']['p50']:.2f} | {k['commit']['p90']:.2f} | {k['frame']['p50']:.2f} | {k['frame']['p90']:.2f} | {k['frame']['max']:.2f} |")
+        md.append("")
+
+    base = collect_latest("baseline-*.json")
+    if base:
+        md.append("## Baseline: the current DoenetML core (JS core, standalone bundle)\n")
+        md.append(f"Measured on {base['date']} with the standalone bundle at `{base['standalone']}`. The same generated documents, with each `<op>` rewritten as a `<number>` holding the equivalent math expression (chains lose their final clamp). *init* is from `renderDoenetViewerToContainer` to `initializedCallback`. *movePoint* is the core's own action API awaited {base['steps']} times; *DOM* is until the last attribute mutation on the graph after each action. The pointer drag is {base['steps']} real mouse moves; the current renderer offers no per-tick hook, so only wall time per move is reported.\n")
+        md.append("| fixture | init (ms) | first point in DOM (ms) | movePoint p50 | movePoint p90 | DOM p50 | frame p50 | pointer drag ms/move |")
+        md.append("|---|---:|---:|---:|---:|---:|---:|---:|")
+        for r in sorted(base["results"], key=lambda r: spec_key(r["spec"])):
+            if r.get("error"):
+                md.append(f"| {r['spec']} | failed: {r['error']} | | | | | | |")
+                continue
+            a = r["action"]
+            md.append(f"| {r['spec']} | {r['init_ms']:.0f} | {r.get('first_point_ms', float('nan')):.0f} | {a['core']['p50']:.2f} | {a['core']['p90']:.2f} | {a['dom']['p50']:.2f} | {a['frame']['p50']:.2f} | {r['drag']['ms_per_move']:.1f} |")
         md.append("")
 
     (ROOT / "RESULTS.md").write_text("\n".join(md))

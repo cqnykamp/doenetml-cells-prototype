@@ -14,7 +14,7 @@ export default defineConfig({
   webServer: {
     command: "pnpm build && pnpm preview",
     url: "http://localhost:4173",
-    reuseExistingServer: true,
+    reuseExistingServer: false,
     timeout: 180_000,
   },
 });

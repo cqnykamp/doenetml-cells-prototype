@@ -10,6 +10,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 
 const SPECS = (process.env.CELLS_E2E_FIXTURES ?? "points-100,points-1000,points-10000,chain-1000,chain-10000,chain-100000,fanout-1000,fanout-10000,grid-1000x10,grid-1000x100").split(",");
 const EVALUATORS = (process.env.CELLS_E2E_EVALS ?? "dirty-closure,full").split(",");
+const BACKENDS = (process.env.CELLS_E2E_BACKENDS ?? "main,worker-sab,worker-msg").split(",");
 const STEPS = 120;
 
 function dragTarget(spec: string): string {
@@ -40,18 +41,20 @@ test.afterAll(() => {
   let merged = results;
   if (existsSync(file)) {
     const prev = JSON.parse(readFileSync(file, "utf8")).results as any[];
-    const fresh = new Set(results.map((r) => `${r.spec}|${r.evaluator}`));
-    merged = [...prev.filter((r) => !fresh.has(`${r.spec}|${r.evaluator}`)), ...results];
+    const key = (r: any) => `${r.spec}|${r.backend ?? "main"}|${r.evaluator}`;
+    const fresh = new Set(results.map(key));
+    merged = [...prev.filter((r) => !fresh.has(key(r))), ...results];
   }
   writeFileSync(file, JSON.stringify({ date: stamp, steps: STEPS, results: merged }, null, 1));
 });
 
 for (const spec of SPECS) {
+  for (const backend of BACKENDS) {
   for (const evaluator of EVALUATORS) {
-    test(`${spec} [${evaluator}]`, async ({ page }) => {
+    test(`${spec} [${backend}] [${evaluator}]`, async ({ page }) => {
       page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") console.log(`[browser ${m.type()}] ${m.text()}`); });
       page.on("pageerror", (e) => console.log(`[pageerror] ${e.message}`));
-      await page.goto(`/?doc=${spec}&eval=${evaluator}`);
+      await page.goto(`/?doc=${spec}&eval=${evaluator}&backend=${backend}`);
       await waitReady(page);
       const load = await page.evaluate(() => {
         const s = window.__cells!.store!;
@@ -79,16 +82,18 @@ for (const spec of SPECS) {
       expect(samples.length).toBeGreaterThan(10);
 
       const r = {
-        spec, evaluator, ...load,
+        spec, backend, evaluator, ...load,
         tick: {
           core: stats(samples.map((s: any) => s.core)),
+          roundTrip: stats(samples.map((s: any) => s.roundTrip)),
           commit: stats(samples.map((s: any) => s.commit)),
           frame: stats(samples.map((s: any) => s.frame)),
           changed: stats(samples.map((s: any) => s.changed)),
         },
       };
       results.push(r);
-      console.log(`${spec} [${evaluator}] cells=${load.nCells} core p50=${r.tick.core.p50.toFixed(3)}ms commit p50=${r.tick.commit.p50.toFixed(2)}ms frame p50=${r.tick.frame.p50.toFixed(2)}ms first render=${load.timings?.firstRender?.toFixed(1)}ms`);
+      console.log(`${spec} [${backend}] [${evaluator}] cells=${load.nCells} core p50=${r.tick.core.p50.toFixed(3)}ms rt p50=${r.tick.roundTrip.p50.toFixed(2)}ms commit p50=${r.tick.commit.p50.toFixed(2)}ms frame p50=${r.tick.frame.p50.toFixed(2)}ms first render=${load.timings?.firstRender?.toFixed(1)}ms`);
     });
+  }
   }
 }
