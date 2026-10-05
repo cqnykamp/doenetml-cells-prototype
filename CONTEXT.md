@@ -59,10 +59,51 @@ cell-addressed. The core resolves a request by inverting through operators
 until essential cells are reached, then recomputes.
 
 **Inverse** — The rule an operator uses to turn a requested output value into
-a requested input value. Binary operators always write their first argument.
-Every derived cell has an essential ancestor, because literal parameters are
-not cells, so inversion fails only dynamically (division by zero); such a
-request is dropped.
+requested input values. Most operators write one input, their first argument;
+a fan-out inverse writes several. Every derived cell has an essential
+ancestor, because literal parameters are not cells, so inversion fails only
+dynamically (division by zero); such a request is dropped.
+
+**Fan-out inverse** — An inverse that turns one requested output value into
+requests on several inputs at once (a circle's radius moving both coordinates
+of its through point). Each resulting request is then inverted on its own.
+
+**Local inverse** — An inverse that uses only the operator's own inputs, their
+current values and the requested value. Plan 3's finding: every inverse is
+local; the one other thing a *request* needs is the realized value of the
+points requested with it (see point group, lookahead), never state saved
+from an earlier tick.
+
+**Point group** — Points requested together in one tick: a whole-shape drag
+from the renderer, or the points one inverse moves at once. The request
+engine keeps a group together when a strict subset of it is held back by a
+constraint, by the same shift. A soft preference about drag behavior, not a
+document invariant; the same requests sent singly move only what they name.
+See ADR 0006.
+
+**Rigid inverse** — The inverse of the one identity instruction a `rigid`
+polygon owns: it projects the requested change onto a rigid motion or
+similarity. The document asked for the coupling, so it lives in the graph.
+
+**Multi-output instruction** — An instruction that produces several cells.
+Requests in one tick on its outputs are gathered into one vector, with
+unspecified outputs at their current values, and inverted once.
+
+**Lookahead** — Asking, during inversion, what value a cell would actually
+take if a given value were requested of it: the request is inverted on a
+scratch copy of the cells and the affected instructions are evaluated
+forward. No cell is written and no tick runs. The request engine uses it on
+a point group to learn which points are constrained before queuing the rest.
+
+**Realized value** — The value a cell actually takes after a request, which
+differs from the requested value when a projection inverse lies on the chain
+(a snapped point). Lookahead computes it without a tick.
+
+**Build-time variety** — Complication in a component's current inverse that
+comes from the many ways the author may specify the component (a line by two
+points, by a point and a slope, by an equation). In the cell model each way is
+a different operator chain chosen when the document is built, so the variety
+never reaches an inverse.
 
 **Projection inverse** — The inverse rule for an idempotent operator (Round,
 Clamp, Snap): the requested output value is passed through the operator itself

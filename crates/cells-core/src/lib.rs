@@ -11,13 +11,15 @@ pub mod document;
 pub mod error;
 pub mod eval;
 pub mod expr;
+pub mod geo;
 pub mod ops;
 pub mod program;
 pub mod reference;
 pub mod test_utils;
 
-pub use document::{CellIdx, Child, CompIdx, Components, Document, LoadTimings, Repeat, Request, ScopeId, Structure, Tick, NONE, TEXT_BIT};
+pub use document::{CellIdx, Child, CompIdx, Components, Document, LoadTimings, NONE, Repeat, Request, ScopeId, Structure, TEXT_BIT, Tick};
 pub use error::{Error, Result};
 pub use eval::{DirtyClosure, DirtyScan, Evaluator, FullRecompute};
-pub use ops::{Instr, Op};
-pub use program::Program;
+pub use geo::{Pivot, Produced, RigidOpts, VecOp};
+pub use ops::{Instr, Op, OpSpec};
+pub use program::{PointRequest, Program};

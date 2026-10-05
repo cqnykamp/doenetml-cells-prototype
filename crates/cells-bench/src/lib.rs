@@ -63,6 +63,8 @@ pub fn drag_target(doc: &cells_core::Document, spec: &str) -> cells_core::CellId
             doc.prop_cells(c, "x").unwrap()[0]
         }
         "fanout" => doc.cell("n", "value").unwrap(),
+        // The first circle's center: a fan-out inverse onto its three points.
+        "circles3" => doc.cell("k0", "cx").unwrap(),
         "aliases" => doc.cell("p", "x").unwrap(),
         "grid" => doc.cell("p0", "x").unwrap(),
         _ => doc.cell("p0", "x").unwrap(),

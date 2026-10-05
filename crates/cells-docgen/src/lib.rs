@@ -220,6 +220,24 @@ pub fn mathchain(l: usize) -> String {
     s
 }
 
+/// N circles, each through three of its own points, in one graph; a
+/// numberInput drives the x of every first point so one request moves N
+/// circumcenters. Dragging a circle's center fans out to its three points
+/// (plan 3 sanity run). Cells per circle: 6 point cells + 3 derived.
+pub fn circles3(n: usize) -> String {
+    let mut s = String::from("<numberInput name=\"n\" value=\"0\"/>\n<graph name=\"g\">\n");
+    for i in 0..n {
+        let (x, y) = ((i % 17) as f64 - 8.0, ((i * 7) % 17) as f64 - 8.0);
+        let _ = writeln!(
+            s,
+            "  <point name=\"a{i}\" x=\"$n\" y=\"{y}\"/><point name=\"b{i}\" x=\"{}\" y=\"{}\"/><point name=\"c{i}\" x=\"{}\" y=\"{}\"/><circle name=\"k{i}\" through=\"$a{i} $b{i} $c{i}\"/>",
+            x + 1.0, y, x, y + 1.0
+        );
+    }
+    s.push_str("</graph>\n");
+    s
+}
+
 /// Parse a CLI-style spec such as `chain-1000` or `grid-100x10`.
 pub fn from_spec(spec: &str) -> Option<String> {
     let (shape, size) = spec.split_once('-')?;
@@ -235,6 +253,7 @@ pub fn from_spec(spec: &str) -> Option<String> {
         "intchain" => intchain(size.parse().ok()?),
         "mathchain" => mathchain(size.parse().ok()?),
         "hidden" => hidden(size.parse().ok()?),
+        "circles3" => circles3(size.parse().ok()?),
         "grid" => {
             let (n, l) = size.split_once('x')?;
             grid(n.parse().ok()?, l.parse().ok()?)
@@ -257,6 +276,7 @@ pub const DEFAULT_SWEEP: &[&str] = &[
     "intchain-1000", "intchain-100000",
     "mathchain-1000", "mathchain-100000",
     "hidden-1000",
+    "circles3-1000", "circles3-10000",
 ];
 
 /// The current-core counterpart of a spec, for the baseline measurement.

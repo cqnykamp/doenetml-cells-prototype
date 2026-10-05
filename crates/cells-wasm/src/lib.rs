@@ -2,7 +2,7 @@
 //! over wasm memory (see `cells_ptr`/`cells_len`), receives a one-time render
 //! manifest, and writes with cell-addressed requests. See ADR 0001.
 
-use cells_core::{DirtyClosure, DirtyScan, Document, Evaluator, FullRecompute, Request};
+use cells_core::{DirtyClosure, DirtyScan, Document, Evaluator, FullRecompute, PointRequest, Request};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -144,9 +144,20 @@ impl Core {
     /// every pointer and length above must be re-read.
     pub fn request(&mut self, cells: &[u32], values: &[f64]) -> Vec<u32> {
         let reqs: Vec<Request> = cells.iter().zip(values).map(|(&cell, &value)| Request { cell, value }).collect();
+        self.apply(&reqs, &[])
+    }
+
+    /// Points dragged together, as `x0, y0, x1, y1, ...`: one point group
+    /// (ADR 0006), so a constrained point carries the others with it.
+    pub fn request_points(&mut self, cells: &[u32], values: &[f64]) -> Vec<u32> {
+        let pts: Vec<PointRequest> = cells.chunks_exact(2).zip(values.chunks_exact(2)).map(|(c, v)| PointRequest { cells: [c[0], c[1]], values: [v[0], v[1]] }).collect();
+        self.apply(&[], &[pts])
+    }
+
+    fn apply(&mut self, reqs: &[Request], groups: &[Vec<PointRequest>]) -> Vec<u32> {
         let n_before = self.doc.program.len();
         let clock = web_time::Instant::now();
-        let tick = self.doc.request_with(self.evaluator.as_mut(), &reqs);
+        let tick = self.doc.request_with_groups(self.evaluator.as_mut(), reqs, groups);
         self.last_dropped = tick.dropped.len() as u32;
         self.last_rebuilt = tick.rebuilt;
         self.last_rebuild_error = tick.rebuild_error;
@@ -160,6 +171,53 @@ impl Core {
             self.set_evaluator(&name).unwrap();
         }
         tick.changed
+    }
+
+    // ---- test adapter -----------------------------------------------------
+    //
+    // The current core's vitest suites run against this core through an
+    // adapter (plan 3). These calls answer by name so the adapter needs no
+    // knowledge of the column layout.
+
+    /// Component index of a dotted path as the tests write it
+    /// (`"g.Ps[2]"`), or `u32::MAX`.
+    pub fn resolve_path(&self, path: &str) -> u32 {
+        self.doc.resolve_path(path).unwrap_or(u32::MAX)
+    }
+
+    pub fn component_tag(&self, idx: u32) -> Option<String> {
+        if (idx as usize) < self.doc.n_components() { Some(self.doc.kind(idx).tag().to_string()) } else { None }
+    }
+
+    /// Cells of a prop by name, including virtual (`coords`, `center`) and
+    /// array (`points`, `vertices`) props; empty if no such prop.
+    pub fn prop_cells(&self, idx: u32, prop: &str) -> Vec<u32> {
+        if (idx as usize) >= self.doc.n_components() {
+            return Vec::new();
+        }
+        self.doc.prop_cells(idx, prop).unwrap_or_default()
+    }
+
+    pub fn cell_value(&self, cell: u32) -> f64 {
+        self.doc.cells.get(cell as usize).copied().unwrap_or(f64::NAN)
+    }
+
+    /// Whether a cell is essential (state), fixed (a constant), or derived.
+    pub fn cell_class(&self, cell: u32) -> String {
+        let c = cell as usize;
+        if c < self.doc.n_essential {
+            "essential".into()
+        } else if c < self.doc.n_essential + self.doc.n_fixed {
+            "fixed".into()
+        } else {
+            "derived".into()
+        }
+    }
+
+    /// Components named at the top level, as JSON `[[name, idx], ...]`, for
+    /// adapter diagnostics.
+    pub fn component_names_json(&self) -> String {
+        serde_json::to_string(&self.doc.component_names().collect::<Vec<_>>()).unwrap()
     }
 
     pub fn last_dropped(&self) -> u32 {

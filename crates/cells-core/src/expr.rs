@@ -176,6 +176,8 @@ pub enum Token {
     Op(char),
     LParen,
     RParen,
+    Comma,
+    Eq,
 }
 
 /// Tokenize one run of text. Identifiers are maximal letter runs (`pi` is a
@@ -215,6 +217,8 @@ pub fn tokenize(text: &str, out: &mut Vec<Token>) -> Result<(), String> {
                 '+' | '-' | '*' | '/' | '^' => Token::Op(c),
                 '(' => Token::LParen,
                 ')' => Token::RParen,
+                ',' => Token::Comma,
+                '=' => Token::Eq,
                 other => return Err(format!("unexpected '{other}'")),
             });
             i += 1;
@@ -317,4 +321,144 @@ impl<'a> Parser<'a> {
             other => return Err(format!("unexpected token {other:?}")),
         })
     }
+}
+
+/// Split tokens at every `sep` that sits outside parentheses.
+pub fn split_top(toks: &[Token], sep: &Token) -> Vec<Vec<Token>> {
+    let mut out = vec![Vec::new()];
+    let mut depth = 0i32;
+    for t in toks {
+        match t {
+            Token::LParen => depth += 1,
+            Token::RParen => depth -= 1,
+            _ => {}
+        }
+        if depth == 0 && t == sep {
+            out.push(Vec::new());
+        } else {
+            out.last_mut().unwrap().push(t.clone());
+        }
+    }
+    out
+}
+
+/// Strip one pair of enclosing parentheses, if the whole token run is
+/// wrapped in them.
+pub fn unwrap_parens(toks: &[Token]) -> Option<&[Token]> {
+    if toks.len() < 2 || toks[0] != Token::LParen || *toks.last().unwrap() != Token::RParen {
+        return None;
+    }
+    let mut depth = 0i32;
+    for (i, t) in toks.iter().enumerate() {
+        match t {
+            Token::LParen => depth += 1,
+            Token::RParen => depth -= 1,
+            _ => {}
+        }
+        if depth == 0 && i + 1 != toks.len() {
+            return None;
+        }
+    }
+    Some(&toks[1..toks.len() - 1])
+}
+
+/// Coefficients (of `vx`, of `vy`, constant) of an expression that is
+/// linear in the two symbols, each as an expression over the remaining
+/// leaves; `None` when it is not linear (a product of two variable terms,
+/// a variable in a denominator or exponent, another free symbol).
+pub fn linear_coeffs(arena: &mut Arena, id: ExprId, vx: &str, vy: &str) -> Option<[ExprId; 3]> {
+    fn is_zero(a: &Arena, e: ExprId) -> bool {
+        matches!(a.get(e), Expr::Num(v) if *v == 0.0)
+    }
+    fn is_one(a: &Arena, e: ExprId) -> bool {
+        matches!(a.get(e), Expr::Num(v) if *v == 1.0)
+    }
+    fn add(a: &mut Arena, x: ExprId, y: ExprId) -> ExprId {
+        if is_zero(a, x) {
+            y
+        } else if is_zero(a, y) {
+            x
+        } else {
+            a.push(Expr::Add(x, y))
+        }
+    }
+    fn sub(a: &mut Arena, x: ExprId, y: ExprId) -> ExprId {
+        if is_zero(a, y) {
+            x
+        } else if is_zero(a, x) {
+            a.push(Expr::Neg(y))
+        } else {
+            a.push(Expr::Sub(x, y))
+        }
+    }
+    fn mul(a: &mut Arena, x: ExprId, y: ExprId) -> ExprId {
+        if is_zero(a, x) || is_zero(a, y) {
+            a.push(Expr::Num(0.0))
+        } else if is_one(a, x) {
+            y
+        } else if is_one(a, y) {
+            x
+        } else {
+            a.push(Expr::Mul(x, y))
+        }
+    }
+    fn go(a: &mut Arena, id: ExprId, vx: &str, vy: &str) -> Option<[ExprId; 3]> {
+        let zero = a.push(Expr::Num(0.0));
+        let e = a.get(id).clone();
+        Some(match e {
+            Expr::Num(_) | Expr::Cell(_) => [zero, zero, id],
+            Expr::Sym(s) if s == vx => [a.push(Expr::Num(1.0)), zero, zero],
+            Expr::Sym(s) if s == vy => [zero, a.push(Expr::Num(1.0)), zero],
+            Expr::Sym(_) => return None,
+            Expr::Neg(x) => {
+                let [p, q, r] = go(a, x, vx, vy)?;
+                [sub(a, zero, p), sub(a, zero, q), sub(a, zero, r)]
+            }
+            Expr::Add(x, y) => {
+                let [p1, q1, r1] = go(a, x, vx, vy)?;
+                let [p2, q2, r2] = go(a, y, vx, vy)?;
+                [add(a, p1, p2), add(a, q1, q2), add(a, r1, r2)]
+            }
+            Expr::Sub(x, y) => {
+                let [p1, q1, r1] = go(a, x, vx, vy)?;
+                let [p2, q2, r2] = go(a, y, vx, vy)?;
+                [sub(a, p1, p2), sub(a, q1, q2), sub(a, r1, r2)]
+            }
+            Expr::Mul(x, y) => {
+                let l = go(a, x, vx, vy)?;
+                let r = go(a, y, vx, vy)?;
+                let l_const = is_zero(a, l[0]) && is_zero(a, l[1]);
+                let r_const = is_zero(a, r[0]) && is_zero(a, r[1]);
+                if l_const {
+                    [mul(a, l[2], r[0]), mul(a, l[2], r[1]), mul(a, l[2], r[2])]
+                } else if r_const {
+                    [mul(a, r[2], l[0]), mul(a, r[2], l[1]), mul(a, r[2], l[2])]
+                } else {
+                    return None;
+                }
+            }
+            Expr::Div(x, y) => {
+                let l = go(a, x, vx, vy)?;
+                let r = go(a, y, vx, vy)?;
+                if !(is_zero(a, r[0]) && is_zero(a, r[1])) {
+                    return None;
+                }
+                let d = r[2];
+                let div = |a: &mut Arena, n: ExprId| {
+                    if is_zero(a, n) { n } else { a.push(Expr::Div(n, d)) }
+                };
+                [div(a, l[0]), div(a, l[1]), div(a, l[2])]
+            }
+            Expr::Pow(x, y) => {
+                let l = go(a, x, vx, vy)?;
+                let r = go(a, y, vx, vy)?;
+                if is_zero(a, l[0]) && is_zero(a, l[1]) && is_zero(a, r[0]) && is_zero(a, r[1]) {
+                    [zero, zero, id]
+                } else {
+                    return None;
+                }
+            }
+        })
+    }
+    go(arena, id, vx, vy)
 }

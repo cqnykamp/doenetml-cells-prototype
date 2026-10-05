@@ -12,7 +12,7 @@ export type WorkerMode = "sab" | "msg";
 
 export type ToWorker =
   | { type: "load"; bytes: Uint8Array; mode: WorkerMode; evaluator: string }
-  | { type: "request"; id: number; cells: Uint32Array; values: Float64Array }
+  | { type: "request"; id: number; cells: Uint32Array; values: Float64Array; points?: boolean }
   | { type: "setEvaluator"; name: string };
 
 export type FromWorker =
@@ -57,7 +57,7 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
       }
     } else if (m.type === "request") {
       const t = performance.now();
-      const changed = core!.request(m.cells, m.values);
+      const changed = m.points ? core!.request_points(m.cells, m.values) : core!.request(m.cells, m.values);
       const coreMs = performance.now() - t;
       const v = view();
       if (core!.last_rebuilt()) {

@@ -8,6 +8,7 @@ import { NumberInput } from "./NumberInput";
 import { Slider } from "./Slider";
 import { BooleanInput } from "./BooleanInput";
 import { MathView } from "./Math";
+import { Circle, Line, Polygon } from "./Shapes";
 
 export function Component({ idx, inGraph }: { idx: number; inGraph: boolean }) {
   const store = useStore();
@@ -28,6 +29,22 @@ export function Component({ idx, inGraph }: { idx: number; inGraph: boolean }) {
       return <BooleanInput idx={idx} />;
     case "math":
       return <MathView idx={idx} />;
+    case "mathInput":
+      return <NumberInput idx={idx} />;
+    case "line":
+      return inGraph ? <Line idx={idx} segment={false} /> : null;
+    case "lineSegment":
+      return inGraph ? <Line idx={idx} segment={true} /> : null;
+    case "circle":
+      return inGraph ? <Circle idx={idx} /> : null;
+    case "polygon":
+      return inGraph ? <Polygon idx={idx} /> : null;
+    // A point list's children are points aliasing a shape's own points.
+    case "pointList":
+    case "p":
+      return <Children idx={idx} inGraph={inGraph} />;
+    case "setup":
+      return null;
     case "evaluate":
       return <NumberView idx={idx} />;
     // A repeat's children are every iteration's expanded template; a

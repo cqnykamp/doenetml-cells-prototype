@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use crate::components::ComponentKind;
 use crate::dast::{Dast, NodeId, StrId, StringTable};
-use crate::program::Program;
+use crate::program::{PointRequest, Program};
 
 pub type CellIdx = u32;
 pub type CompIdx = u32;
@@ -240,9 +240,7 @@ impl Document {
         for ((r, &d), &cross) in st.repeats.iter().zip(&st.repeat_depths).zip(&st.repeat_cross_reads) {
             if cross {
                 let name = self.name(r.comp).map(str::to_string).unwrap_or_else(|| format!("<repeatForSequence>#{}", r.comp));
-                out.push(format!(
-                    "repeat '{name}' has structural depth {d}: its count reads a cell inside another repeat's iterations, so a change there costs {d} build passes instead of one"
-                ));
+                out.push(format!("repeat '{name}' has structural depth {d}: its count reads a cell inside another repeat's iterations, so a change there costs {d} build passes instead of one"));
             }
         }
         out
@@ -308,6 +306,12 @@ impl Document {
         }
     }
 
+    /// A `<mathInput>` holds any math value, infinity included; every other
+    /// request site rejects an infinite ask as the current core does.
+    fn accepts_infinity(&self, cell: CellIdx) -> bool {
+        (0..self.comps.len() as CompIdx).any(|c| self.kind(c) == ComponentKind::MathInput && self.comp_cells(c)[0] == cell)
+    }
+
     pub fn is_essential(&self, cell: CellIdx) -> bool {
         (cell as usize) < self.n_essential
     }
@@ -334,29 +338,39 @@ impl Document {
         self.request_with(&mut crate::eval::FullRecompute, requests)
     }
 
+    /// Apply a point group: points dragged together, which keep their shape
+    /// when one of them is constrained (ADR 0006).
+    pub fn request_points(&mut self, points: &[PointRequest]) -> Tick {
+        self.request_with_groups(&mut crate::eval::FullRecompute, &[], &[points.to_vec()])
+    }
+
     /// `request` with an explicit recompute strategy.
     pub fn request_with(&mut self, evaluator: &mut (impl crate::eval::Evaluator + ?Sized), requests: &[Request]) -> Tick {
+        self.request_with_groups(evaluator, requests, &[])
+    }
+
+    /// Scalar requests and point groups in one tick.
+    pub fn request_with_groups(&mut self, evaluator: &mut (impl crate::eval::Evaluator + ?Sized), requests: &[Request], groups: &[Vec<PointRequest>]) -> Tick {
         let mut tick = Tick::default();
-        for &r in requests {
-            // An infinite ask is never meaningful state (NaN is: an emptied
-            // input), and the current core rejects it; drop it before inverting.
-            if r.value.is_infinite() {
-                tick.dropped.push(r);
-                continue;
+        // An infinite ask is never meaningful state (NaN is: an emptied
+        // input), and the current core rejects it; drop it before inverting.
+        let (finite, infinite): (Vec<Request>, Vec<Request>) = requests.iter().partition(|r| !r.value.is_infinite() || self.accepts_infinity(r.cell));
+        tick.dropped.extend(infinite);
+        let mut finite_groups: Vec<Vec<PointRequest>> = Vec::with_capacity(groups.len());
+        for g in groups {
+            if g.iter().any(|p| p.values.iter().any(|v| v.is_infinite())) {
+                tick.dropped.extend(g.iter().map(|p| Request { cell: p.cells[0], value: p.values[0] }));
+            } else {
+                finite_groups.push(g.clone());
             }
-            match self.program.invert_to_essential(&self.cells, r.cell, r.value) {
-                // Landed on a fixed cell (an iteration index, a collect count).
-                Some((cell, _)) if !self.is_essential(cell) => tick.dropped.push(r),
-                Some((cell, value)) => {
-                    let old = self.cells[cell as usize];
-                    if value != old && !(value.is_nan() && old.is_nan()) {
-                        self.cells[cell as usize] = value;
-                        if !tick.changed.contains(&cell) {
-                            tick.changed.push(cell);
-                        }
-                    }
-                }
-                None => tick.dropped.push(r),
+        }
+        let inv = self.program.invert_requests(&self.cells, self.n_essential, &finite, &finite_groups);
+        tick.dropped.extend(inv.dropped);
+        for (cell, value) in inv.writes {
+            let old = self.cells[cell as usize];
+            if value != old && !(value.is_nan() && old.is_nan()) {
+                self.cells[cell as usize] = value;
+                tick.changed.push(cell);
             }
         }
         if !tick.changed.is_empty() {
@@ -372,6 +386,120 @@ impl Document {
             }
         }
         tick
+    }
+
+    /// Resolve a dotted path as the current core's tests write it
+    /// (`"g.Ps[2]"`, `"circle1"`, `"r[3].p"`): a name is visible from the
+    /// scope of its nearest named ancestor outward; `[k]` picks the k-th
+    /// iteration of a repeat or the k-th child of a collect or point list.
+    pub fn resolve_path(&self, path: &str) -> Option<CompIdx> {
+        let mut cur: Option<CompIdx> = None;
+        for part in path.split('.') {
+            let (name, indices) = match part.find('[') {
+                Some(i) => (&part[..i], &part[i..]),
+                None => (part, ""),
+            };
+            if !name.is_empty() {
+                cur = Some(match cur {
+                    None => self.find_in_scope(None, name)?,
+                    Some(c) => self.find_in_scope(Some(c), name)?,
+                });
+            }
+            for idx in indices.trim_end_matches(']').split(']').filter(|s| !s.is_empty()) {
+                let k: usize = idx.trim_start_matches('[').parse().ok()?;
+                let c = cur?;
+                cur = Some(match self.kind(c) {
+                    ComponentKind::RepeatForSequence => {
+                        let r = self.structure.repeats.iter().find(|r| r.comp == c)?;
+                        let scope = *r.iter_scopes.get(k.checked_sub(1)?)?;
+                        // The iteration's single component, or the repeat
+                        // itself re-scoped (a following name picks a child).
+                        let mut in_scope = self.children(c).filter_map(|ch| match ch {
+                            Child::Component(cc) if self.comps.scope[cc as usize] == scope => Some(cc),
+                            _ => None,
+                        });
+                        let first = in_scope.next()?;
+                        if in_scope.next().is_some() {
+                            return self.scoped_component(&path.replace("].", " ").replace(['[', ']'], " ").split_whitespace().collect::<Vec<_>>());
+                        }
+                        first
+                    }
+                    _ => self
+                        .children(c)
+                        .filter_map(|ch| match ch {
+                            Child::Component(cc) => Some(cc),
+                            _ => None,
+                        })
+                        .nth(k.checked_sub(1)?)?,
+                });
+            }
+        }
+        cur
+    }
+
+    /// The unique component named `name` visible from `scope` (None: the
+    /// document): a descendant not hidden inside a repeat, or `scope`
+    /// itself. Several visible matches are ambiguous and resolve to nothing,
+    /// except that repeat iterations fall back to the first in document
+    /// order so plain names inside a repeat keep working for tests.
+    fn find_in_scope(&self, scope: Option<CompIdx>, name: &str) -> Option<CompIdx> {
+        if let Some(sc) = scope
+            && self.name(sc) == Some(name)
+        {
+            return Some(sc);
+        }
+        let matches: Vec<CompIdx> = (0..self.comps.len() as CompIdx).filter(|&c| self.name(c) == Some(name) && self.visible_from(scope, c)).collect();
+        match matches.as_slice() {
+            [c] => Some(*c),
+            [] => (0..self.comps.len() as CompIdx).find(|&c| self.name(c) == Some(name) && self.is_descendant(scope, c)),
+            many => {
+                // Children of a container copy are reached through the copy's
+                // name; among bare matches only originals count.
+                let originals: Vec<CompIdx> = many.iter().copied().filter(|&c| !self.inside_copy(scope, c)).collect();
+                if originals.len() == 1 { Some(originals[0]) } else { None }
+            }
+        }
+    }
+
+    /// Whether `c` is below `scope` with no repeat strictly between them.
+    fn visible_from(&self, scope: Option<CompIdx>, c: CompIdx) -> bool {
+        let mut p = self.parent(c);
+        while let Some(pc) = p {
+            if Some(pc) == scope {
+                return true;
+            }
+            if self.kind(pc) == ComponentKind::RepeatForSequence {
+                return false;
+            }
+            p = self.parent(pc);
+        }
+        scope.is_none()
+    }
+
+    /// Whether a synthesized (copied) component lies between `scope` and `c`.
+    fn inside_copy(&self, scope: Option<CompIdx>, c: CompIdx) -> bool {
+        let mut cur = Some(c);
+        while let Some(x) = cur {
+            if Some(x) == scope {
+                return false;
+            }
+            if self.comps.node[x as usize] == NONE && self.kind(x) != ComponentKind::Document {
+                return true;
+            }
+            cur = self.parent(x);
+        }
+        false
+    }
+
+    fn is_descendant(&self, scope: Option<CompIdx>, c: CompIdx) -> bool {
+        let mut p = self.parent(c);
+        while let Some(pc) = p {
+            if Some(pc) == scope {
+                return true;
+            }
+            p = self.parent(pc);
+        }
+        scope.is_none()
     }
 
     /// Cells of a prop of a component inside an iteration, by scoped path:
@@ -420,9 +548,7 @@ impl Document {
 
     pub fn children(&self, c: CompIdx) -> impl Iterator<Item = Child<'_>> + '_ {
         let (s, n) = (self.comps.child_start[c as usize] as usize, self.comps.child_count[c as usize] as usize);
-        self.comps.child_list[s..s + n].iter().map(move |&e| {
-            if e & TEXT_BIT != 0 { Child::Text(self.strings.get(e & !TEXT_BIT)) } else { Child::Component(e) }
-        })
+        self.comps.child_list[s..s + n].iter().map(move |&e| if e & TEXT_BIT != 0 { Child::Text(self.strings.get(e & !TEXT_BIT)) } else { Child::Component(e) })
     }
 
     /// Cells of the single-cell props of `c`, in `kind.prop_defs()` order.
@@ -453,11 +579,20 @@ impl Document {
         (0..self.comps.len() as CompIdx).filter_map(|c| self.name(c).map(|n| (n, c)))
     }
 
-    /// Cells of a prop, including virtual props such as a point's `coords`.
+    /// Cells of a prop, including virtual props such as a point's `coords`
+    /// and array props such as a line's `points` (items flattened, live
+    /// items only).
     pub fn prop_cells(&self, comp: CompIdx, prop: &str) -> Option<Vec<CellIdx>> {
         let kind = self.kind(comp);
         if let Some(parts) = kind.virtual_prop(prop) {
             return parts.iter().map(|p| self.prop_cells(comp, p).map(|v| v[0])).collect();
+        }
+        if let Some(items) = kind.array_prop(prop) {
+            let live = match kind {
+                ComponentKind::Polygon => self.cells[self.comp_cells(comp)[0] as usize] as usize,
+                _ => items.len(),
+            };
+            return items.iter().take(live).map(|[x, y]| Some([self.prop_cells(comp, x)?[0], self.prop_cells(comp, y)?[0]])).collect::<Option<Vec<_>>>().map(|v| v.concat());
         }
         let i = kind.prop_index(prop)?;
         Some(vec![self.comp_cells(comp)[i]])

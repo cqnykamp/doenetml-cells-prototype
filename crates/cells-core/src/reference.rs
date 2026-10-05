@@ -13,18 +13,25 @@ pub struct ReferenceEvaluator<'a> {
 
 impl<'a> ReferenceEvaluator<'a> {
     pub fn new(doc: &'a Document) -> Self {
-        let producer = doc.program.instrs.iter().enumerate().map(|(i, ins)| (ins.out, i)).collect();
+        let producer = doc.program.instrs.iter().enumerate().flat_map(|(i, ins)| (0..ins.op.n_out() as CellIdx).map(move |k| (ins.out + k, i))).collect();
         ReferenceEvaluator { doc, producer }
     }
 
     pub fn value(&self, cell: CellIdx) -> f64 {
         // Essential and fixed cells have no producer.
-        let Some(&p) = self.producer.get(&cell) else { return self.doc.cells[cell as usize] };
+        let Some(&p) = self.producer.get(&cell) else {
+            return self.doc.cells[cell as usize];
+        };
         let ins = &self.doc.program.instrs[p];
         // Build a scratch view where only this instruction's inputs are filled.
         let mut scratch = vec![f64::NAN; self.doc.cells.len()];
         for input in ins.op.inputs(&self.doc.program.extra) {
             scratch[input as usize] = self.value(input);
+        }
+        if let crate::ops::Op::Vec(..) = ins.op {
+            let mut buf = [0.0f64; 16];
+            ins.op.eval_vec(&scratch, &self.doc.program.extra, &mut buf[..ins.op.n_out()]);
+            return buf[(cell - ins.out) as usize];
         }
         ins.op.eval(&scratch, &self.doc.program.arena)
     }

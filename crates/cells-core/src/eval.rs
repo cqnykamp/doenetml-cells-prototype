@@ -14,11 +14,6 @@ pub trait Evaluator {
     fn recompute(&mut self, program: &Program, cells: &mut [f64], changed: &mut Vec<CellIdx>);
 }
 
-#[inline(always)]
-fn differs(new: f64, old: f64) -> bool {
-    new != old && !(new.is_nan() && old.is_nan())
-}
-
 /// Run every instruction in schedule order, ignoring the seeds.
 #[derive(Default)]
 pub struct FullRecompute;
@@ -53,19 +48,11 @@ impl Evaluator for DirtyScan {
             self.dirty[c as usize] = true;
         }
         for ins in &program.instrs {
-            let (a, b) = ins.op.input_pair();
-            let mut any_dirty = self.dirty[a as usize] | b.is_some_and(|b| self.dirty[b as usize]);
-            let extra = ins.op.extra_range();
-            if !extra.is_empty() {
-                any_dirty |= program.extra[extra].iter().any(|&c| self.dirty[c as usize]);
-            }
-            if any_dirty {
-                let new = ins.op.eval(cells, &program.arena);
-                let out = ins.out as usize;
-                if differs(new, cells[out]) {
-                    cells[out] = new;
-                    self.dirty[out] = true;
-                    changed.push(ins.out);
+            if ins.op.inputs(&program.extra).any(|c| self.dirty[c as usize]) {
+                let before = changed.len();
+                program.step(ins, cells, Some(changed));
+                for &c in &changed[before..] {
+                    self.dirty[c as usize] = true;
                 }
             }
         }
@@ -118,12 +105,11 @@ impl Evaluator for DirtyClosure {
         while let Some(Reverse(i)) = self.heap.pop() {
             self.queued[i as usize] = false;
             let ins = &program.instrs[i as usize];
-            let new = ins.op.eval(cells, &program.arena);
-            let out = ins.out as usize;
-            if differs(new, cells[out]) {
-                cells[out] = new;
-                changed.push(ins.out);
-                self.enqueue_dependents(ins.out);
+            let before = changed.len();
+            program.step(ins, cells, Some(changed));
+            for k in before..changed.len() {
+                let c = changed[k];
+                self.enqueue_dependents(c);
             }
         }
     }

@@ -54,8 +54,10 @@ interface Backend {
   cells(): Float64Array;
   /** Infix text of an expression handle, when the core is on this thread. */
   exprText?(handle: number): string;
-  /** Resolves once the main-thread cell view is up to date. */
-  request(cells: Uint32Array, values: Float64Array, onCore: (ms: number) => void): Promise<TickResult> | TickResult;
+  /** Resolves once the main-thread cell view is up to date. With `points`,
+   * the cells are `x0, y0, x1, y1, ...` of points dragged together (one
+   * point group, ADR 0006). */
+  request(cells: Uint32Array, values: Float64Array, onCore: (ms: number) => void, points?: boolean): Promise<TickResult> | TickResult;
   setEvaluator(name: string): void;
 }
 
@@ -73,9 +75,9 @@ class MainBackend implements Backend {
     if (this.view.buffer !== wasmMemory!.buffer || this.view.byteOffset !== this.core.cells_ptr() || this.view.length !== this.core.cells_len()) this.view = this.make();
     return this.view;
   }
-  request(cells: Uint32Array, values: Float64Array, onCore: (ms: number) => void): TickResult {
+  request(cells: Uint32Array, values: Float64Array, onCore: (ms: number) => void, points = false): TickResult {
     const t = performance.now();
-    const changed = this.core.request(cells, values);
+    const changed = points ? this.core.request_points(cells, values) : this.core.request(cells, values);
     onCore(performance.now() - t);
     const rebuilt = this.core.last_rebuilt();
     if (this.core.last_rebuild_error()) console.error("rebuild failed:", this.core.last_rebuild_error());
@@ -115,11 +117,11 @@ class WorkerBackend implements Backend {
   cells() {
     return this.view;
   }
-  request(cells: Uint32Array, values: Float64Array, onCore: (ms: number) => void) {
+  request(cells: Uint32Array, values: Float64Array, onCore: (ms: number) => void, points = false) {
     const id = this.nextId++;
     return new Promise<TickResult>((resolve) => {
       this.pending.set(id, { resolve, onCore });
-      this.worker.postMessage({ type: "request", id, cells, values } satisfies ToWorker, [cells.buffer, values.buffer]);
+      this.worker.postMessage({ type: "request", id, cells, values, points } satisfies ToWorker, [cells.buffer, values.buffer]);
     });
   }
   setEvaluator(name: string) {
@@ -183,6 +185,16 @@ export class CellStore {
 
   /** Cell-addressed write. Listeners fire once the changed cells are readable here. */
   request(pairs: [number, number][]): void {
+    this.send(pairs, false);
+  }
+
+  /** Points dragged together: `[xCell, yCell, x, y]` per point. The core
+   * keeps them a translation apart if one of them is constrained. */
+  requestPoints(points: [number, number, number, number][]): void {
+    this.send(points.flatMap(([cx, cy, x, y]) => [[cx, x], [cy, y]] as [number, number][]), true);
+  }
+
+  private send(pairs: [number, number][], points: boolean): void {
     const start = performance.now();
     const cells = new Uint32Array(pairs.map((p) => p[0]));
     const values = new Float64Array(pairs.map((p) => p[1]));
@@ -213,7 +225,7 @@ export class CellStore {
       }
       for (const fn of this.anyListeners) fn();
     };
-    const r = this.backend.request(cells, values, (ms) => (sample.core = ms));
+    const r = this.backend.request(cells, values, (ms) => (sample.core = ms), points);
     if (r instanceof Promise) r.then(apply);
     else apply(r);
   }

@@ -39,7 +39,30 @@ pub enum ComponentKind {
     /// `<evaluate function="$m" input="$a"/>`: the math's expression with
     /// its free symbol set to the input.
     Evaluate = 12,
+    /// `<mathInput>`: a numeric input whose value may be bound to another
+    /// cell by a child reference or `bindValueTo`.
+    MathInput = 13,
+    /// `<circle>`: center and radius are derived or essential depending on
+    /// how the circle is specified (plan 3). Chains are planned in `build.rs`.
+    Circle = 14,
+    /// `<line>`: its own two points are derived cells (ADR 0006); slope,
+    /// intercepts and coefficients follow from them or from the equation.
+    Line = 15,
+    /// `<lineSegment endpoints="$a $b">`.
+    LineSegment = 16,
+    /// `<polygon vertices="...">`, optionally rigid. Up to `MAX_VERTICES`.
+    Polygon = 17,
+    /// `<pointList extend="$l.points">`: its children are points aliasing
+    /// the items of an array prop.
+    PointList = 18,
+    /// `<p>`: a rendered container with no props of its own.
+    P = 19,
+    /// `<setup>`: an unrendered container.
+    Setup = 20,
 }
+
+/// Largest polygon the fixed prop layout holds.
+pub const MAX_VERTICES: usize = 16;
 
 const fn attr(name: &'static str, default: f64) -> PropDef {
     PropDef { name, default, from: PropFrom::Attribute, attr: None, bind: None, ref_prop: None }
@@ -48,6 +71,114 @@ const fn attr(name: &'static str, default: f64) -> PropDef {
 const fn computed(name: &'static str, op: OpSpec, args: &'static [u8]) -> PropDef {
     PropDef { name, default: f64::NAN, from: PropFrom::Computed { op, args }, attr: None, bind: None, ref_prop: None }
 }
+
+/// A prop whose source the builder plans from the element's specification.
+const fn planned(name: &'static str) -> PropDef {
+    PropDef { name, default: f64::NAN, from: PropFrom::Planned, attr: None, bind: None, ref_prop: None }
+}
+
+/// `<circle>`. `cx`, `cy`, `radius` are the numerical center and radius;
+/// how they are produced depends on which of `center`, `radius` and
+/// `through` the author gave (see `plan_circle` in `build.rs`).
+const CIRCLE_PROPS: &[PropDef] = &[
+    /* 0 */ planned("cx"),
+    /* 1 */ planned("cy"),
+    /* 2 */ planned("radius"),
+    /* 3 */ computed("diameter", OpSpec::Scale { k: 2.0 }, &[2]),
+    /* 4 */
+    computed("circumference", OpSpec::Scale { k: std::f64::consts::TAU }, &[2]),
+    /* 5 */ computed("radiusSquared", OpSpec::Mul, &[2, 2]),
+    /* 6 */
+    computed("area", OpSpec::Scale { k: std::f64::consts::PI }, &[5]),
+    // The center as a *reference*: the prescribed center when there is one
+    // (so a point extending `$c.center` drags that point alone, as in the
+    // current core), else the derived center. Names follow the current
+    // core's array entries.
+    /* 7 */
+    planned("centerX1"),
+    /* 8 */ planned("centerX2"),
+    /* 9 */ planned("throughPointX1_1"),
+    /* 10 */ planned("throughPointX1_2"),
+    /* 11 */ planned("throughPointX2_1"),
+    /* 12 */ planned("throughPointX2_2"),
+    /* 13 */ planned("throughPointX3_1"),
+    /* 14 */ planned("throughPointX3_2"),
+    /* 15 */ planned("numThroughPoints"),
+];
+
+/// `<line>` and `<lineSegment>`. The first four props are the shape's own
+/// points (ADR 0006). `basedOnDirection` is 1 when the second point is
+/// derived from a slope or direction, so a renderer drags only the first.
+const LINE_PROPS: &[PropDef] = &[
+    /* 0 */ planned("x1"),
+    /* 1 */ planned("y1"),
+    /* 2 */ planned("x2"),
+    /* 3 */ planned("y2"),
+    /* 4 */ planned("slope"),
+    /* 5 */ planned("xintercept"),
+    /* 6 */ planned("yintercept"),
+    /* 7 */ planned("coeffvar1"),
+    /* 8 */ planned("coeffvar2"),
+    /* 9 */ planned("coeff0"),
+    /* 10 */ planned("basedOnDirection"),
+];
+
+const LINE_SEGMENT_PROPS: &[PropDef] = &[/* 0 */ planned("x1"), /* 1 */ planned("y1"), /* 2 */ planned("x2"), /* 3 */ planned("y2")];
+
+/// `vertexN` of a polygon, as prop name pairs.
+const VERTEX_PARTS: [[&str; 2]; MAX_VERTICES] = [
+    ["x1", "y1"],
+    ["x2", "y2"],
+    ["x3", "y3"],
+    ["x4", "y4"],
+    ["x5", "y5"],
+    ["x6", "y6"],
+    ["x7", "y7"],
+    ["x8", "y8"],
+    ["x9", "y9"],
+    ["x10", "y10"],
+    ["x11", "y11"],
+    ["x12", "y12"],
+    ["x13", "y13"],
+    ["x14", "y14"],
+    ["x15", "y15"],
+    ["x16", "y16"],
+];
+
+/// `<polygon>`: `numVertices` then `MAX_VERTICES` coordinate pairs
+/// (`x1`, `y1`, ...); unused pairs hold the shared NaN.
+const POLYGON_PROPS: &[PropDef] = {
+    const NAMES: [[&str; 2]; MAX_VERTICES] = [
+        ["x1", "y1"],
+        ["x2", "y2"],
+        ["x3", "y3"],
+        ["x4", "y4"],
+        ["x5", "y5"],
+        ["x6", "y6"],
+        ["x7", "y7"],
+        ["x8", "y8"],
+        ["x9", "y9"],
+        ["x10", "y10"],
+        ["x11", "y11"],
+        ["x12", "y12"],
+        ["x13", "y13"],
+        ["x14", "y14"],
+        ["x15", "y15"],
+        ["x16", "y16"],
+    ];
+    const fn build() -> [PropDef; 1 + 2 * MAX_VERTICES] {
+        let mut out = [planned(""); 1 + 2 * MAX_VERTICES];
+        out[0] = planned("numVertices");
+        let mut i = 0;
+        while i < MAX_VERTICES {
+            out[1 + 2 * i] = planned(NAMES[i][0]);
+            out[2 + 2 * i] = planned(NAMES[i][1]);
+            i += 1;
+        }
+        out
+    }
+    &build()
+};
 
 /// `<slider>` in numeric mode. Prop indices are referenced by the computed
 /// chain below, so the order matters. The chain reproduces the current core's
@@ -65,7 +196,8 @@ const SLIDER_PROPS: &[PropDef] = &[
     /* 0 */ attr("from", 0.0),
     /* 1 */ attr("to", 10.0),
     /* 2 */ attr("step", 1.0),
-    /* 3 */ PropDef { name: "preliminaryValue", default: 0.0, from: PropFrom::Attribute, attr: Some("initialValue"), bind: Some("bindValueTo"), ref_prop: None },
+    /* 3 */
+    PropDef { name: "preliminaryValue", default: 0.0, from: PropFrom::Attribute, attr: Some("initialValue"), bind: Some("bindValueTo"), ref_prop: None },
     /* 4 */ computed("span", OpSpec::Sub, &[1, 0]),
     /* 5 */ computed("spanSteps", OpSpec::Div, &[4, 2]),
     /* 6 */ computed("spanStepsEps", OpSpec::Offset { k: 1e-10 }, &[5]),
@@ -73,11 +205,13 @@ const SLIDER_PROPS: &[PropDef] = &[
     /* 8 */ computed("offset", OpSpec::Sub, &[3, 0]),
     /* 9 */ computed("rawIndex", OpSpec::Div, &[8, 2]),
     /* 10 */ computed("roundedIndex", OpSpec::Round, &[9]),
-    /* 11 */ computed("nonNegIndex", OpSpec::Clamp { lo: 0.0, hi: f64::INFINITY }, &[10]),
+    /* 11 */
+    computed("nonNegIndex", OpSpec::Clamp { lo: 0.0, hi: f64::INFINITY }, &[10]),
     /* 12 */ computed("clampedIndex", OpSpec::Min, &[11, 7]),
     // A non-finite stored value is index 0, so the slider shows `from`,
     // as in the current core.
-    /* 13 */ computed("index", OpSpec::NanTo { k: 0.0 }, &[12]),
+    /* 13 */
+    computed("index", OpSpec::NanTo { k: 0.0 }, &[12]),
     /* 14 */ computed("scaled", OpSpec::Mul, &[13, 2]),
     /* 15 */ computed("value", OpSpec::Add, &[14, 0]),
 ];
@@ -100,9 +234,11 @@ const REPEAT_PROPS: &[PropDef] = &[
     /* 5 */ computed("spanSteps", OpSpec::Div, &[4, 2]),
     /* 6 */ computed("spanStepsEps", OpSpec::Offset { k: 1.0 + 1e-10 }, &[5]),
     /* 7 */ computed("lengthFromTo", OpSpec::Floor, &[6]),
-    /* 8 */ PropDef { name: "length", default: f64::NAN, from: PropFrom::AttributeOr { alias: 7 }, attr: None, bind: None, ref_prop: None },
+    /* 8 */
+    PropDef { name: "length", default: f64::NAN, from: PropFrom::AttributeOr { alias: 7 }, attr: None, bind: None, ref_prop: None },
     /* 9 */ computed("lengthFloor", OpSpec::Floor, &[8]),
-    /* 10 */ computed("lengthNonNeg", OpSpec::Clamp { lo: 0.0, hi: f64::INFINITY }, &[9]),
+    /* 10 */
+    computed("lengthNonNeg", OpSpec::Clamp { lo: 0.0, hi: f64::INFINITY }, &[9]),
     /* 11 */ computed("count", OpSpec::Min, &[10, 3]),
 ];
 
@@ -118,9 +254,28 @@ const SEQUENCE_VALUE_PROPS: &[PropDef] = &[
 ];
 
 impl ComponentKind {
-    pub const ALL: [ComponentKind; 13] = [
-        Self::Document, Self::Graph, Self::Point, Self::Number, Self::NumberInput, Self::Op, Self::Slider,
-        Self::RepeatForSequence, Self::Collect, Self::SequenceValue, Self::BooleanInput, Self::Math, Self::Evaluate,
+    pub const ALL: [ComponentKind; 21] = [
+        Self::Document,
+        Self::Graph,
+        Self::Point,
+        Self::Number,
+        Self::NumberInput,
+        Self::Op,
+        Self::Slider,
+        Self::RepeatForSequence,
+        Self::Collect,
+        Self::SequenceValue,
+        Self::BooleanInput,
+        Self::Math,
+        Self::Evaluate,
+        Self::MathInput,
+        Self::Circle,
+        Self::Line,
+        Self::LineSegment,
+        Self::Polygon,
+        Self::PointList,
+        Self::P,
+        Self::Setup,
     ];
 
     pub fn from_tag(tag: &str) -> Option<Self> {
@@ -137,6 +292,14 @@ impl ComponentKind {
             "booleanInput" => Self::BooleanInput,
             "math" => Self::Math,
             "evaluate" => Self::Evaluate,
+            "mathInput" => Self::MathInput,
+            "circle" => Self::Circle,
+            "line" => Self::Line,
+            "lineSegment" => Self::LineSegment,
+            "polygon" | "triangle" => Self::Polygon,
+            "pointList" => Self::PointList,
+            "p" => Self::P,
+            "setup" => Self::Setup,
             _ => return None,
         })
     }
@@ -156,6 +319,14 @@ impl ComponentKind {
             Self::BooleanInput => "booleanInput",
             Self::Math => "math",
             Self::Evaluate => "evaluate",
+            Self::MathInput => "mathInput",
+            Self::Circle => "circle",
+            Self::Line => "line",
+            Self::LineSegment => "lineSegment",
+            Self::Polygon => "polygon",
+            Self::PointList => "pointList",
+            Self::P => "p",
+            Self::Setup => "setup",
         }
     }
 
@@ -170,13 +341,13 @@ impl ComponentKind {
             PropDef { name: "expr", default: f64::NAN, from: PropFrom::Children, attr: None, bind: None, ref_prop: None },
             PropDef { name: "value", default: f64::NAN, from: PropFrom::Children, attr: None, bind: None, ref_prop: None },
         ];
-        const EVALUATE: &[PropDef] = &[
-            PropDef { name: "function", default: f64::NAN, from: PropFrom::Attribute, attr: None, bind: None, ref_prop: Some("expr") },
-            attr("input", f64::NAN),
-            computed("value", OpSpec::EvalAt, &[0, 1]),
-        ];
+        const EVALUATE: &[PropDef] =
+            &[PropDef { name: "function", default: f64::NAN, from: PropFrom::Attribute, attr: None, bind: None, ref_prop: Some("expr") }, attr("input", f64::NAN), computed("value", OpSpec::EvalAt, &[0, 1])];
         const NUMBER: &[PropDef] = &[PropDef { name: "value", default: f64::NAN, from: PropFrom::Children, attr: None, bind: None, ref_prop: None }];
         const NUMBER_INPUT: &[PropDef] = &[attr("value", f64::NAN)];
+        // A mathInput's value is bound by a child reference or `bindValueTo`,
+        // else it is the `prefill` (the builder reads it).
+        const MATH_INPUT: &[PropDef] = &[PropDef { name: "value", default: f64::NAN, from: PropFrom::Children, attr: Some("prefill"), bind: Some("bindValueTo"), ref_prop: None }];
         const OP: &[PropDef] = &[PropDef { name: "value", default: f64::NAN, from: PropFrom::Derived, attr: None, bind: None, ref_prop: None }];
         const COLLECT: &[PropDef] = &[attr("count", 0.0)];
         match self {
@@ -193,6 +364,12 @@ impl ComponentKind {
             Self::BooleanInput => BOOLEAN_INPUT,
             Self::Math => MATH,
             Self::Evaluate => EVALUATE,
+            Self::MathInput => MATH_INPUT,
+            Self::Circle => CIRCLE_PROPS,
+            Self::Line => LINE_PROPS,
+            Self::LineSegment => LINE_SEGMENT_PROPS,
+            Self::Polygon => POLYGON_PROPS,
+            Self::PointList | Self::P | Self::Setup => &[],
         }
     }
 
@@ -204,6 +381,39 @@ impl ComponentKind {
     pub fn virtual_prop(self, name: &str) -> Option<&'static [&'static str]> {
         match (self, name) {
             (Self::Point, "coords") => Some(&["x", "y"]),
+            (Self::Circle, "center") => Some(&["centerX1", "centerX2"]),
+            (Self::Circle, "numericalCenter") => Some(&["cx", "cy"]),
+            (Self::Circle, "throughPoint1") => Some(&["throughPointX1_1", "throughPointX1_2"]),
+            (Self::Circle, "throughPoint2") => Some(&["throughPointX2_1", "throughPointX2_2"]),
+            (Self::Circle, "throughPoint3") => Some(&["throughPointX3_1", "throughPointX3_2"]),
+            (Self::Line | Self::LineSegment, "point1") => Some(&["x1", "y1"]),
+            (Self::Line | Self::LineSegment, "point2") => Some(&["x2", "y2"]),
+            (Self::Polygon, v) if v.starts_with("vertex") => {
+                let k: usize = v["vertex".len()..].parse().ok()?;
+                (1..=MAX_VERTICES).contains(&k).then(|| &VERTEX_PARTS[k - 1][..])
+            }
+            _ => None,
+        }
+    }
+
+    /// Array props whose items are points: the prop names of each item's
+    /// cells, as many items as the kind can hold. A polygon's live count is
+    /// its `numVertices` cell; the builder trims the list.
+    pub fn array_prop(self, name: &str) -> Option<Vec<[&'static str; 2]>> {
+        match (self, name) {
+            (Self::Line | Self::LineSegment, "points" | "endpoints") => Some(vec![["x1", "y1"], ["x2", "y2"]]),
+            (Self::Polygon, "vertices") => Some(POLYGON_PROPS[1..].chunks(2).map(|c| [c[0].name, c[1].name]).collect()),
+            (Self::Circle, "throughPoints") => Some(vec![["throughPointX1_1", "throughPointX1_2"], ["throughPointX2_1", "throughPointX2_2"], ["throughPointX3_1", "throughPointX3_2"]]),
+            _ => None,
+        }
+    }
+
+    /// The point-valued virtual prop for item `k` (1-based) of an array prop.
+    pub fn array_item_prop(self, name: &str, k: usize) -> Option<String> {
+        match (self, name) {
+            (Self::Line | Self::LineSegment, "points" | "endpoints") => Some(format!("point{k}")),
+            (Self::Polygon, "vertices") => Some(format!("vertex{k}")),
+            (Self::Circle, "throughPoints") => Some(format!("throughPoint{k}")),
             _ => None,
         }
     }
@@ -212,14 +422,25 @@ impl ComponentKind {
     pub fn default_prop(self) -> Option<&'static str> {
         match self {
             Self::Point => Some("coords"),
-            Self::Number | Self::NumberInput | Self::Op | Self::Slider | Self::SequenceValue | Self::BooleanInput | Self::Math | Self::Evaluate => Some("value"),
-            Self::Document | Self::Graph | Self::RepeatForSequence | Self::Collect => None,
+            Self::Number | Self::NumberInput | Self::Op | Self::Slider | Self::SequenceValue | Self::BooleanInput | Self::Math | Self::Evaluate | Self::MathInput => Some("value"),
+            Self::Document | Self::Graph | Self::RepeatForSequence | Self::Collect | Self::Circle | Self::Line | Self::LineSegment | Self::Polygon | Self::PointList | Self::P | Self::Setup => None,
         }
     }
 
     /// Whether `$name` as a child may produce a copy of this component.
     pub fn copyable(self) -> bool {
-        !matches!(self, Self::Document | Self::Graph | Self::RepeatForSequence | Self::Collect)
+        !matches!(self, Self::Document | Self::Graph | Self::RepeatForSequence | Self::Collect | Self::PointList | Self::P | Self::Setup)
+    }
+
+    /// Containers whose children are rendered; `extend` copies them deeply.
+    pub fn container(self) -> bool {
+        matches!(self, Self::Graph | Self::P | Self::Setup)
+    }
+
+    /// Kinds whose prop sources the builder plans from the element's
+    /// attributes and children rather than from `PropFrom`.
+    pub fn planned(self) -> bool {
+        matches!(self, Self::Circle | Self::Line | Self::LineSegment | Self::Polygon)
     }
 
     /// Whether `<collect componentType="...">` may name this kind.
@@ -229,7 +450,7 @@ impl ComponentKind {
 
     /// Whether the component contributes nodes to the rendered tree.
     pub fn rendered(self) -> bool {
-        !matches!(self, Self::Op)
+        !matches!(self, Self::Op | Self::Setup)
     }
 }
 
@@ -246,6 +467,8 @@ pub enum PropFrom {
     /// Value given by the attribute if present, else an alias of the
     /// component's own prop at `alias`.
     AttributeOr { alias: u8 },
+    /// Planned by the builder from the whole element (geometric kinds).
+    Planned,
 }
 
 #[derive(Debug, Clone, Copy)]

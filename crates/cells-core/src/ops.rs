@@ -11,6 +11,7 @@
 
 use crate::document::CellIdx;
 use crate::expr::Arena;
+use crate::geo::VecOp;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Op {
@@ -46,12 +47,23 @@ pub enum Op {
     /// Evaluate the expression in the first cell with its free symbol set to
     /// the second cell's value; extra inputs as for `Evaluate`.
     EvalAt(CellIdx, CellIdx, u32, u8),
+    /// A vector operator (`geo.rs`): inputs are `extra[start..start + n_in]`,
+    /// outputs are the `n_out` cells from the instruction's `out`.
+    Vec(VecOp, u32, u8, u8),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Instr {
     pub out: CellIdx,
     pub op: Op,
+}
+
+/// `Math.round`: halves round toward positive infinity, unlike Rust's
+/// `round`, which rounds them away from zero. The current core is JavaScript,
+/// so a grid snap of -1.5 must give -1 here too.
+#[inline(always)]
+pub fn js_round(x: f64) -> f64 {
+    (x + 0.5).floor()
 }
 
 #[inline(always)]
@@ -79,7 +91,7 @@ impl Op {
                 if x.is_nan() { cells[b as usize] } else { x }
             }
             Op::Negate(a) => -cells[a as usize],
-            Op::Round(a) => cells[a as usize].round(),
+            Op::Round(a) => js_round(cells[a as usize]),
             Op::Floor(a) => cells[a as usize].floor(),
             Op::Scale(a, k) => cells[a as usize] * k,
             Op::Offset(a, k) => cells[a as usize] + k,
@@ -95,6 +107,7 @@ impl Op {
             Op::Pow(a, b) => cells[a as usize].powf(cells[b as usize]),
             Op::Evaluate(h, ..) => arena.eval(cells[h as usize] as u32, cells, None),
             Op::EvalAt(h, x, ..) => arena.eval(cells[h as usize] as u32, cells, Some(cells[x as usize])),
+            Op::Vec(..) => unreachable!("vector operators are evaluated with eval_vec"),
         }
     }
 
@@ -110,12 +123,16 @@ impl Op {
             Op::Sub(a, b) => (a, desired + v(b)),
             Op::Mul(a, b) => {
                 let d = v(b);
-                if d == 0.0 { return None; }
+                if d == 0.0 {
+                    return None;
+                }
                 (a, desired / d)
             }
             Op::Div(a, b) => {
                 let d = v(b);
-                if d == 0.0 || d.is_nan() { return None; }
+                if d == 0.0 || d.is_nan() {
+                    return None;
+                }
                 (a, desired * d)
             }
             // Projections: the input is asked for the projected value.
@@ -123,35 +140,50 @@ impl Op {
             Op::Max(a, b) => (a, nan_max(desired, v(b))),
             // While `a` has no value the request belongs to the fallback.
             Op::Default(a, b) => {
-                if v(a).is_nan() { (b, desired) } else { (a, desired) }
+                if v(a).is_nan() {
+                    (b, desired)
+                } else {
+                    (a, desired)
+                }
             }
             Op::Negate(a) => (a, -desired),
             Op::Round(a) => {
-                if !desired.is_finite() { return None; }
-                (a, desired.round())
+                if !desired.is_finite() {
+                    return None;
+                }
+                (a, js_round(desired))
             }
             Op::Floor(a) => {
-                if !desired.is_finite() { return None; }
+                if !desired.is_finite() {
+                    return None;
+                }
                 (a, desired.floor())
             }
             Op::Scale(a, k) => {
-                if k == 0.0 { return None; }
+                if k == 0.0 {
+                    return None;
+                }
                 (a, desired / k)
             }
             Op::Offset(a, k) => (a, desired - k),
             Op::Clamp(a, lo, hi) => (a, desired.clamp(lo, hi)),
             // A NaN ask has no inverse here: it would be asking for the fallback.
             Op::NanTo(a, _) => {
-                if desired.is_nan() { return None; }
+                if desired.is_nan() {
+                    return None;
+                }
                 (a, desired)
             }
             Op::Lerp(a, b, t) => {
                 // desired = a(1-t) + t b
-                if t == 1.0 { return None; }
+                if t == 1.0 {
+                    return None;
+                }
                 (a, (desired - t * v(b)) / (1.0 - t))
             }
             // Symbolic inverses are out of scope (plan 2, follow-ups).
             Op::Pow(..) | Op::Evaluate(..) | Op::EvalAt(..) => return None,
+            Op::Vec(..) => unreachable!("vector operators are inverted jointly by the program"),
         })
     }
 
@@ -161,22 +193,50 @@ impl Op {
         match *self {
             Op::Add(a, b) | Op::Sub(a, b) | Op::Mul(a, b) | Op::Div(a, b) | Op::Min(a, b) | Op::Max(a, b) | Op::Default(a, b) | Op::Lerp(a, b, _) | Op::Pow(a, b) | Op::EvalAt(a, b, ..) => (a, Some(b)),
             Op::Negate(a) | Op::Round(a) | Op::Floor(a) | Op::Scale(a, _) | Op::Offset(a, _) | Op::Clamp(a, _, _) | Op::NanTo(a, _) | Op::Evaluate(a, ..) => (a, None),
+            Op::Vec(..) => unreachable!("vector operators keep every input in extra"),
         }
+    }
+
+    /// Number of output cells (1 for every scalar operator).
+    #[inline(always)]
+    pub fn n_out(&self) -> usize {
+        match *self {
+            Op::Vec(_, _, _, n_out) => n_out as usize,
+            _ => 1,
+        }
+    }
+
+    /// Evaluate a vector operator into `out` (`n_out` values).
+    #[inline]
+    pub fn eval_vec(&self, cells: &[f64], extra: &[CellIdx], out: &mut [f64]) {
+        let Op::Vec(v, start, n_in, _) = *self else { unreachable!() };
+        let mut inp = [0.0f64; 16];
+        let n_in = n_in as usize;
+        for (k, &c) in extra[start as usize..start as usize + n_in].iter().enumerate() {
+            inp[k] = cells[c as usize];
+        }
+        v.eval(&inp[..n_in], out);
     }
 
     /// Range into `Program::extra` of further inputs (only `Evaluate`/`EvalAt`).
     #[inline(always)]
     pub fn extra_range(&self) -> std::ops::Range<usize> {
         match *self {
-            Op::Evaluate(_, start, n) | Op::EvalAt(_, _, start, n) => start as usize..start as usize + n as usize,
+            Op::Evaluate(_, start, n) | Op::EvalAt(_, _, start, n) | Op::Vec(_, start, n, _) => start as usize..start as usize + n as usize,
             _ => 0..0,
         }
     }
 
     /// All input cells, direct and extra.
     pub fn inputs<'a>(&self, extra: &'a [CellIdx]) -> impl Iterator<Item = CellIdx> + 'a {
-        let (a, b) = self.input_pair();
-        std::iter::once(a).chain(b).chain(extra[self.extra_range()].iter().copied())
+        let (a, b) = match self {
+            Op::Vec(..) => (None, None),
+            _ => {
+                let (a, b) = self.input_pair();
+                (Some(a), b)
+            }
+        };
+        a.into_iter().chain(b).chain(extra[self.extra_range()].iter().copied())
     }
 
     pub fn kind_name(&self) -> &'static str {
@@ -199,6 +259,7 @@ impl Op {
             Op::Pow(..) => "pow",
             Op::Evaluate(..) => "evaluate",
             Op::EvalAt(..) => "evalAt",
+            Op::Vec(v, ..) => v.name(),
         }
     }
 }
@@ -224,6 +285,7 @@ pub enum OpSpec {
     Pow,
     Evaluate,
     EvalAt,
+    Vec(VecOp),
 }
 
 impl OpSpec {
@@ -231,6 +293,14 @@ impl OpSpec {
         match self {
             OpSpec::Add | OpSpec::Sub | OpSpec::Mul | OpSpec::Div | OpSpec::Min | OpSpec::Max | OpSpec::Default | OpSpec::Lerp { .. } | OpSpec::Pow | OpSpec::EvalAt => 2,
             OpSpec::Negate | OpSpec::Round | OpSpec::Floor | OpSpec::Scale { .. } | OpSpec::Offset { .. } | OpSpec::Clamp { .. } | OpSpec::NanTo { .. } | OpSpec::Evaluate => 1,
+            OpSpec::Vec(v) => v.n_in(),
+        }
+    }
+
+    pub fn n_out(&self) -> usize {
+        match self {
+            OpSpec::Vec(v) => v.n_out(),
+            _ => 1,
         }
     }
 
@@ -267,6 +337,10 @@ impl OpSpec {
             OpSpec::EvalAt => {
                 let (start, n) = park(extra, &inputs[2..]);
                 Op::EvalAt(inputs[0], inputs[1], start, n)
+            }
+            OpSpec::Vec(v) => {
+                let (start, n) = park(extra, inputs);
+                Op::Vec(v, start, n, v.n_out() as u8)
             }
         }
     }

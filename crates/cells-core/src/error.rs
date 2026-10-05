@@ -10,6 +10,8 @@ pub enum Error {
     UnsupportedTag(String),
     #[error("duplicate name '{0}'")]
     DuplicateName(String),
+    #[error("reference '${0}' is ambiguous: several components with that name are visible")]
+    AmbiguousName(String),
     #[error("unknown reference '${0}'")]
     UnknownName(String),
     #[error("component '{name}' has no prop '{prop}'")]
@@ -54,6 +56,8 @@ pub enum Error {
     UnstableStructure(usize),
     #[error("cannot parse math '{text}': {reason}")]
     BadMath { text: String, reason: String },
+    #[error("unsupported: {0}")]
+    Unsupported(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
