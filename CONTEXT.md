@@ -92,6 +92,11 @@ iteration's index, a collect's count, the shared missing-referent NaN. Fixed
 cells have no producer and no essential key; a request that reaches one is
 dropped.
 
+**Template** — The body of a repeat (or the document itself) as compiled
+once from the DAST: its elements, their props' sources, and their references
+as paths relative to the template nesting. A template is instantiated once
+per scope. Templates are a build-time notion; the renderer never sees them.
+
 **Scope** — A naming region. The document is scope 0; every iteration of a
 repeat is a scope. A name inside a repeat template exists once per scope, so
 `p` in iteration 3 is `$r[3].p`. A bare `$p` resolves from the referencing
@@ -121,12 +126,11 @@ moves). A rebuild happens inside the tick that changed the count and must fit
 the same interactive budget as any other tick. Values of essential cells
 survive a rebuild through their essential keys. See ADR 0004.
 
-**Essential key** — The structural path that identifies an essential cell
-independently of its index: the component's path through the document,
-including repeat name and iteration number, plus the prop. Essential values are
-kept by key across rebuilds, so an iteration that disappears and reappears
-returns with its last values. Whether keys also carry values across sessions is
-undecided.
+**Essential key** — The identity of an essential cell independently of its
+index: the scope it lives in and its slot within that scope's template (which
+element, which prop). Essential values are kept by key across rebuilds, so an
+iteration that disappears and reappears returns with its last values. Whether
+keys also carry values across sessions is undecided.
 
 **Structural depth** — Of a repeat: how many repeats must be expanded in
 sequence before its count can be computed, plus one. Nesting adds one; a

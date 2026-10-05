@@ -17,16 +17,6 @@ pub type CompIdx = u32;
 /// repeat (see `build.rs`).
 pub type ScopeId = u32;
 
-/// Identity of an essential cell across rebuilds: the DAST element it came
-/// from, the prop, and the iteration scope (as numbered by the build that
-/// saved the value). See `CONTEXT.md`, essential key.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct EssentialKey {
-    pub node: NodeId,
-    pub prop: u8,
-    pub scope: ScopeId,
-}
-
 /// One expanded `<repeatForSequence>`.
 #[derive(Debug, Clone)]
 pub struct Repeat {
@@ -48,11 +38,14 @@ pub struct Structure {
     /// is the document. Ids are stable across rebuilds: the table only grows.
     pub scopes: Vec<(ScopeId, NodeId, u32)>,
     pub scope_index: HashMap<(ScopeId, NodeId, u32), ScopeId>,
-    /// One key per essential cell, in cell order.
-    pub essential_keys: Vec<EssentialKey>,
-    /// Essential values of cells that existed in earlier builds, so an
-    /// iteration that disappears and reappears returns as it was left.
-    pub essential_store: HashMap<EssentialKey, f64>,
+    /// Per essential cell, in cell order: its essential key as (scope,
+    /// template slot). The template slot identifies the element and prop
+    /// within the scope's template. See `CONTEXT.md`, essential key.
+    pub essential_slots: Vec<(ScopeId, u32)>,
+    /// `values[scope][template slot]`: the last value of every essential
+    /// cell that has ever existed, so an iteration that disappears and
+    /// reappears returns as it was left. Rows fill lazily.
+    pub values: Vec<Vec<Option<f64>>>,
     pub repeats: Vec<Repeat>,
     pub counts_used: Vec<u32>,
     /// Per repeat (same order as `repeats`): how many repeats must be
@@ -232,7 +225,7 @@ impl Document {
                 t.structural_depth = doc.structure.structural_depth;
                 return Ok(doc);
             }
-            prior = crate::build::Prior::from_document(&doc);
+            prior = crate::build::Prior::take_from(&mut doc);
         }
         Err(crate::Error::UnstableStructure(MAX_PASSES))
     }
@@ -271,18 +264,48 @@ impl Document {
     /// Rebuild from the retained DAST, carrying iteration counts and
     /// essential values over. On error the document is left unchanged.
     pub fn rebuild(&mut self) -> crate::Result<()> {
+        let profile = std::env::var_os("CELLS_BUILD_PROFILE").is_some();
         let dast = self.dast.clone();
-        let mut prior = crate::build::Prior::from_document(self);
-        for _ in 0..MAX_PASSES {
-            let mut doc = crate::build::build(&dast, &prior)?.schedule(dast.clone())?;
-            doc.recompute();
-            if doc.structure_settled() {
-                *self = doc;
-                return Ok(());
-            }
-            prior = crate::build::Prior::from_document(&doc);
+        let clock = web_time::Instant::now();
+        // The value store moves into the prior; on failure it moves back.
+        let mut prior = crate::build::Prior::take_from(self);
+        if profile {
+            eprintln!("rebuild/prior: {:.2?}", clock.elapsed());
         }
-        Err(crate::Error::UnstableStructure(MAX_PASSES))
+        let result = (|| {
+            for _ in 0..MAX_PASSES {
+                let clock = web_time::Instant::now();
+                let u = crate::build::build(&dast, &prior)?;
+                if profile {
+                    eprintln!("rebuild/build: {:.2?}", clock.elapsed());
+                }
+                let clock = web_time::Instant::now();
+                let mut doc = u.schedule(dast.clone())?;
+                if profile {
+                    eprintln!("rebuild/schedule: {:.2?} (creation order valid: {})", clock.elapsed(), doc.program.in_creation_order);
+                }
+                let clock = web_time::Instant::now();
+                doc.recompute();
+                if profile {
+                    eprintln!("rebuild/recompute: {:.2?}", clock.elapsed());
+                }
+                if doc.structure_settled() {
+                    return Ok(doc);
+                }
+                prior = crate::build::Prior::take_from(&mut doc);
+            }
+            Err(crate::Error::UnstableStructure(MAX_PASSES))
+        })();
+        match result {
+            Ok(doc) => {
+                *self = doc;
+                Ok(())
+            }
+            Err(e) => {
+                prior.restore(self);
+                Err(e)
+            }
+        }
     }
 
     pub fn is_essential(&self, cell: CellIdx) -> bool {
@@ -315,6 +338,12 @@ impl Document {
     pub fn request_with(&mut self, evaluator: &mut (impl crate::eval::Evaluator + ?Sized), requests: &[Request]) -> Tick {
         let mut tick = Tick::default();
         for &r in requests {
+            // An infinite ask is never meaningful state (NaN is: an emptied
+            // input), and the current core rejects it; drop it before inverting.
+            if r.value.is_infinite() {
+                tick.dropped.push(r);
+                continue;
+            }
             match self.program.invert_to_essential(&self.cells, r.cell, r.value) {
                 // Landed on a fixed cell (an iteration index, a collect count).
                 Some((cell, _)) if !self.is_essential(cell) => tick.dropped.push(r),
@@ -451,8 +480,8 @@ impl Document {
             components: self.comps.heap_bytes(),
             strings: self.strings.heap_bytes(),
             structure: self.structure.scopes.capacity() * 12
-                + self.structure.essential_keys.capacity() * std::mem::size_of::<EssentialKey>()
-                + self.structure.essential_store.capacity() * (std::mem::size_of::<EssentialKey>() + 8)
+                + self.structure.essential_slots.capacity() * 8
+                + self.structure.values.iter().map(|r| r.capacity() * 16 + 24).sum::<usize>()
                 + self.structure.scope_index.capacity() * 16,
             dast: self.dast.heap_bytes(),
         }

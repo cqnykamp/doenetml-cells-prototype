@@ -7,8 +7,9 @@ vocabulary, and `docs/adr/` for recorded decisions.
 ## Layout
 
 - `crates/cells-core` — the core: flat columnar DAST (JSON or binary `CDST`
-  wire format, ADR 0002), scoped reference resolution with indexed paths
-  (`$r[3].p.x`), repeat expansion and whole-document rebuild (ADR 0004),
+  wire format, ADR 0002), templates compiled once and stamped per repeat
+  iteration with indexed references (`$r[3].p.x`) resolved through dense
+  scope tables, whole-document rebuild on structural change (ADR 0004),
   alias merging, columnar component tables, operator program with projection
   inverses (ADR 0003), scheduler, and an expression arena for `<math>`
   (numeric expressions lower to operators; symbolic ones are handles).
@@ -46,6 +47,7 @@ echo '<point name="p" x="1"/>' | node scripts/parse-dast.mjs
 scripts/gen-fixtures.sh         # ~1 minute; writes fixtures/*.{doenet,json,cdast}
 cargo bench -p cells-bench      # ~30 minutes for the full sweep (startup, tick, rebuild)
 cargo run --release -p cells-bench --bin stats > results/raw/stats.jsonl
+CELLS_BUILD_PROFILE=1 cargo run --release -p cells-bench --example rebuild_loop -- repeat-10000 3   # per-phase build timings
 
 cd web && pnpm install && pnpm wasm && pnpm dev     # interactive renderer at :5173
 cd web && pnpm e2e                                  # headless drag measurement
@@ -54,4 +56,6 @@ scripts/render-results.py                           # regenerate RESULTS.md
 
 Restrict a run with `CELLS_FIXTURES=chain-1000,points-100 cargo bench ...` or
 `CELLS_E2E_FIXTURES=... CELLS_E2E_EVALS=full CELLS_E2E_BACKENDS=main CELLS_E2E_FORMATS=cdast,json pnpm e2e`.
-The current-core baseline is `cd web && node baseline/measure.mjs`.
+The current-core baseline is `cd web && node baseline/measure.mjs`; the slider
+differential test against the current core is `cd web && node baseline/slider-diff.mjs`
+(after `cargo build --release -p cells-bench --example scenario_run`).

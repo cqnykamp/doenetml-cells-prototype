@@ -226,6 +226,26 @@ def main():
                 md.append(f"| {r['spec']} | {r['init_ms']:.0f} | {r.get('first_point_ms', float('nan')):.0f} | {a['core']['p50']:.2f} | {a['core']['p90']:.2f} | {a['dom']['p50']:.2f} | {a['frame']['p50']:.2f} |")
             md.append("")
 
+    diff = collect_latest("slider-diff-*.json")
+    if diff:
+        md.append("## Differential test: slider behavior against the current core\n")
+        md.append(f"Measured on {diff['date']} by `web/baseline/slider-diff.mjs`: the same slider documents and the same sequence of requests run through both cores (the current core through its `changeValue` and mathInput actions, the prototype through cell requests), comparing the observed `value`s after every step to 1e-9.\n")
+        md.append("| scenario | steps | differing | first difference |")
+        md.append("|---|---:|---:|---|")
+        total = 0
+        bad = 0
+        for r in diff["results"]:
+            if r.get("error"):
+                md.append(f"| {r['name']} | failed: {r['error']} | | |")
+                continue
+            rows = r["rows"]
+            diffs = [x for x in rows if not x["ok"]]
+            total += len(rows)
+            bad += len(diffs)
+            md.append(f"| {r['name']} | {len(rows)} | {len(diffs)} | {diffs[0]['label'] if diffs else ''} |")
+        md.append("")
+        md.append(f"{bad} of {total} observations differ.\n")
+
     (ROOT / "RESULTS.md").write_text("\n".join(md))
     print(f"wrote RESULTS.md and {RAW / (stamp + '-bench.json')}")
 

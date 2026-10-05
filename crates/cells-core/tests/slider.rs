@@ -44,19 +44,15 @@ fn requests_snap_to_the_nearest_step_and_clamp_to_the_range() {
 }
 
 #[test]
-fn nan_requests_are_dropped_and_infinite_ones_project_to_the_ends() {
-    // The current core rejects every non-finite ask. Here NaN reaches Round,
-    // whose domain excludes it, and is dropped; an infinite ask is projected
-    // onto the range by Min and Clamp before it gets there. Recorded as a
-    // benign deviation.
+fn non_finite_requests_are_dropped() {
+    // NaN reaches Round, whose domain excludes it; infinite asks are dropped
+    // before inversion. Both match the current core.
     let mut doc = load(r#"<slider name="s" initialValue="2"/>"#).unwrap();
-    let tick = doc.request(&[req(&doc, "s", "value", f64::NAN)]);
-    assert_eq!(tick.dropped.len(), 1);
-    assert_eq!(val(&doc, "s", "value"), 2.0);
-    doc.request(&[req(&doc, "s", "value", f64::INFINITY)]);
-    assert_eq!(val(&doc, "s", "value"), 10.0);
-    doc.request(&[req(&doc, "s", "value", f64::NEG_INFINITY)]);
-    assert_eq!(val(&doc, "s", "value"), 0.0);
+    for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let tick = doc.request(&[req(&doc, "s", "value", bad)]);
+        assert_eq!(tick.dropped.len(), 1);
+        assert_eq!(val(&doc, "s", "value"), 2.0);
+    }
 }
 
 #[test]
@@ -96,9 +92,10 @@ fn bind_value_to_aliases_the_bound_value_and_sends_the_snapped_value_down() {
     doc.request(&[req(&doc, "n", "value", 7.4)]);
     assert_eq!(val(&doc, "n", "value"), 7.4);
     assert_eq!(val(&doc, "s", "value"), 7.0);
-    // An emptied input shows NaN on the slider, which the renderer treats as `from`.
+    // An emptied input puts the slider at `from`, as in the current core.
     doc.request(&[req(&doc, "n", "value", f64::NAN)]);
-    assert!(val(&doc, "s", "value").is_nan());
+    assert_eq!(val(&doc, "s", "value"), 0.0);
+    assert!(val(&doc, "n", "value").is_nan());
     assert_eq!(reference::check(&doc), None);
 }
 

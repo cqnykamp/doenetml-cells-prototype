@@ -55,7 +55,7 @@ const fn computed(name: &'static str, op: OpSpec, args: &'static [u8]) -> PropDe
 ///
 /// ```text
 /// maxIndex = floor((to - from) / step + 1e-10)
-/// index    = min(max(round((pre - from) / step), 0), maxIndex)
+/// index    = min(max(round((pre - from) / step), 0), maxIndex), or 0 if NaN
 /// value    = from + index * step
 /// ```
 ///
@@ -74,9 +74,12 @@ const SLIDER_PROPS: &[PropDef] = &[
     /* 9 */ computed("rawIndex", OpSpec::Div, &[8, 2]),
     /* 10 */ computed("roundedIndex", OpSpec::Round, &[9]),
     /* 11 */ computed("nonNegIndex", OpSpec::Clamp { lo: 0.0, hi: f64::INFINITY }, &[10]),
-    /* 12 */ computed("index", OpSpec::Min, &[11, 7]),
-    /* 13 */ computed("scaled", OpSpec::Mul, &[12, 2]),
-    /* 14 */ computed("value", OpSpec::Add, &[13, 0]),
+    /* 12 */ computed("clampedIndex", OpSpec::Min, &[11, 7]),
+    // A non-finite stored value is index 0, so the slider shows `from`,
+    // as in the current core.
+    /* 13 */ computed("index", OpSpec::NanTo { k: 0.0 }, &[12]),
+    /* 14 */ computed("scaled", OpSpec::Mul, &[13, 2]),
+    /* 15 */ computed("value", OpSpec::Add, &[14, 0]),
 ];
 
 /// `<repeatForSequence>`. The iteration count is derived like any other

@@ -33,6 +33,8 @@ pub enum Op {
     Scale(CellIdx, f64),
     Offset(CellIdx, f64),
     Clamp(CellIdx, f64, f64),
+    /// `a` unless it is NaN, then the literal: `valueOnNaN` with a constant.
+    NanTo(CellIdx, f64),
     /// `a + t * (b - a)`
     Lerp(CellIdx, CellIdx, f64),
     Pow(CellIdx, CellIdx),
@@ -82,6 +84,10 @@ impl Op {
             Op::Scale(a, k) => cells[a as usize] * k,
             Op::Offset(a, k) => cells[a as usize] + k,
             Op::Clamp(a, lo, hi) => cells[a as usize].clamp(lo, hi),
+            Op::NanTo(a, k) => {
+                let x = cells[a as usize];
+                if x.is_nan() { k } else { x }
+            }
             Op::Lerp(a, b, t) => {
                 let (x, y) = (cells[a as usize], cells[b as usize]);
                 x + t * (y - x)
@@ -134,6 +140,11 @@ impl Op {
             }
             Op::Offset(a, k) => (a, desired - k),
             Op::Clamp(a, lo, hi) => (a, desired.clamp(lo, hi)),
+            // A NaN ask has no inverse here: it would be asking for the fallback.
+            Op::NanTo(a, _) => {
+                if desired.is_nan() { return None; }
+                (a, desired)
+            }
             Op::Lerp(a, b, t) => {
                 // desired = a(1-t) + t b
                 if t == 1.0 { return None; }
@@ -149,7 +160,7 @@ impl Op {
     pub fn input_pair(&self) -> (CellIdx, Option<CellIdx>) {
         match *self {
             Op::Add(a, b) | Op::Sub(a, b) | Op::Mul(a, b) | Op::Div(a, b) | Op::Min(a, b) | Op::Max(a, b) | Op::Default(a, b) | Op::Lerp(a, b, _) | Op::Pow(a, b) | Op::EvalAt(a, b, ..) => (a, Some(b)),
-            Op::Negate(a) | Op::Round(a) | Op::Floor(a) | Op::Scale(a, _) | Op::Offset(a, _) | Op::Clamp(a, _, _) | Op::Evaluate(a, ..) => (a, None),
+            Op::Negate(a) | Op::Round(a) | Op::Floor(a) | Op::Scale(a, _) | Op::Offset(a, _) | Op::Clamp(a, _, _) | Op::NanTo(a, _) | Op::Evaluate(a, ..) => (a, None),
         }
     }
 
@@ -183,6 +194,7 @@ impl Op {
             Op::Scale(..) => "scale",
             Op::Offset(..) => "offset",
             Op::Clamp(..) => "clamp",
+            Op::NanTo(..) => "nanTo",
             Op::Lerp(..) => "lerp",
             Op::Pow(..) => "pow",
             Op::Evaluate(..) => "evaluate",
@@ -207,6 +219,7 @@ pub enum OpSpec {
     Scale { k: f64 },
     Offset { k: f64 },
     Clamp { lo: f64, hi: f64 },
+    NanTo { k: f64 },
     Lerp { t: f64 },
     Pow,
     Evaluate,
@@ -217,7 +230,7 @@ impl OpSpec {
     pub fn arity(&self) -> usize {
         match self {
             OpSpec::Add | OpSpec::Sub | OpSpec::Mul | OpSpec::Div | OpSpec::Min | OpSpec::Max | OpSpec::Default | OpSpec::Lerp { .. } | OpSpec::Pow | OpSpec::EvalAt => 2,
-            OpSpec::Negate | OpSpec::Round | OpSpec::Floor | OpSpec::Scale { .. } | OpSpec::Offset { .. } | OpSpec::Clamp { .. } | OpSpec::Evaluate => 1,
+            OpSpec::Negate | OpSpec::Round | OpSpec::Floor | OpSpec::Scale { .. } | OpSpec::Offset { .. } | OpSpec::Clamp { .. } | OpSpec::NanTo { .. } | OpSpec::Evaluate => 1,
         }
     }
 
@@ -244,6 +257,7 @@ impl OpSpec {
             OpSpec::Scale { k } => Op::Scale(inputs[0], k),
             OpSpec::Offset { k } => Op::Offset(inputs[0], k),
             OpSpec::Clamp { lo, hi } => Op::Clamp(inputs[0], lo, hi),
+            OpSpec::NanTo { k } => Op::NanTo(inputs[0], k),
             OpSpec::Lerp { t } => Op::Lerp(inputs[0], inputs[1], t),
             OpSpec::Pow => Op::Pow(inputs[0], inputs[1]),
             OpSpec::Evaluate => {

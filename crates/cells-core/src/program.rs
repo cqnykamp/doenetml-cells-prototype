@@ -16,28 +16,61 @@ pub struct Program {
     pub arena: Arena,
     /// Extra inputs of `Evaluate`/`EvalAt` instructions (expression cell leaves).
     pub extra: Vec<CellIdx>,
+    /// Whether creation order was already a valid evaluation order, so no
+    /// sort ran. Diagnostic.
+    pub in_creation_order: bool,
 }
 
 impl Program {
     /// Orders `instrs` topologically. Returns the cell index of an output
     /// involved in a cycle on failure.
+    ///
+    /// Fast path: the builder emits instructions in creation order, which
+    /// for a template stamped per iteration is almost always already a valid
+    /// evaluation order (within an iteration the template is in document
+    /// order; a lag of `k - d` reads an earlier iteration). One linear pass
+    /// checks that every input is essential, fixed, or produced earlier; only
+    /// when that fails does the general sort run.
     pub fn schedule(instrs: Vec<Instr>, n_cells: usize, arena: Arena, extra: Vec<CellIdx>) -> std::result::Result<Program, CellIdx> {
-        // producer[cell] = index of the instruction that writes it, if any
         let mut producer = vec![u32::MAX; n_cells];
         for (i, ins) in instrs.iter().enumerate() {
             debug_assert_eq!(producer[ins.out as usize], u32::MAX, "two instructions write one cell");
             producer[ins.out as usize] = i as u32;
         }
-        // Kahn's algorithm over instructions.
+        let in_order = instrs.iter().enumerate().all(|(i, ins)| ins.op.inputs(&extra).all(|input| {
+            let p = producer[input as usize];
+            p == u32::MAX || (p as usize) < i
+        }));
+        if in_order {
+            return Ok(Program { instrs, producer, arena, extra, in_creation_order: true });
+        }
+
+        // Kahn's algorithm over instructions, with the dependents lists in
+        // compressed-sparse-row form (two counting passes, no per-instruction
+        // allocation).
         let n = instrs.len();
         let mut indegree = vec![0u32; n];
-        let mut dependents: Vec<Vec<u32>> = vec![Vec::new(); n];
+        let mut dep_count = vec![0u32; n + 1];
+        for ins in instrs.iter() {
+            for input in ins.op.inputs(&extra) {
+                let p = producer[input as usize];
+                if p != u32::MAX {
+                    dep_count[p as usize + 1] += 1;
+                }
+            }
+        }
+        for i in 0..n {
+            dep_count[i + 1] += dep_count[i];
+        }
+        let mut fill = dep_count.clone();
+        let mut dependents = vec![0u32; dep_count[n] as usize];
         for (i, ins) in instrs.iter().enumerate() {
             for input in ins.op.inputs(&extra) {
                 let p = producer[input as usize];
                 if p != u32::MAX {
                     indegree[i] += 1;
-                    dependents[p as usize].push(i as u32);
+                    dependents[fill[p as usize] as usize] = i as u32;
+                    fill[p as usize] += 1;
                 }
             }
         }
@@ -46,7 +79,7 @@ impl Program {
         let mut order = Vec::with_capacity(n);
         while let Some(i) = ready.pop() {
             order.push(instrs[i as usize]);
-            for &d in &dependents[i as usize] {
+            for &d in &dependents[dep_count[i as usize] as usize..dep_count[i as usize + 1] as usize] {
                 indegree[d as usize] -= 1;
                 if indegree[d as usize] == 0 {
                     ready.push(d);
@@ -61,7 +94,7 @@ impl Program {
         for (i, ins) in order.iter().enumerate() {
             producer[ins.out as usize] = i as u32;
         }
-        Ok(Program { instrs: order, producer, arena, extra })
+        Ok(Program { instrs: order, producer, arena, extra, in_creation_order: false })
     }
 
     /// Recompute every derived cell, appending the indices whose value

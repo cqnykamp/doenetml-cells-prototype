@@ -16,7 +16,7 @@ pub mod program;
 pub mod reference;
 pub mod test_utils;
 
-pub use document::{CellIdx, Child, CompIdx, Components, Document, EssentialKey, LoadTimings, Repeat, Request, ScopeId, Structure, Tick, NONE, TEXT_BIT};
+pub use document::{CellIdx, Child, CompIdx, Components, Document, LoadTimings, Repeat, Request, ScopeId, Structure, Tick, NONE, TEXT_BIT};
 pub use error::{Error, Result};
 pub use eval::{DirtyClosure, DirtyScan, Evaluator, FullRecompute};
 pub use ops::{Instr, Op};

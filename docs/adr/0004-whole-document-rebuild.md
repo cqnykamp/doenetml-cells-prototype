@@ -11,9 +11,11 @@ disappears and later reappears returns as it was left. The tick reports
 We chose this because it keeps the one invariant that makes everything else
 fast: between structural changes the schedule is fixed and the cell array is
 a flat `f64` slice. No incremental graph editing, no tombstones, no
-re-scheduling of partial programs. The build is about half a microsecond per
-component, so a document with 10,000 iterations (60,000 components) rebuilds
-in about 35 ms natively; the measured curve is in `RESULTS.md`.
+re-scheduling of partial programs. The build compiles each template once and
+stamps it per iteration through dense per-scope tables, at about a quarter of
+a microsecond per component, so a document with 10,000 iterations (60,000
+components) rebuilds in about 16 ms natively; the measured curve is in
+`RESULTS.md`.
 
 ## Considered options
 
@@ -32,7 +34,9 @@ in about 35 ms natively; the measured curve is in `RESULTS.md`.
   its tree by stable component identity (DAST node plus scope), which the
   component table exposes, so a rebuild is an update pass, not a remount.
 - The document retains its DAST and a store of every essential value it has
-  ever held, both small next to the cell array.
+  ever held (per scope and template slot), both small next to the cell array.
+- The scheduler checks whether creation order is already a valid evaluation
+  order before sorting; for stamped templates it almost always is.
 - A count that depends on cells inside its own repeat cannot settle; the
   build gives up after eight passes with an error rather than looping.
 - A value-sized array elsewhere in Doenet (solutions of an equation,
