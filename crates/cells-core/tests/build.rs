@@ -203,3 +203,20 @@ fn boolean_input_drives_a_point_hide_as_a_zero_one_cell() {
     let doc = load_ok(r#"<point name="p"/>"#);
     assert_eq!(doc.value("p", "hide"), Some(0.0));
 }
+
+#[test]
+fn names_resolve_through_containers_and_copies() {
+    let doc = load(
+        r#"<graph><point name="q">(1,2)</point></graph>
+           <graph name="g"><point name="p">(3,4)</point></graph>
+           <graph extend="$g" name="h"/>"#,
+    )
+    .unwrap();
+    assert_eq!(doc.value("q", "x"), Some(1.0));
+    // `p` exists in g and in its copy h; the original wins a bare lookup.
+    let gp = doc.resolve_path("g.p").unwrap();
+    assert_eq!(doc.resolve_path("p"), Some(gp));
+    assert_eq!(doc.cells[doc.prop_cells(gp, "x").unwrap()[0] as usize], 3.0);
+    let hp = doc.resolve_path("h.p").unwrap();
+    assert_eq!(doc.prop_cells(hp, "x"), doc.prop_cells(gp, "x"));
+}

@@ -23,7 +23,7 @@
 //! Inverses that move several points at once hand them to the request
 //! engine as one *point group* ([`Produced::group`]); the engine, not the
 //! operator, asks what each point would actually become and shifts the free
-//! ones when a strict subset is held back (`program.rs`). A free line or
+//! ones when a strict subset is held back (`invert.rs`). A free line or
 //! polygon has no instruction at all: its point cells alias the points.
 
 use crate::document::CellIdx;

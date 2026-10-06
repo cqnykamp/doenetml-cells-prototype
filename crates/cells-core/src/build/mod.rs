@@ -24,10 +24,14 @@
 //! (the table only grows), which is how iteration counts and essential
 //! values carry over: both are stored per (scope, template slot).
 //!
-//! Then, as before: union-find over aliases makes cells; cells are numbered
+//! **Emit**: union-find over aliases makes cells; cells are numbered
 //! (essential, then fixed, then derived); operators are bound; and the
 //! instruction list is scheduled, with a fast path when creation order is
 //! already a valid evaluation order.
+//!
+//! The phases live in `plan.rs` (with `geometry.rs` for the planned kinds
+//! and `copies.rs` for `extend`), `expand.rs` and `emit.rs`; this file holds
+//! the types they share.
 
 use std::collections::HashMap;
 
@@ -231,9 +235,10 @@ struct RefPlan {
     display: String,
 }
 
-/// Builds a planned element's prop list: public slots set by index, hidden
-/// slots appended after them and referenced by index like any own prop.
-struct Chain {
+/// A planned element's prop list under construction: public slots set by
+/// index, hidden slots appended after them and referenced by index like any
+/// own prop.
+struct ElemPlan {
     props: Vec<Option<SourcePlan>>,
     roles: HashMap<&'static str, u8>,
     /// The attribute a role's value came from, if any; a copy that gives
@@ -241,9 +246,9 @@ struct Chain {
     role_attr: HashMap<&'static str, &'static str>,
 }
 
-impl Chain {
+impl ElemPlan {
     fn new(n_public: usize) -> Self {
-        Chain { props: vec![None; n_public], roles: HashMap::new(), role_attr: HashMap::new() }
+        ElemPlan { props: vec![None; n_public], roles: HashMap::new(), role_attr: HashMap::new() }
     }
     fn set(&mut self, i: usize, plan: SourcePlan) {
         self.props[i] = Some(plan);
@@ -397,9 +402,9 @@ enum Source {
     /// Operator over `op_inputs[start..start + n]`.
     Op(OpSpec, u32, u8),
     /// Head (output 0) of a vector instruction over `op_inputs[start..start + n]`.
-    OpVec(VecOp, u32, u8),
+    Vec(VecOp, u32, u8),
     /// Output `k` of the vector instruction headed at `head`.
-    OutputOf(SlotId, u8),
+    VecOut(SlotId, u8),
 }
 
 /// A built document whose program has not yet been scheduled.

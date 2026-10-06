@@ -317,6 +317,12 @@ impl Document {
         (cell as usize) < self.n_essential
     }
 
+    /// A constant that is not state (an iteration index, a math handle, a
+    /// `fixed` value): fixed cells follow the essential ones.
+    pub fn is_fixed(&self, cell: CellIdx) -> bool {
+        (self.n_essential..self.n_essential + self.n_fixed).contains(&(cell as usize))
+    }
+
     pub fn essential_cells(&self) -> &[f64] {
         &self.cells[..self.n_essential]
     }

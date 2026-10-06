@@ -507,9 +507,9 @@ impl<'c, 'a> Builder<'c, 'a> {
                         let slot = self.arg_slot(a, comp, inst.scope, kind, pi)?;
                         self.op_inputs.push(slot);
                     }
-                    Source::OpVec(*op, start, args.len() as u8)
+                    Source::Vec(*op, start, args.len() as u8)
                 }
-                SourcePlan::VecOut(head, k) => Source::OutputOf(self.slot(comp, *head as usize), *k),
+                SourcePlan::VecOut(head, k) => Source::VecOut(self.slot(comp, *head as usize), *k),
             };
             self.sources[s as usize] = source;
         }

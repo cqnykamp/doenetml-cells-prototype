@@ -204,10 +204,9 @@ impl Core {
 
     /// Whether a cell is essential (state), fixed (a constant), or derived.
     pub fn cell_class(&self, cell: u32) -> String {
-        let c = cell as usize;
-        if c < self.doc.n_essential {
+        if self.doc.is_essential(cell) {
             "essential".into()
-        } else if c < self.doc.n_essential + self.doc.n_fixed {
+        } else if self.doc.is_fixed(cell) {
             "fixed".into()
         } else {
             "derived".into()

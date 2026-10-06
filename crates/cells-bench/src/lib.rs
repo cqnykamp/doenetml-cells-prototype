@@ -59,7 +59,7 @@ pub fn drag_target(doc: &cells_core::Document, spec: &str) -> cells_core::CellId
         // The last iteration's point, so the drag inverts the whole lag chain.
         "recur" => {
             let n = doc.value("n", "value").unwrap() as usize;
-            let c = doc.scoped_component(&["r", &n.to_string(), "p"]).unwrap();
+            let c = doc.resolve_path(&format!("r[{n}].p")).unwrap();
             doc.prop_cells(c, "x").unwrap()[0]
         }
         "fanout" => doc.cell("n", "value").unwrap(),

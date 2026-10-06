@@ -1,13 +1,15 @@
-//! Operators: the numeric functions that compute derived cells.
-//! Literal parameters are stored inline in the instruction, not in cells.
+//! Operators: the numeric functions that compute derived cells. Literal
+//! parameters are stored inline in the instruction, not in cells.
 //!
-//! Inverse rules (see ADR 0003): binary operators write their first
-//! argument (except `Default`, which writes whichever argument it is
-//! currently passing through); idempotent operators (Round, Floor, Clamp, Min, Max) invert by
-//! projection, applying themselves to the desired value; an inverse that is
-//! undefined for the current values, or whose desired value is outside the
-//! operator's domain (a non-finite ask on Round), returns `None` and the
-//! request is dropped.
+//! Inverse rules for the scalar operators here (ADR 0003): a binary operator
+//! writes its first argument (`Default` writes whichever argument it is
+//! passing through); an idempotent operator (Round, Floor, Clamp, Min, Max)
+//! inverts by projection, applying itself to the requested value; an inverse
+//! that is undefined for the current values, or whose requested value is
+//! outside the operator's domain (a non-finite ask on Round), returns `None`
+//! and the request is dropped. Vector operators (`Op::Vec`) carry their own
+//! rules in `geo.rs`, and may write several inputs; the request engine in
+//! `invert.rs` gathers requests and keeps point groups together.
 
 use crate::document::CellIdx;
 use crate::expr::Arena;
