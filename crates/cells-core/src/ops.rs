@@ -55,9 +55,8 @@ pub enum Op {
     /// the second cell's value; extra inputs as for `Evaluate`.
     EvalAt(CellIdx, CellIdx, u32, u8),
     /// A vector operator (`geo.rs`): inputs are `extra[start..start + n_in]`,
-    /// outputs are the `n_out` cells from the instruction's `out`; both
-    /// counts come from the operator.
-    Vec(VecOp, u32),
+    /// outputs are the `n_out` cells from the instruction's `out`.
+    Vec(VecOp, u32, u8, u8),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -217,7 +216,7 @@ impl Op {
     #[inline(always)]
     pub fn n_out(&self) -> usize {
         match *self {
-            Op::Vec(v, _) => v.n_out(),
+            Op::Vec(_, _, _, n_out) => n_out as usize,
             _ => 1,
         }
     }
@@ -225,28 +224,20 @@ impl Op {
     /// Evaluate a vector operator into `out` (`n_out` values).
     #[inline]
     pub fn eval_vec(&self, cells: &[f64], extra: &[CellIdx], out: &mut [f64]) {
-        let Op::Vec(v, start) = *self else { unreachable!() };
-        let n_in = v.n_in();
-        let inputs = extra[start as usize..start as usize + n_in].iter().map(|&c| cells[c as usize]);
-        if n_in <= 16 {
-            let mut inp = [0.0f64; 16];
-            for (k, x) in inputs.enumerate() {
-                inp[k] = x;
-            }
-            v.eval(&inp[..n_in], out);
-        } else {
-            // A sticky group's identity over all its members.
-            let inp: Vec<f64> = inputs.collect();
-            v.eval(&inp, out);
+        let Op::Vec(v, start, n_in, _) = *self else { unreachable!() };
+        let mut inp = [0.0f64; 16];
+        let n_in = n_in as usize;
+        for (k, &c) in extra[start as usize..start as usize + n_in].iter().enumerate() {
+            inp[k] = cells[c as usize];
         }
+        v.eval(&inp[..n_in], out);
     }
 
     /// Range into `Program::extra` of further inputs (only `Evaluate`/`EvalAt`).
     #[inline(always)]
     pub fn extra_range(&self) -> std::ops::Range<usize> {
         match *self {
-            Op::Evaluate(_, start, n) | Op::EvalAt(_, _, start, n) => start as usize..start as usize + n as usize,
-            Op::Vec(v, start) => start as usize..start as usize + v.n_in(),
+            Op::Evaluate(_, start, n) | Op::EvalAt(_, _, start, n) | Op::Vec(_, start, n, _) => start as usize..start as usize + n as usize,
             _ => 0..0,
         }
     }
@@ -366,9 +357,8 @@ impl OpSpec {
                 Op::EvalAt(inputs[0], inputs[1], start, n)
             }
             OpSpec::Vec(v) => {
-                let start = extra.len() as u32;
-                extra.extend_from_slice(inputs);
-                Op::Vec(v, start)
+                let (start, n) = park(extra, inputs);
+                Op::Vec(v, start, n, v.n_out() as u8)
             }
         }
     }

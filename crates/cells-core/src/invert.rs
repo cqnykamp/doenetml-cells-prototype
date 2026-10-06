@@ -180,8 +180,8 @@ impl Engine<'_> {
             let origin = origin.unwrap_or(Request { cell: ins.out, value: f64::NAN });
             produced.clear();
             let ok = match ins.op {
-                Op::Vec(v, start) => {
-                    let inputs = &self.program.extra[start as usize..start as usize + v.n_in()];
+                Op::Vec(v, start, n_in, _) => {
+                    let inputs = &self.program.extra[start as usize..start as usize + n_in as usize];
                     let inp: Vec<f64> = inputs.iter().map(|&c| self.cells[c as usize]).collect();
                     let cur: Vec<f64> = (0..n_out).map(|k| self.cells[ins.out as usize + k]).collect();
                     v.invert(inputs, &inp, &cur, &desired, &mut produced)

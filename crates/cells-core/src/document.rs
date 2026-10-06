@@ -11,7 +11,6 @@ use crate::dast::{Dast, NodeId, StrId, StringTable};
 use crate::invert::PointRequest;
 use crate::program::Program;
 
-#[cfg(feature = "sticky-prepass")]
 mod sticky;
 mod table;
 
@@ -163,8 +162,7 @@ pub struct Document {
     pub structure: Structure,
     /// The document as loaded, kept for rebuilds.
     pub dast: Arc<Dast>,
-    /// Sticky groups as cells, for the request pre-pass (plan 4, wiring B).
-    #[cfg(feature = "sticky-prepass")]
+    /// Sticky groups as cells, for the request pre-pass (plan 4).
     sticky: Vec<sticky::StickyTable>,
 }
 
@@ -206,7 +204,6 @@ pub struct LoadTimings {
 impl Document {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(cells: Vec<f64>, n_essential: usize, n_fixed: usize, program: Program, comps: Components, strings: StringTable, root: CompIdx, structure: Structure, dast: Arc<Dast>) -> Self {
-        #[allow(unused_mut)]
         let mut doc = Document {
             cells,
             n_essential,
@@ -217,13 +214,9 @@ impl Document {
             root,
             structure,
             dast,
-            #[cfg(feature = "sticky-prepass")]
             sticky: Vec::new(),
         };
-        #[cfg(feature = "sticky-prepass")]
-        {
-            doc.sticky = doc.sticky_tables();
-        }
+        doc.sticky = doc.sticky_tables();
         doc
     }
 
@@ -407,7 +400,6 @@ impl Document {
         let mut tick = Tick::default();
         // An infinite ask is never meaningful state (NaN is: an emptied
         // input), and the current core rejects it; drop it before inverting.
-        #[allow(unused_mut)]
         let (mut finite, infinite): (Vec<Request>, Vec<Request>) = requests.iter().partition(|r| !r.value.is_infinite() || self.accepts_infinity(r.cell));
         tick.dropped.extend(infinite);
         let mut finite_groups: Vec<Vec<PointRequest>> = Vec::with_capacity(groups.len());
@@ -418,7 +410,6 @@ impl Document {
                 finite_groups.push(g.clone());
             }
         }
-        #[cfg(feature = "sticky-prepass")]
         self.snap_sticky(&mut finite, &mut finite_groups);
         let inv = self.program.invert_requests(&self.cells, self.n_essential, &finite, &finite_groups);
         tick.dropped.extend(inv.dropped);

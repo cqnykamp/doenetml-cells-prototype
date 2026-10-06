@@ -238,6 +238,34 @@ pub fn circles3(n: usize) -> String {
     s
 }
 
+/// Plan 4: `n` free polygons of 4 to 6 vertices on a grid, in one sticky
+/// group (or, with `sticky` false, the same polygons with no group, as the
+/// baseline). Every fourth polygon is rigid. Polygon `p0` is the one dragged.
+pub fn sticky(n: usize, sticky: bool) -> String {
+    let mut s = String::from("<graph name=\"g\">\n");
+    if sticky {
+        s.push_str("<stickyGroup name=\"sg\">\n");
+    }
+    let side = (n as f64).sqrt().ceil() as usize;
+    for i in 0..n {
+        let (cx, cy) = ((i % side) as f64 * 3.0, (i / side) as f64 * 3.0);
+        let k = 4 + i % 3;
+        let verts: Vec<String> = (0..k)
+            .map(|j| {
+                let t = std::f64::consts::TAU * j as f64 / k as f64;
+                format!("({},{})", cx + (t.cos() * 100.0).round() / 100.0, cy + (t.sin() * 100.0).round() / 100.0)
+            })
+            .collect();
+        let rigid = if i % 4 == 3 { " rigid" } else { "" };
+        let _ = writeln!(s, "  <polygon name=\"p{i}\" vertices=\"{}\"{rigid}/>", verts.join(" "));
+    }
+    if sticky {
+        s.push_str("</stickyGroup>\n");
+    }
+    s.push_str("</graph>\n");
+    s
+}
+
 /// Parse a CLI-style spec such as `chain-1000` or `grid-100x10`.
 pub fn from_spec(spec: &str) -> Option<String> {
     let (shape, size) = spec.split_once('-')?;
@@ -254,6 +282,8 @@ pub fn from_spec(spec: &str) -> Option<String> {
         "mathchain" => mathchain(size.parse().ok()?),
         "hidden" => hidden(size.parse().ok()?),
         "circles3" => circles3(size.parse().ok()?),
+        "sticky" => sticky(size.parse().ok()?, true),
+        "stickyfree" => sticky(size.parse().ok()?, false),
         "grid" => {
             let (n, l) = size.split_once('x')?;
             grid(n.parse().ok()?, l.parse().ok()?)
@@ -277,6 +307,7 @@ pub const DEFAULT_SWEEP: &[&str] = &[
     "mathchain-1000", "mathchain-100000",
     "hidden-1000",
     "circles3-1000", "circles3-10000",
+    "sticky-100", "sticky-1000", "stickyfree-100", "stickyfree-1000",
 ];
 
 /// The current-core counterpart of a spec, for the baseline measurement.

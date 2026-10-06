@@ -97,3 +97,34 @@ _The third round asked whether local operator inverses can match the current cor
 **Cost.** Ten thousand circles through three points each, with every first point bound to one input (`circles3-10000`: 40,003 components, 160,005 cells, 50,000 instructions, 7 MB on the wire), load in about 290 ms natively from JSON (187 ms of it the build, 4.7 µs per component against 1.5 to 3 for plan 2's fixtures). Dragging one circle's center, which through the shared input moves all 10,000 circumcenters, is 0.70 ms per tick with full recompute, 1.1 ms with the dirty scan and 2.8 ms with the dirty closure (table under "Tick"); at 1,000 circles the three are 53, 90 and 200 µs. The fan-out inverse and the lookahead are not visible in those numbers; lookahead's one real cost is a copy of the cell array per realized request, which is proportional to the document, not to the drag, and would want a dirty overlay if it ever showed.
 
 **Verdict.** No fatal snag: no component-specific code in the core's tick path, every inverse a local rule on an operator, and the constrained-shape behavior reproduced without a second pass. Two noted concepts (multi-output instructions with gathering, and point groups with lookahead in the request engine as the only context a request gets), no structural limitation left, and the deviations above. Build-time variety was the whole of the circle's complication and most of the line's; the rest was the second pass, which point groups replace, and which turned out to be about the interaction rather than the document.
+
+## Plan 4: sticky groups
+
+_The fourth round added `<stickyGroup>`, the first relation across components, and asked which of two wirings is simplest given equal behavior (`docs/plan-4.md`, ADR 0007): (A) one `Sticky` identity instruction per group, whose inverse snaps, or (B) a pre-pass that snaps requests on member cells before inversion. Both called one snap kernel (`sticky.rs`), a line-for-line port of the current core's rule minus the rigid-rotation fallbacks, behind a build-time switch. Raw outputs are in `results/raw/plan4-2026-10-06/` (local)._
+
+**Behavior: identical, so the gate passes for both.** The oracle is the current core's `stickygroup.test.ts`, run unmodified through the adapter. Both wirings pass the same 3 of 6: the translate scene, line segments, and the symbolic vertex. The other three fail at load on general gaps, not on snapping: an `extend` of a component that does not exist (`$g1.sg.A` in test 2), `$pg1.vertices` rendered inside `<p>` (tests 3 and 4), and `<polyline>` (test 4). Two further checks look past those gaps:
+
+- A copy of the test file with only those lines removed passes 4 of 6 under both wirings. Test 2, parallel edges snapping on translate, passes in full: the ported edge stage covered it, though the brief had put it under Tier 3. Test 3 stops at its first step, a rigid rotation (Tier 3, as declared).
+- A differential test replays test 3's ten non-rigid single-vertex drags (Tier 2) from the state the current core reaches after the rigid steps. Both wirings match the current core at 1e-9 on all ten steps.
+
+**What separated them.**
+
+| criterion | A: `Sticky` instruction | B: request pre-pass |
+|---|---|---|
+| oracle (unmodified / patched / Tier 2) | 3/6, 4/6, 10/10 | 3/6, 4/6, 10/10 |
+| new mechanisms | rewrites sources after resolution; a key map for moved essential values; unbounded vector arity; memoized reference evaluator | one pre-pass in `Document::request_with_groups` |
+| new limitation | a member computed from another member is a cycle | requests reaching members only through inversion are not snapped |
+| code outside the kernel | ~320 lines; 8 existing modules + 1 new file | ~160 lines; 1 existing module + 1 new file |
+| cells, `sticky-1000` (36,002 without the group) | 53,001 | 36,004 |
+| whole-polygon drag, `sticky-100` / `sticky-1000` | 0.16 ms / 1.2 ms | 0.05 ms / 0.4 ms |
+| one-vertex drag, `sticky-100` / `sticky-1000` | 0.06 ms / 0.53 ms | 0.05 ms / 0.33 ms |
+| load, `sticky-1000` | 11.6 ms | 9.8 ms |
+
+Drags are full-recompute averages over 300 ticks, from `cargo run --release -p cells-bench --example sticky_tick`. The same drag in `stickyfree-1000`, the same polygons with no group, takes 16 µs. B's cost is the kernel itself: it scans every other member, a linear scan over about 5,000 vertices and edges. That is two orders of magnitude inside the budget, so there is no spatial index. A was slower because its lookahead inverted through the group a second time, and it copied every coordinate forward.
+
+**Two things only the build showed.** First, copied groups: the oracle scenes copy each group three times, and under A each copy's instruction re-snapped the previous one's result. Snapping is not idempotent (2.55 instead of 2.25), so both wirings now record a group whose points equal an earlier group's only once. Second, the cycle: a single instruction over all members couples them all, the same finding that removed per-shape instructions in plan 3 (ADR 0006). Charles asked then that interaction behavior not limit what documents can say, and that decided it.
+
+**Deviations, recorded once each.** (1) A member sharing a point with the dragged member does not attract it; the current core excludes by child index only and snaps a polygon onto its own member vertex. (2) Requests that reach a member only through inversion are not snapped (ADR 0007). (3) A rigid or similarity shape dragged by one vertex is not snapped (Tier 3, declared).
+
+**Verdict.** B, kept; A deleted after measurement (it is in commit 461639b). Sticky groups need no new concept in the cell graph or the inversion engine. They need a group table on the document and one pass over a tick's requests, beside the point groups of plan 3, and the inverse system stays exactly as plan 3 left it. The snap kernel is the only sticky-specific code, a pure function of current and requested points with no state from earlier ticks. Tier 3's rotation snapping is the open question. In the current core it depends on a pre-snap cache, which would be the first state carried between ticks.
+

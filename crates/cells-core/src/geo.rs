@@ -19,8 +19,6 @@
 //! | `LinePointsFromCoeffs`   | (a, b, c) → two points on ax+by+c=0   | points: translation keeps a, b and rescales c; otherwise all three   |
 //! | `ProjectCircle`          | (P, C, r) → nearest point on circle   | projection: the requested point is projected and written to P        |
 //! | `ProjectLine`            | (P, A, B) → nearest point on line AB  | projection: the requested point is projected and written to P        |
-//! | `Sticky`                 | identity on a sticky group's points   | the dragged members snap to the others (`sticky.rs`); one point      |
-//! |                          |                                       | group per dragged member                                             |
 //!
 //! Inverses that move several points at once hand them to the request
 //! engine as one *point group* ([`Produced::group`]); the engine, not the
@@ -102,12 +100,6 @@ pub enum VecOp {
     ProjectCircle,
     /// Inputs (x, y, x1, y1, x2, y2); outputs (x', y').
     ProjectLine,
-    /// Identity on the points of a sticky group (plan 4). Inputs: the
-    /// threshold, the `relativeToGraphScales` flag, the graph's xmin, xmax,
-    /// ymin, ymax, `header` cells describing the members, then the 2·points
-    /// coordinates. Each member is described by a code (shape, plus 3 if
-    /// rigid), its point count, and the indices of its points.
-    Sticky { header: u32, points: u32 },
 }
 
 impl VecOp {
@@ -122,7 +114,6 @@ impl VecOp {
             VecOp::LinePointsFromCoeffs => 3,
             VecOp::ProjectCircle => 5,
             VecOp::ProjectLine => 6,
-            VecOp::Sticky { header, points } => STICKY_PARAMS + header as usize + 2 * points as usize,
         }
     }
 
@@ -134,7 +125,6 @@ impl VecOp {
             VecOp::PolarSlope | VecOp::PolarDirection { .. } => 2,
             VecOp::LinePointsFromCoeffs => 4,
             VecOp::ProjectCircle | VecOp::ProjectLine => 2,
-            VecOp::Sticky { points, .. } => 2 * points as usize,
         }
     }
 
@@ -149,7 +139,6 @@ impl VecOp {
             VecOp::LinePointsFromCoeffs => "linePointsFromCoeffs",
             VecOp::ProjectCircle => "projectCircle",
             VecOp::ProjectLine => "projectLine",
-            VecOp::Sticky { .. } => "sticky",
         }
     }
 
@@ -204,7 +193,6 @@ impl VecOp {
                 out[0] = x;
                 out[1] = y;
             }
-            VecOp::Sticky { header, .. } => out.copy_from_slice(&inp[STICKY_PARAMS + header as usize..]),
         }
     }
 
@@ -306,53 +294,7 @@ impl VecOp {
                 out.write(inputs[1], y);
                 true
             }
-            VecOp::Sticky { header, points } => {
-                invert_sticky(header as usize, points as usize, inputs, inp, cur, desired, out);
-                true
-            }
         }
-    }
-}
-
-/// Inputs of `Sticky` before its member header.
-const STICKY_PARAMS: usize = 6;
-
-/// Encode a sticky group's members as `Sticky` header cells.
-pub fn sticky_header(members: &[crate::sticky::Member]) -> Vec<f64> {
-    use crate::sticky::Shape;
-    let mut h = Vec::new();
-    for m in members {
-        let shape = match m.shape {
-            Shape::Point => 0.0,
-            Shape::Closed => 1.0,
-            Shape::Open => 2.0,
-        };
-        h.push(shape + if m.rigid { 3.0 } else { 0.0 });
-        h.push(m.points.len() as f64);
-        h.extend(m.points.iter().map(|&i| i as f64));
-    }
-    h
-}
-
-fn invert_sticky(header: usize, n: usize, inputs: &[CellIdx], inp: &[f64], cur: &[f64], desired: &[Option<f64>], out: &mut Produced) {
-    use crate::sticky::{Member, Params, Shape, snap_group};
-    let params = Params::new(inp[0], inp[1] != 0.0, [inp[2], inp[3], inp[4], inp[5]]);
-    let h = &inp[STICKY_PARAMS..STICKY_PARAMS + header];
-    let mut members = Vec::new();
-    let mut i = 0;
-    while i < h.len() {
-        let code = h[i] as usize;
-        let count = h[i + 1] as usize;
-        let shape = [Shape::Point, Shape::Closed, Shape::Open][code % 3];
-        members.push(Member { shape, rigid: code >= 3, points: h[i + 2..i + 2 + count].iter().map(|&p| p as u32).collect() });
-        i += 2 + count;
-    }
-    let current: Vec<crate::sticky::Pt> = (0..n).map(|p| [cur[2 * p], cur[2 * p + 1]]).collect();
-    let requested: Vec<Option<crate::sticky::Pt>> =
-        (0..n).map(|p| (desired[2 * p].is_some() || desired[2 * p + 1].is_some()).then(|| [desired[2 * p].unwrap_or(cur[2 * p]), desired[2 * p + 1].unwrap_or(cur[2 * p + 1])])).collect();
-    let coords = &inputs[STICKY_PARAMS + header..];
-    for writes in snap_group(&members, &current, &requested, &params) {
-        out.group(writes.into_iter().map(|(p, [x, y])| [(coords[2 * p as usize], x), (coords[2 * p as usize + 1], y)]).collect());
     }
 }
 

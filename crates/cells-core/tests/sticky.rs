@@ -1,7 +1,7 @@
 //! Plan 4: `<stickyGroup>`. The first scene is the current core's
 //! "attract polygons and point when translating", step for step; the rest
-//! are the prototype's own rules (repeat members, shared points). Both
-//! wirings must pass these.
+//! are the prototype's own rules (repeat members, shared points, what the
+//! pre-pass does and does not see).
 
 mod common;
 use cells_core::reference;
@@ -140,4 +140,45 @@ fn a_shape_does_not_stick_to_its_own_member_vertex() {
     drag(&mut doc, "pg", &from, [0.2, 0.1]);
     assert_eq!(verts(&doc, "pg", 3), shift(&from, [0.2, 0.1]));
     assert_eq!((v(&doc, "A", "x"), v(&doc, "A", "y")), (0.2, 0.1));
+}
+
+#[test]
+fn a_request_that_reaches_a_member_through_inversion() {
+    // P is not a member; it is A shifted. Dragging P asks A to move, but
+    // the pre-pass sees only the request on P, so nothing snaps. (A
+    // `Sticky` instruction would have snapped it; see ADR 0007.)
+    let mut doc = load(
+        r#"<graph>
+             <stickyGroup>
+               <point name="A">(0,0)</point>
+               <point name="B">(5,5)</point>
+             </stickyGroup>
+             <point name="P" x="$A.x + 1" y="$A.y" />
+           </graph>"#,
+    )
+    .unwrap();
+    move_point(&mut doc, "P", 5.8, 5.1);
+    let a = (v(&doc, "A", "x"), v(&doc, "A", "y"));
+    assert_eq!(a, (4.8, 5.1));
+}
+
+#[test]
+fn a_member_computed_from_another_member() {
+    // The polygon's first vertex is computed from member A. Legal here; one
+    // instruction over every member would read its own output, a cycle
+    // (ADR 0007).
+    let mut doc = load(
+        r#"<graph>
+             <stickyGroup>
+               <point name="A">(0,0)</point>
+               <polygon name="pg" vertices="($A.x+1, $A.y) (4,0) (0,4)" />
+             </stickyGroup>
+           </graph>"#,
+    )
+    .unwrap();
+    assert_eq!(v(&doc, "pg", "x1"), 1.0);
+    // Dragging the polygon writes A through the vertex.
+    let from = [[1.0, 0.0], [4.0, 0.0], [0.0, 4.0]];
+    drag(&mut doc, "pg", &from, [1.0, 1.0]);
+    assert_eq!((v(&doc, "A", "x"), v(&doc, "A", "y")), (1.0, 1.0));
 }

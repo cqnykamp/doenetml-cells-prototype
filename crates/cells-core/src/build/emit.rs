@@ -105,7 +105,7 @@ impl<'c, 'a> Builder<'c, 'a> {
         let mut bound: Vec<CellIdx> = Vec::with_capacity(8);
         for &s in &derived_defs {
             let (spec, start, count) = match &self.sources[s] {
-                Source::Op(spec, start, count) => (*spec, *start, *count as u32),
+                Source::Op(spec, start, count) => (*spec, *start, *count),
                 Source::Vec(v, start, count) => (OpSpec::Vec(*v), *start, *count),
                 _ => unreachable!(),
             };
@@ -185,7 +185,6 @@ impl<'c, 'a> Builder<'c, 'a> {
     /// The (scope, template slot) an essential slot's value is saved under.
     /// Only template elements have essential slots; copies alias theirs.
     pub(super) fn template_slot(&self, slot: SlotId) -> (ScopeId, u32) {
-        let slot = self.moved_from.get(&slot).copied().unwrap_or(slot);
         let comp = self.slot_comp[slot as usize];
         let inst = self.instances[self.comp_instance[comp as usize] as usize];
         let pi = slot - self.slot_base[comp as usize];
@@ -250,8 +249,7 @@ impl<'c, 'a> Builder<'c, 'a> {
                 }
                 match &self.sources[sl as usize] {
                     Source::Alias(t) => stack.push(*t),
-                    Source::Op(_, start, n) => stack.extend_from_slice(&self.op_inputs[*start as usize..*start as usize + *n as usize]),
-                    Source::Vec(_, start, n) => stack.extend_from_slice(&self.op_inputs[*start as usize..*start as usize + *n as usize]),
+                    Source::Op(_, start, n) | Source::Vec(_, start, n) => stack.extend_from_slice(&self.op_inputs[*start as usize..*start as usize + *n as usize]),
                     Source::VecOut(head, _) => stack.push(*head),
                     _ => {}
                 }

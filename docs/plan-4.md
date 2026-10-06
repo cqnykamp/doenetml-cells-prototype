@@ -1,8 +1,8 @@
 # Plan 4: sticky groups
 
 This file records the decisions reached before implementation. Vocabulary is
-in `CONTEXT.md` (**Sticky group**). The verdict goes in the "Plan 4" section of
-`results/NOTES.md`, and the chosen wiring gets an ADR.
+in `CONTEXT.md` (**Sticky group**). The verdict is in the "Plan 4" section of
+`results/NOTES.md`; the chosen wiring, B, is ADR 0007.
 
 ## The question
 

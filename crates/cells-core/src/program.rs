@@ -121,16 +121,9 @@ impl Program {
     pub fn step(&self, ins: &Instr, cells: &mut [f64], changed: Option<&mut Vec<CellIdx>>) {
         let out = ins.out as usize;
         if let Op::Vec(..) = ins.op {
+            let mut buf = [0.0f64; 16];
             let n = ins.op.n_out();
-            let mut small = [0.0f64; 16];
-            let mut big = Vec::new();
-            let buf: &mut [f64] = if n <= 16 {
-                &mut small[..n]
-            } else {
-                big.resize(n, 0.0);
-                &mut big
-            };
-            ins.op.eval_vec(cells, &self.extra, buf);
+            ins.op.eval_vec(cells, &self.extra, &mut buf[..n]);
             match changed {
                 Some(changed) => {
                     for k in 0..n {

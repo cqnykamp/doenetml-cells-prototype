@@ -1,5 +1,5 @@
-//! Plan 4, wiring B: sticky groups as a pre-pass on the requests a tick
-//! receives. After every build the document records each group's members
+//! Plan 4: sticky groups as a pre-pass on the requests a tick receives
+//! (ADR 0007). After every build the document records each group's members
 //! as cells; a request that names a member's cell is snapped before it is
 //! inverted. Requests that reach a member's cells only through inversion
 //! (from a cell derived from a member) are not snapped: snapping is a
@@ -79,7 +79,7 @@ impl Document {
     /// A rigid polygon's vertices are outputs of its `Shape` instruction.
     fn is_shape_output(&self, cell: CellIdx) -> bool {
         let p = self.program.producer[cell as usize];
-        p != u32::MAX && matches!(self.program.instrs[p as usize].op, Op::Vec(VecOp::Shape { .. }, _))
+        p != u32::MAX && matches!(self.program.instrs[p as usize].op, Op::Vec(VecOp::Shape { .. }, ..))
     }
 
     /// Snap the requests on member cells, in place. Points a snap moves

@@ -15,10 +15,6 @@ wasm-bindgen = "0.2"
 serde_json.workspace = true
 console_error_panic_hook = "0.1"
 
-[features]
-# Plan 4: wiring B of sticky groups (see cells-core).
-sticky-prepass = ["cells-core/sticky-prepass"]
-
 # The locally installed wasm-pack 0.10 bundles a wasm-opt that corrupts the
 # function table of current wasm-bindgen output ("WebAssembly.Table.grow()
 # failed"). The Rust release profile already optimizes; skip wasm-opt.
