@@ -354,8 +354,11 @@ impl<'a> Compiler<'a> {
             props[pi] = Some(plan);
         }
         let mut props: Vec<Option<SourcePlan>> = props;
-        if self.attr_flag(el, "fixed") {
-            fix_literals(&mut props);
+        let fix_attrs: &[&str] = if kind == ComponentKind::Graph { &["fixed", "fixAxes"] } else { &["fixed"] };
+        match self.plan_fix(t, scope, el, fix_attrs)? {
+            Fix::Off => {}
+            Fix::Literal => fix_literals(&mut props),
+            Fix::Dynamic(flags) => gate_slots(&mut props, flags),
         }
         self.c.templates[t].elems[e].props = props.into_iter().map(|p| p.unwrap()).collect();
         Ok(())
@@ -403,6 +406,7 @@ impl<'a> Compiler<'a> {
             "negate" => OpSpec::Negate,
             "round" => OpSpec::Round,
             "floor" => OpSpec::Floor,
+            "gate" => OpSpec::Gate,
             "scale" => OpSpec::Scale { k: param("k")? },
             "offset" => OpSpec::Offset { k: param("k")? },
             "clamp" => OpSpec::Clamp { lo: param("lo")?, hi: param("hi")? },
@@ -487,6 +491,25 @@ impl<'a> Compiler<'a> {
             }
         }
         last
+    }
+
+    /// `fixed`-like attributes of an element. A literal true fixes it at
+    /// build time; a reference is a flag cell, so the element is gated
+    /// while the flag is nonzero. Several references gate on any of them.
+    pub(super) fn plan_fix(&mut self, t: TemplateId, scope: ElemId, el: NodeId, names: &[&str]) -> Result<Fix> {
+        let d = self.c.dast;
+        let mut flags = Vec::new();
+        for &name in names {
+            let Some(a) = d.attr(el, name) else { continue };
+            if self.attr_text(a).is_some() {
+                if self.attr_flag(el, name) {
+                    return Ok(Fix::Literal);
+                }
+                continue;
+            }
+            flags.push(self.plan_value(t, scope, name, d.attr_children(a), None)?);
+        }
+        Ok(if flags.is_empty() { Fix::Off } else { Fix::Dynamic(flags) })
     }
 
     /// A boolean attribute: present and empty, or `true`.

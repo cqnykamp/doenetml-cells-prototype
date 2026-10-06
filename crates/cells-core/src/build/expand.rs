@@ -453,6 +453,7 @@ impl<'c, 'a> Builder<'c, 'a> {
                 SourcePlan::Literal(v) => Source::Literal(*v),
                 SourcePlan::Default(v) => Source::Default(*v),
                 SourcePlan::Inherit => Source::Alias(self.slot(extend.expect("Inherit needs an extend referent"), pi)),
+                SourcePlan::InheritFrom(k) => Source::Alias(self.slot(extend.expect("Inherit needs an extend referent"), *k as usize)),
                 SourcePlan::Fixed(v) => Source::Fixed(*v),
                 SourcePlan::Alias(arg) => Source::Alias(self.arg_slot(*arg, comp, inst.scope, kind, pi)?),
                 SourcePlan::Op(spec, args) => {

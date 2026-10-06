@@ -41,6 +41,11 @@ pub enum Op {
     /// `a + t * (b - a)`
     Lerp(CellIdx, CellIdx, f64),
     Pow(CellIdx, CellIdx),
+    /// `a`, whatever the flag. The flag is read only by the inverse, which
+    /// drops a request unless the flag is 0: a dynamic `fixed` or
+    /// `fixAxes`. The flag is still an input, so the gate is an edge in the
+    /// graph, like `Shape`'s pivot.
+    Gate(CellIdx, CellIdx),
     /// Evaluate the expression whose arena handle the cell holds; NaN while
     /// it has free symbols. The expression's cell leaves are the
     /// instruction's extra inputs `extra[start..start + n]` (see
@@ -107,6 +112,7 @@ impl Op {
                 x + t * (y - x)
             }
             Op::Pow(a, b) => cells[a as usize].powf(cells[b as usize]),
+            Op::Gate(a, _) => cells[a as usize],
             Op::Evaluate(h, ..) => arena.eval(cells[h as usize] as u32, cells, None),
             Op::EvalAt(h, x, ..) => arena.eval(cells[h as usize] as u32, cells, Some(cells[x as usize])),
             Op::Vec(..) => unreachable!("vector operators are evaluated with eval_vec"),
@@ -183,6 +189,13 @@ impl Op {
                 }
                 (a, (desired - t * v(b)) / (1.0 - t))
             }
+            // Open only at exactly 0: a NaN flag (a missing referent) holds.
+            Op::Gate(a, flag) => {
+                if v(flag) != 0.0 {
+                    return None;
+                }
+                (a, desired)
+            }
             // Symbolic inverses are out of scope (plan 2, follow-ups).
             Op::Pow(..) | Op::Evaluate(..) | Op::EvalAt(..) => return None,
             Op::Vec(..) => unreachable!("vector operators are inverted jointly by the program"),
@@ -193,7 +206,7 @@ impl Op {
     #[inline(always)]
     pub fn input_pair(&self) -> (CellIdx, Option<CellIdx>) {
         match *self {
-            Op::Add(a, b) | Op::Sub(a, b) | Op::Mul(a, b) | Op::Div(a, b) | Op::Min(a, b) | Op::Max(a, b) | Op::Default(a, b) | Op::Lerp(a, b, _) | Op::Pow(a, b) | Op::EvalAt(a, b, ..) => (a, Some(b)),
+            Op::Add(a, b) | Op::Sub(a, b) | Op::Mul(a, b) | Op::Div(a, b) | Op::Min(a, b) | Op::Max(a, b) | Op::Default(a, b) | Op::Lerp(a, b, _) | Op::Pow(a, b) | Op::Gate(a, b) | Op::EvalAt(a, b, ..) => (a, Some(b)),
             Op::Negate(a) | Op::Round(a) | Op::Floor(a) | Op::Scale(a, _) | Op::Offset(a, _) | Op::Clamp(a, _, _) | Op::NanTo(a, _) | Op::Evaluate(a, ..) => (a, None),
             Op::Vec(..) => unreachable!("vector operators keep every input in extra"),
         }
@@ -259,6 +272,7 @@ impl Op {
             Op::NanTo(..) => "nanTo",
             Op::Lerp(..) => "lerp",
             Op::Pow(..) => "pow",
+            Op::Gate(..) => "gate",
             Op::Evaluate(..) => "evaluate",
             Op::EvalAt(..) => "evalAt",
             Op::Vec(v, ..) => v.name(),
@@ -285,6 +299,7 @@ pub enum OpSpec {
     NanTo { k: f64 },
     Lerp { t: f64 },
     Pow,
+    Gate,
     Evaluate,
     EvalAt,
     Vec(VecOp),
@@ -293,7 +308,7 @@ pub enum OpSpec {
 impl OpSpec {
     pub fn arity(&self) -> usize {
         match self {
-            OpSpec::Add | OpSpec::Sub | OpSpec::Mul | OpSpec::Div | OpSpec::Min | OpSpec::Max | OpSpec::Default | OpSpec::Lerp { .. } | OpSpec::Pow | OpSpec::EvalAt => 2,
+            OpSpec::Add | OpSpec::Sub | OpSpec::Mul | OpSpec::Div | OpSpec::Min | OpSpec::Max | OpSpec::Default | OpSpec::Lerp { .. } | OpSpec::Pow | OpSpec::Gate | OpSpec::EvalAt => 2,
             OpSpec::Negate | OpSpec::Round | OpSpec::Floor | OpSpec::Scale { .. } | OpSpec::Offset { .. } | OpSpec::Clamp { .. } | OpSpec::NanTo { .. } | OpSpec::Evaluate => 1,
             OpSpec::Vec(v) => v.n_in(),
         }
@@ -332,6 +347,7 @@ impl OpSpec {
             OpSpec::NanTo { k } => Op::NanTo(inputs[0], k),
             OpSpec::Lerp { t } => Op::Lerp(inputs[0], inputs[1], t),
             OpSpec::Pow => Op::Pow(inputs[0], inputs[1]),
+            OpSpec::Gate => Op::Gate(inputs[0], inputs[1]),
             OpSpec::Evaluate => {
                 let (start, n) = park(extra, &inputs[1..]);
                 Op::Evaluate(inputs[0], start, n)
