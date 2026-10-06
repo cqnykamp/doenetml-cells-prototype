@@ -537,11 +537,12 @@ impl<'a> Compiler<'a> {
                     return id;
                 };
                 // The math may come later in the document and not be planned yet.
-                if self.c.templates[t].elems[target].kind == ComponentKind::Math && matches!(self.c.templates[t].elems[target].body, Body::Plain) && self.plan_elem(t, target).is_err() {
+                if self.c.templates[t].elems[target].kind == ComponentKind::Math && self.c.templates[t].elems[target].props.is_empty() && self.plan_elem(t, target).is_err() {
                     return id;
                 }
-                match self.c.templates[t].elems[target].body {
-                    Body::Math(inner) => {
+                match self.c.templates[t].elems[target].props.first() {
+                    Some(SourcePlan::MathHandle(inner)) => {
+                        let inner = *inner;
                         let mut syms = Vec::new();
                         self.c.arena.symbols(inner, &mut syms);
                         if syms.is_empty() {

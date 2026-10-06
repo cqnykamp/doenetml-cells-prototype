@@ -19,8 +19,7 @@ impl<'a> Compiler<'a> {
             }
             ComponentKind::Math => {
                 let id = self.c.arena.push(Expr::Cell(p as CellIdx));
-                self.c.templates[t].elems[e].body = Body::Math(id);
-                return Ok(());
+                vec![SourcePlan::MathHandle(id), SourcePlan::MathValue(id)]
             }
             ComponentKind::PointList => {
                 self.c.templates[t].elems[e].body = Body::PointList { from: p };

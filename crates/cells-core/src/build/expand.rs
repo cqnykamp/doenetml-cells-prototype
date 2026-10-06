@@ -422,9 +422,9 @@ impl<'c, 'a> Builder<'c, 'a> {
     /// Sources for every prop of one instantiated element.
     pub(super) fn instance_sources(&mut self, inst: Instance) -> Result<()> {
         let comp = inst.comp;
-        let (kind, extend_plan, is_math) = {
+        let (kind, extend_plan) = {
             let el = &self.c.templates[inst.template].elems[inst.elem];
-            (el.kind, el.extend, matches!(el.body, Body::Math(_)))
+            (el.kind, el.extend)
         };
         let extend = match extend_plan {
             Some(p) => {
@@ -438,32 +438,9 @@ impl<'c, 'a> Builder<'c, 'a> {
             }
             None => None,
         };
-        if is_math {
-            let Body::Math(expr) = self.c.templates[inst.template].elems[inst.elem].body else { unreachable!() };
-            let id = self.instantiate_expr(expr, inst.scope)?;
-            let expr_slot = self.slot(comp, 0);
-            let value_slot = self.slot(comp, 1);
-            self.sources[expr_slot as usize] = Source::Fixed(id as f64);
-            self.sources[value_slot as usize] = if let Expr::Num(v) = *self.arena.get(id) {
-                // `<math>5</math>` is state, as a number literal is: a drag
-                // that reaches it changes it, as in the current core.
-                Source::Literal(v)
-            } else if self.arena.is_numeric(id) {
-                Source::Alias(self.lower(id))
-            } else {
-                // The handle, then the expression's cell leaves as extra inputs.
-                let start = self.op_inputs.len() as u32;
-                self.op_inputs.push(expr_slot);
-                let mut leaves = Vec::new();
-                self.arena.cell_leaves(id, &mut leaves);
-                self.op_inputs.extend_from_slice(&leaves);
-                Source::Op(OpSpec::Evaluate, start, 1 + leaves.len() as u8)
-            };
-            return Ok(());
-        }
+        // A math's handle and value props share one instantiated expression.
+        let mut math_id: Option<ExprId> = None;
         let n_props = self.c.templates[inst.template].elems[inst.elem].props.len();
-        // A copy of a planned kind aliases its public props and has no
-        // hidden slots of its own.
         for pi in 0..n_props {
             let s = self.slot(comp, pi);
             if !matches!(self.sources[s as usize], Source::Unset) {
@@ -484,12 +461,45 @@ impl<'c, 'a> Builder<'c, 'a> {
                         let slot = self.arg_slot(a, comp, inst.scope, kind, pi)?;
                         self.op_inputs.push(slot);
                     }
-                    Source::Op(*spec, start, args.len() as u8)
+                    let mut n = args.len() as u8;
+                    // `<evaluate>` reads the function's expression; its cell
+                    // leaves ride along so changes to them propagate.
+                    if *spec == OpSpec::EvalAt {
+                        let func = self.op_inputs[start as usize];
+                        n += self.push_expr_leaves(func) as u8;
+                    }
+                    Source::Op(*spec, start, n)
                 }
                 SourcePlan::IterIndex => Source::Fixed(self.scopes[inst.scope as usize].2 as f64),
                 SourcePlan::Math(expr) => {
                     let id = self.instantiate_expr(*expr, inst.scope)?;
                     if self.arena.is_numeric(id) { Source::Alias(self.lower(id)) } else { Source::Fixed(f64::NAN) }
+                }
+                SourcePlan::MathHandle(expr) => {
+                    let id = self.instantiate_expr(*expr, inst.scope)?;
+                    math_id = Some(id);
+                    Source::Fixed(id as f64)
+                }
+                SourcePlan::MathValue(expr) => {
+                    let id = match math_id {
+                        Some(id) => id,
+                        None => self.instantiate_expr(*expr, inst.scope)?,
+                    };
+                    if let Expr::Num(v) = *self.arena.get(id) {
+                        // `<math>5</math>` is state, as a number literal is: a
+                        // drag that reaches it changes it, as in the current core.
+                        Source::Literal(v)
+                    } else if self.arena.is_numeric(id) {
+                        Source::Alias(self.lower(id))
+                    } else {
+                        // The handle, then the expression's cell leaves.
+                        let start = self.op_inputs.len() as u32;
+                        self.op_inputs.push(self.slot(comp, 0));
+                        let mut leaves = Vec::new();
+                        self.arena.cell_leaves(id, &mut leaves);
+                        self.op_inputs.extend_from_slice(&leaves);
+                        Source::Op(OpSpec::Evaluate, start, 1 + leaves.len() as u8)
+                    }
                 }
                 SourcePlan::Vec(op, args) => {
                     let start = self.op_inputs.len() as u32;
@@ -503,10 +513,27 @@ impl<'c, 'a> Builder<'c, 'a> {
             };
             self.sources[s as usize] = source;
         }
-        if kind == ComponentKind::Evaluate {
-            self.evaluate_sources(comp);
-        }
         Ok(())
+    }
+
+    /// Append the cell leaves of the expression a slot holds (through
+    /// aliases) to `op_inputs`; returns how many. Nothing when the slot does
+    /// not hold an expression handle.
+    fn push_expr_leaves(&mut self, slot: SlotId) -> usize {
+        let mut root = slot;
+        while let Source::Alias(t) = self.sources[root as usize] {
+            root = t;
+        }
+        let Source::Fixed(handle) = self.sources[root as usize] else {
+            return 0;
+        };
+        if handle.is_nan() {
+            return 0;
+        }
+        let mut leaves = Vec::new();
+        self.arena.cell_leaves(handle as ExprId, &mut leaves);
+        self.op_inputs.extend_from_slice(&leaves);
+        leaves.len()
     }
 
     /// The slot an `Arg` names for component `comp` in `scope`.
@@ -533,29 +560,6 @@ impl<'c, 'a> Builder<'c, 'a> {
                 }
             }
         })
-    }
-
-    /// `<evaluate>`: add the function expression's cell leaves to the
-    /// `EvalAt` instruction's inputs, so changes to them propagate.
-    pub(super) fn evaluate_sources(&mut self, idx: CompIdx) {
-        let (func, input, value) = (self.slot(idx, 0), self.slot(idx, 1), self.slot(idx, 2));
-        let mut root = func;
-        while let Source::Alias(t) = self.sources[root as usize] {
-            root = t;
-        }
-        let Source::Fixed(handle) = self.sources[root as usize] else {
-            return;
-        };
-        if handle.is_nan() {
-            return;
-        }
-        let mut leaves = Vec::new();
-        self.arena.cell_leaves(handle as ExprId, &mut leaves);
-        let start = self.op_inputs.len() as u32;
-        self.op_inputs.push(func);
-        self.op_inputs.push(input);
-        self.op_inputs.extend_from_slice(&leaves);
-        self.sources[value as usize] = Source::Op(OpSpec::EvalAt, start, 2 + leaves.len() as u8);
     }
 
     /// Copy an expression template into the document's arena with its plan

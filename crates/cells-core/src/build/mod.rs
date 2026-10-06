@@ -94,6 +94,12 @@ enum SourcePlan {
     IterIndex,
     /// Math text: lowered to operators if numeric, else NaN.
     Math(ExprId),
+    /// A `<math>`'s `expr` prop: the fixed handle of its expression.
+    MathHandle(ExprId),
+    /// A `<math>`'s `value` prop: the literal if the expression is a
+    /// number, the lowered operators if numeric, else an `Evaluate` of the
+    /// handle (NaN).
+    MathValue(ExprId),
     /// Head of a vector instruction; this slot is output 0, the next
     /// `n_out - 1` slots are `VecOut`.
     Vec(VecOp, Vec<Arg>),
@@ -142,8 +148,6 @@ enum Body {
         from: PlanId,
         kind: ComponentKind,
     },
-    /// `<math>`: `expr` is the handle, `value` lowers or evaluates.
-    Math(ExprId),
     /// `<pointList extend="$l.points">`: children are synthesized points.
     PointList {
         from: PlanId,

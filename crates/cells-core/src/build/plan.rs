@@ -4,6 +4,18 @@
 
 use super::*;
 
+/// The ways an element is planned; see `Compiler::elem_shape`.
+enum ElemShape {
+    Cloned,
+    Synthetic,
+    ExtendProp(PlanId),
+    ContainerCopy(PlanId),
+    Planned(Option<PlanId>),
+    Math,
+    Collect,
+    Generic(Option<PlanId>),
+}
+
 impl<'a> Compiler<'a> {
     pub(super) fn compile(dast: &'a Dast) -> Result<Compiled<'a>> {
         let mut cp = Compiler { c: Compiled { dast, templates: vec![Template::default()], plans: Vec::new(), arena: Arena::default() }, pending_elems: Vec::new(), pending_macros: Vec::new() };
@@ -187,56 +199,23 @@ impl<'a> Compiler<'a> {
 
     pub(super) fn plan_elem(&mut self, t: TemplateId, e: ElemId) -> Result<()> {
         let d = self.c.dast;
-        let (el, kind, scope, cloned) = {
+        let (el, kind, scope) = {
             let x = &self.c.templates[t].elems[e];
-            (x.node, x.kind, x.name_scope, x.cloned)
+            (x.node, x.kind, x.name_scope)
         };
-        if cloned {
-            // Every public prop aliases the original's (`Default` under an
-            // extend); nothing else to plan.
-            let n = kind.prop_defs().len();
-            self.c.templates[t].elems[e].props = vec![SourcePlan::Inherit; n];
-            return Ok(());
-        }
-        if el == NONE {
-            return Ok(());
-        }
-        let mut extend_prop: Option<PlanId> = None;
-        let extend = match d.attr(el, "extend") {
-            Some(a) => {
-                let m = self.single_macro(a).ok_or_else(|| Error::BadValue { attr: "extend".into(), text: self.attr_text(a).unwrap_or_default() })?;
-                let p = self.plan_ref(t, scope, m)?;
-                if self.c.plans[p].prop.is_some() {
-                    // `<point extend="$c.center"/>`, `<math extend="$c.radius"/>`,
-                    // `<pointList extend="$l.points"/>`: the element's value
-                    // props alias the named prop.
-                    extend_prop = Some(p);
-                    None
-                } else {
-                    Some(p)
-                }
+        match self.elem_shape(t, e)? {
+            // Every public prop aliases the original's; nothing else to plan.
+            ElemShape::Cloned => {
+                let n = kind.prop_defs().len();
+                self.c.templates[t].elems[e].props = vec![SourcePlan::Inherit; n];
+                Ok(())
             }
-            None => None,
-        };
-        self.c.templates[t].elems[e].extend = extend;
-
-        if let Some(p) = extend_prop {
-            return self.plan_extend_prop(t, e, p);
-        }
-        if kind.container()
-            && let Some(p) = extend
-        {
-            return self.plan_container_copy(t, e, p);
-        }
-        if kind == ComponentKind::PointList {
-            return Err(Error::BadValue { attr: "extend".into(), text: "<pointList> needs extend=\"$shape.points\"".into() });
-        }
-        if kind.planned() {
-            return self.plan_geo(t, e, extend);
-        }
-
-        match kind {
-            ComponentKind::Math => {
+            // Synthesized elements (iteration values) come planned.
+            ElemShape::Synthetic => Ok(()),
+            ElemShape::ExtendProp(p) => self.plan_extend_prop(t, e, p),
+            ElemShape::ContainerCopy(p) => self.plan_container_copy(t, e, p),
+            ElemShape::Planned(extend) => self.plan_geo(t, e, extend),
+            ElemShape::Math => {
                 // A tuple-valued math (`<math>(a, b)</math>`) is a point for
                 // the cells core: two cells, draggable as a direction source.
                 let nodes: Vec<NodeId> = d.children(el).to_vec();
@@ -251,10 +230,10 @@ impl<'a> Compiler<'a> {
                     return Ok(());
                 }
                 let id = self.plan_math(t, scope, &nodes)?;
-                self.c.templates[t].elems[e].body = Body::Math(id);
-                return Ok(());
+                self.c.templates[t].elems[e].props = vec![SourcePlan::MathHandle(id), SourcePlan::MathValue(id)];
+                Ok(())
             }
-            ComponentKind::Collect => {
+            ElemShape::Collect => {
                 let from = d.attr(el, "from").and_then(|a| self.single_macro(a)).ok_or(Error::BadCollect)?;
                 let type_text = d.attr(el, "componentType").and_then(|a| self.attr_text(a)).ok_or(Error::BadCollect)?;
                 let ck = ComponentKind::from_tag(type_text.trim()).filter(|k| k.collectable()).ok_or_else(|| Error::BadCollectType(type_text.trim().into()))?;
@@ -265,12 +244,50 @@ impl<'a> Compiler<'a> {
                 self.c.templates[t].elems[e].body = Body::Collect { from: p, kind: ck };
                 // `count` is set when the collect expands.
                 self.c.templates[t].elems[e].props = vec![SourcePlan::Fixed(f64::NAN)];
-                return Ok(());
+                Ok(())
             }
-            _ => {}
+            ElemShape::Generic(extend) => self.plan_attrs(t, e, extend),
         }
+    }
 
-        self.plan_attrs(t, e, extend)
+    /// Which way an element is planned, decided from its kind and its
+    /// `extend` attribute before any prop is looked at. Records the extend
+    /// plan on the element.
+    fn elem_shape(&mut self, t: TemplateId, e: ElemId) -> Result<ElemShape> {
+        let d = self.c.dast;
+        let (el, kind, scope, cloned) = {
+            let x = &self.c.templates[t].elems[e];
+            (x.node, x.kind, x.name_scope, x.cloned)
+        };
+        if cloned {
+            return Ok(ElemShape::Cloned);
+        }
+        if el == NONE {
+            return Ok(ElemShape::Synthetic);
+        }
+        let extend = match d.attr(el, "extend") {
+            Some(a) => {
+                let m = self.single_macro(a).ok_or_else(|| Error::BadValue { attr: "extend".into(), text: self.attr_text(a).unwrap_or_default() })?;
+                let p = self.plan_ref(t, scope, m)?;
+                // `<point extend="$c.center"/>`, `<math extend="$c.radius"/>`,
+                // `<pointList extend="$l.points"/>`: the element's value
+                // props alias the named prop.
+                if self.c.plans[p].prop.is_some() {
+                    return Ok(ElemShape::ExtendProp(p));
+                }
+                Some(p)
+            }
+            None => None,
+        };
+        self.c.templates[t].elems[e].extend = extend;
+        Ok(match (kind, extend) {
+            (k, Some(p)) if k.container() => ElemShape::ContainerCopy(p),
+            (ComponentKind::PointList, _) => return Err(Error::BadValue { attr: "extend".into(), text: "<pointList> needs extend=\"$shape.points\"".into() }),
+            (k, _) if k.planned() => ElemShape::Planned(extend),
+            (ComponentKind::Math, _) => ElemShape::Math,
+            (ComponentKind::Collect, _) => ElemShape::Collect,
+            _ => ElemShape::Generic(extend),
+        })
     }
 
     /// Plans for a kind described by `PropFrom`: attributes, bindings,
