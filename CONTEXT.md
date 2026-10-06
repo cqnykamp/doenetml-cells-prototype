@@ -81,6 +81,12 @@ constraint, by the same shift. A soft preference about drag behavior, not a
 document invariant; the same requests sent singly move only what they name.
 See ADR 0006.
 
+**Sticky group** — A container whose members (points, polygons, polylines,
+line segments) snap, when one of them is dragged, to the vertices and edges of
+the *other* members within a threshold. A dragged member never attracts
+itself. Snapping acts only on requests: it never moves a member that nobody
+asked to move, so it is not a document invariant.
+
 **Rigid inverse** — The inverse of the one identity instruction a `rigid`
 polygon owns: it projects the requested change onto a rigid motion or
 similarity. The document asked for the coupling, so it lives in the graph.
