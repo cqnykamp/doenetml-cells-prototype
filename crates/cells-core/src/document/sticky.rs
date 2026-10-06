@@ -1,0 +1,132 @@
+//! Plan 4, wiring B: sticky groups as a pre-pass on the requests a tick
+//! receives. After every build the document records each group's members
+//! as cells; a request that names a member's cell is snapped before it is
+//! inverted. Requests that reach a member's cells only through inversion
+//! (from a cell derived from a member) are not snapped: snapping is a
+//! response to a drag, and the pre-pass sees drags as the renderer sends
+//! them.
+
+use std::collections::HashSet;
+
+use super::*;
+use crate::geo::VecOp;
+use crate::ops::Op;
+use crate::sticky::{Member, Params, Pt, snap_group};
+
+/// One group as cells.
+#[derive(Debug, Clone)]
+pub struct StickyTable {
+    threshold: CellIdx,
+    relative: CellIdx,
+    /// The enclosing graph's xmin, xmax, ymin, ymax.
+    bounds: Option<[CellIdx; 4]>,
+    members: Vec<Member>,
+    /// Each distinct point's x and y cells; members that share a point
+    /// share its index.
+    points: Vec<[CellIdx; 2]>,
+    /// Member cell -> (point, coordinate).
+    index: HashMap<CellIdx, (u32, u8)>,
+}
+
+impl Document {
+    /// The sticky groups of a freshly built document. A group whose points
+    /// are exactly an earlier group's (a copy of the group) is left out:
+    /// snapping twice is not snapping once.
+    pub(crate) fn sticky_tables(&self) -> Vec<StickyTable> {
+        let mut seen: HashSet<Vec<CellIdx>> = HashSet::new();
+        let mut out = Vec::new();
+        for g in 0..self.comps.len() as CompIdx {
+            if self.kind(g) != ComponentKind::StickyGroup {
+                continue;
+            }
+            let mut t = StickyTable { threshold: self.comp_cells(g)[0], relative: self.comp_cells(g)[1], bounds: None, members: Vec::new(), points: Vec::new(), index: HashMap::new() };
+            if let Some(p) = self.parent(g).filter(|&p| self.kind(p) == ComponentKind::Graph) {
+                let c = self.comp_cells(p);
+                t.bounds = Some([c[0], c[1], c[2], c[3]]);
+            }
+            for m in self.comps.sticky_members(g) {
+                let kind = self.kind(m);
+                let (shape, first, max) = kind.sticky_layout().unwrap();
+                let cells = self.comp_cells(m);
+                let n = if kind == ComponentKind::Polygon { (self.cells[cells[0] as usize].max(0.0) as usize).min(max) } else { max };
+                let rigid = n > 0 && self.is_shape_output(cells[first]);
+                let mut ids = Vec::with_capacity(n);
+                for i in 0..n {
+                    let (x, y) = (cells[first + 2 * i], cells[first + 2 * i + 1]);
+                    let id = match t.index.get(&x) {
+                        Some(&(id, _)) => id,
+                        None => {
+                            let id = t.points.len() as u32;
+                            t.points.push([x, y]);
+                            t.index.insert(x, (id, 0));
+                            t.index.insert(y, (id, 1));
+                            id
+                        }
+                    };
+                    ids.push(id);
+                }
+                t.members.push(Member { shape, rigid, points: ids });
+            }
+            let mut key: Vec<CellIdx> = t.points.iter().map(|p| p[0]).collect();
+            key.sort_unstable();
+            if !t.points.is_empty() && seen.insert(key) {
+                out.push(t);
+            }
+        }
+        out
+    }
+
+    /// A rigid polygon's vertices are outputs of its `Shape` instruction.
+    fn is_shape_output(&self, cell: CellIdx) -> bool {
+        let p = self.program.producer[cell as usize];
+        p != u32::MAX && matches!(self.program.instrs[p as usize].op, Op::Vec(VecOp::Shape { .. }, _))
+    }
+
+    /// Snap the requests on member cells, in place. Points a snap moves
+    /// that were not requested are appended as scalar requests.
+    pub(crate) fn snap_sticky(&self, requests: &mut Vec<Request>, groups: &mut [Vec<PointRequest>]) {
+        for t in &self.sticky {
+            let cur = |c: CellIdx| self.cells[c as usize];
+            let mut requested: Vec<Option<Pt>> = vec![None; t.points.len()];
+            let mut ask = |cell: CellIdx, value: f64| {
+                if let Some(&(id, k)) = t.index.get(&cell) {
+                    let [x, y] = t.points[id as usize];
+                    let p = requested[id as usize].get_or_insert([cur(x), cur(y)]);
+                    p[k as usize] = value;
+                }
+            };
+            for r in requests.iter() {
+                ask(r.cell, r.value);
+            }
+            for p in groups.iter().flatten() {
+                ask(p.cells[0], p.values[0]);
+                ask(p.cells[1], p.values[1]);
+            }
+            if requested.iter().all(Option::is_none) {
+                continue;
+            }
+            let current: Vec<Pt> = t.points.iter().map(|&[x, y]| [cur(x), cur(y)]).collect();
+            let bounds = t.bounds.map(|b| b.map(cur)).unwrap_or([f64::NAN; 4]);
+            let params = Params::new(cur(t.threshold), cur(t.relative) != 0.0, bounds);
+            let mut snapped: HashMap<CellIdx, f64> = HashMap::new();
+            for (id, [x, y]) in snap_group(&t.members, &current, &requested, &params).into_iter().flatten() {
+                let [cx, cy] = t.points[id as usize];
+                snapped.insert(cx, x);
+                snapped.insert(cy, y);
+            }
+            for r in requests.iter_mut() {
+                if let Some(v) = snapped.remove(&r.cell) {
+                    r.value = v;
+                }
+            }
+            for p in groups.iter_mut().flatten() {
+                for k in 0..2 {
+                    if let Some(v) = snapped.remove(&p.cells[k]) {
+                        p.values[k] = v;
+                    }
+                }
+            }
+            requests.extend(snapped.into_iter().map(|(cell, value)| Request { cell, value }));
+        }
+    }
+}

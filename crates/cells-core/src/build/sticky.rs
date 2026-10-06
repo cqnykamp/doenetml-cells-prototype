@@ -30,10 +30,16 @@ impl<'c, 'a> Builder<'c, 'a> {
     pub(super) fn wire_sticky_groups(&mut self) {
         let groups: Vec<CompIdx> = (0..self.comps.len() as CompIdx).filter(|&c| self.comps.kind[c as usize] == ComponentKind::StickyGroup).collect();
         // Plan every group before rewiring any: one group's members may be
-        // copies of another's.
+        // copies of another's. A group whose points are exactly an earlier
+        // group's (a copy of the group) gets no instruction of its own: its
+        // members read through the original's, and snapping twice is not
+        // snapping once.
         let plans: Vec<StickyPlan> = groups.into_iter().map(|g| self.plan_sticky(g)).collect();
+        let mut seen: HashSet<Vec<SlotId>> = HashSet::new();
         for p in plans {
-            if !p.points.is_empty() {
+            let mut roots: Vec<SlotId> = p.points.iter().map(|pt| self.alias_root(pt[0])).collect();
+            roots.sort_unstable();
+            if !p.points.is_empty() && seen.insert(roots) {
                 self.install_sticky(p);
             }
         }
