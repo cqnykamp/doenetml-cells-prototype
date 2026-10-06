@@ -59,6 +59,9 @@ pub enum ComponentKind {
     P = 19,
     /// `<setup>`: an unrendered container.
     Setup = 20,
+    /// `<stickyGroup>`: a container whose members snap to one another when
+    /// dragged (plan 4). `threshold` NaN means the default.
+    StickyGroup = 21,
 }
 
 /// Largest polygon the fixed prop layout holds.
@@ -249,7 +252,7 @@ const SEQUENCE_VALUE_PROPS: &[PropDef] = &[
 ];
 
 impl ComponentKind {
-    pub const ALL: [ComponentKind; 21] = [
+    pub const ALL: [ComponentKind; 22] = [
         Self::Document,
         Self::Graph,
         Self::Point,
@@ -271,6 +274,7 @@ impl ComponentKind {
         Self::PointList,
         Self::P,
         Self::Setup,
+        Self::StickyGroup,
     ];
 
     pub fn from_tag(tag: &str) -> Option<Self> {
@@ -295,6 +299,7 @@ impl ComponentKind {
             "pointList" => Self::PointList,
             "p" => Self::P,
             "setup" => Self::Setup,
+            "stickyGroup" => Self::StickyGroup,
             _ => return None,
         })
     }
@@ -322,6 +327,7 @@ impl ComponentKind {
             Self::PointList => "pointList",
             Self::P => "p",
             Self::Setup => "setup",
+            Self::StickyGroup => "stickyGroup",
         }
     }
 
@@ -345,6 +351,7 @@ impl ComponentKind {
         const MATH_INPUT: &[PropDef] = &[PropDef { name: "value", default: f64::NAN, from: PropFrom::Children, attr: Some("prefill"), bind: Some("bindValueTo"), ref_prop: None }];
         const OP: &[PropDef] = &[PropDef { name: "value", default: f64::NAN, from: PropFrom::Derived, attr: None, bind: None, ref_prop: None }];
         const COLLECT: &[PropDef] = &[attr("count", 0.0)];
+        const STICKY_GROUP: &[PropDef] = &[attr("threshold", f64::NAN), attr("relativeToGraphScales", 0.0)];
         match self {
             Self::Document => &[],
             Self::Graph => GRAPH,
@@ -364,6 +371,7 @@ impl ComponentKind {
             Self::Line => LINE_PROPS,
             Self::LineSegment => LINE_SEGMENT_PROPS,
             Self::Polygon => POLYGON_PROPS,
+            Self::StickyGroup => STICKY_GROUP,
             Self::PointList | Self::P | Self::Setup => &[],
         }
     }
@@ -435,18 +443,32 @@ impl ComponentKind {
         match self {
             Self::Point => Some("coords"),
             Self::Number | Self::NumberInput | Self::Op | Self::Slider | Self::SequenceValue | Self::BooleanInput | Self::Math | Self::Evaluate | Self::MathInput => Some("value"),
-            Self::Document | Self::Graph | Self::RepeatForSequence | Self::Collect | Self::Circle | Self::Line | Self::LineSegment | Self::Polygon | Self::PointList | Self::P | Self::Setup => None,
+            Self::Document | Self::Graph | Self::RepeatForSequence | Self::Collect | Self::Circle | Self::Line | Self::LineSegment | Self::Polygon | Self::PointList | Self::P | Self::Setup | Self::StickyGroup => None,
         }
     }
 
     /// Whether `$name` as a child may produce a copy of this component.
     pub fn copyable(self) -> bool {
-        !matches!(self, Self::Document | Self::Graph | Self::RepeatForSequence | Self::Collect | Self::PointList | Self::P | Self::Setup)
+        !matches!(self, Self::Document | Self::Graph | Self::RepeatForSequence | Self::Collect | Self::PointList | Self::P | Self::Setup | Self::StickyGroup)
     }
 
     /// Containers whose children are rendered; `extend` copies them deeply.
     pub fn container(self) -> bool {
-        matches!(self, Self::Graph | Self::P | Self::Setup)
+        matches!(self, Self::Graph | Self::P | Self::Setup | Self::StickyGroup)
+    }
+
+    /// How a member of a sticky group attracts and snaps: its shape, the
+    /// prop of its first coordinate, and how many points it has at most (a
+    /// polygon's live count is its `numVertices` cell). None for kinds that
+    /// do not take part.
+    pub fn sticky_layout(self) -> Option<(crate::sticky::Shape, usize, usize)> {
+        use crate::sticky::Shape;
+        match self {
+            Self::Point => Some((Shape::Point, 0, 1)),
+            Self::LineSegment => Some((Shape::Open, 0, 2)),
+            Self::Polygon => Some((Shape::Closed, 1, MAX_VERTICES)),
+            _ => None,
+        }
     }
 
     /// Kinds whose prop sources the builder plans from the element's

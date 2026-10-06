@@ -94,6 +94,73 @@ pub fn snap(shape: Shape, rigid: bool, verts: &mut [Pt], moved: Option<usize>, a
     }
 }
 
+/// One member of a group, as the wirings describe it: its shape, whether
+/// it is rigid, and its points as indices into the group's point list. Two
+/// members that share a point (a polygon whose vertex is a member point)
+/// share the index.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Member {
+    pub shape: Shape,
+    pub rigid: bool,
+    pub points: Vec<u32>,
+}
+
+/// Snap every dragged member of a group. `current` holds each point's
+/// value; `requested` the value asked of it this tick (None: not asked).
+/// A member is dragged when any of its points is requested. Dragged
+/// members, and every member sharing a point with one, do not attract.
+/// Each dragged member snaps against the rest on its own, the one with
+/// the most requested points first; a point an earlier member already
+/// placed is not placed again. Returns the points to write, per dragged
+/// member, in that order: the requested ones and any the snap moved.
+pub fn snap_group(members: &[Member], current: &[Pt], requested: &[Option<Pt>], p: &Params) -> Vec<Vec<(u32, Pt)>> {
+    let n_req = |m: &Member| m.points.iter().filter(|&&i| requested[i as usize].is_some()).count();
+    let mut dragged: Vec<usize> = (0..members.len()).filter(|&m| n_req(&members[m]) > 0).collect();
+    if dragged.is_empty() {
+        return Vec::new();
+    }
+    dragged.sort_by_key(|&m| std::cmp::Reverse(n_req(&members[m])));
+    let mut busy = vec![false; current.len()];
+    for &m in &dragged {
+        for &i in &members[m].points {
+            busy[i as usize] = true;
+        }
+    }
+    let mut att = Attractors::default();
+    let mut pts: Vec<Pt> = Vec::new();
+    for m in members {
+        if m.points.iter().any(|&i| busy[i as usize]) {
+            continue;
+        }
+        pts.clear();
+        pts.extend(m.points.iter().map(|&i| current[i as usize]));
+        att.add(m.shape, &pts);
+    }
+    let mut placed = vec![false; current.len()];
+    let mut out = Vec::with_capacity(dragged.len());
+    for m in dragged {
+        let mem = &members[m];
+        if mem.points.iter().all(|&i| placed[i as usize] || requested[i as usize].is_none()) {
+            continue;
+        }
+        pts.clear();
+        pts.extend(mem.points.iter().map(|&i| requested[i as usize].unwrap_or(current[i as usize])));
+        let asked: Vec<usize> = (0..mem.points.len()).filter(|&k| requested[mem.points[k] as usize].is_some()).collect();
+        let moved = if asked.len() == 1 { Some(asked[0]) } else { None };
+        snap(mem.shape, mem.rigid, &mut pts, moved, &att, p);
+        let mut writes = Vec::new();
+        for (k, &i) in mem.points.iter().enumerate() {
+            let changed = pts[k] != current[i as usize] && !(pts[k][0].is_nan() && pts[k][1].is_nan());
+            if !placed[i as usize] && (requested[i as usize].is_some() || changed) {
+                placed[i as usize] = true;
+                writes.push((i, pts[k]));
+            }
+        }
+        out.push(writes);
+    }
+    out
+}
+
 // ---------------------------------------------------------------------------
 // Points (`pointConstraintFunction`)
 // ---------------------------------------------------------------------------
@@ -535,6 +602,31 @@ mod tests {
         let want = v.clone();
         snap(Shape::Closed, true, &mut v, Some(0), &att, &P);
         close(&v, &want);
+    }
+
+    #[test]
+    fn a_member_sharing_a_point_with_the_dragged_one_does_not_attract() {
+        // Point 0 is a member on its own and the first vertex of a triangle.
+        let members = vec![
+            Member { shape: Shape::Point, rigid: false, points: vec![0] },
+            Member { shape: Shape::Closed, rigid: false, points: vec![0, 1, 2] },
+            Member { shape: Shape::Point, rigid: false, points: vec![3] },
+        ];
+        let current = [[0.0, 0.0], [4.0, 0.0], [0.0, 4.0], [10.0, 10.0]];
+        let mut requested = vec![None; 4];
+        for (i, r) in requested.iter_mut().enumerate().take(3) {
+            *r = Some([current[i][0] + 0.2, current[i][1] + 0.1]);
+        }
+        let w = snap_group(&members, &current, &requested, &P);
+        // The triangle moves as asked; its own vertex 0 does not pull it back.
+        assert_eq!(w.len(), 1);
+        assert_eq!(w[0], vec![(0, [0.2, 0.1]), (1, [4.2, 0.1]), (2, [0.2, 4.1])]);
+        // Point 3 does attract.
+        requested[0] = Some([9.8, 9.9]);
+        requested[1] = None;
+        requested[2] = None;
+        let w = snap_group(&members, &current, &requested, &P);
+        assert_eq!(w[0], vec![(0, [10.0, 10.0])]);
     }
 
     #[test]

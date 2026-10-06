@@ -1,7 +1,10 @@
 //! A naive recursive evaluator used as a correctness oracle for the scheduled
 //! program. It reads only essential cells and recomputes everything else by
-//! recursion, independent of the schedule.
+//! recursion, independent of the schedule. Values are memoized: a vector
+//! instruction with many inputs (a sticky group's) read through several
+//! others would otherwise be recomputed exponentially often.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 use crate::document::{CellIdx, Document};
@@ -9,12 +12,13 @@ use crate::document::{CellIdx, Document};
 pub struct ReferenceEvaluator<'a> {
     doc: &'a Document,
     producer: HashMap<CellIdx, usize>,
+    memo: RefCell<HashMap<CellIdx, f64>>,
 }
 
 impl<'a> ReferenceEvaluator<'a> {
     pub fn new(doc: &'a Document) -> Self {
         let producer = doc.program.instrs.iter().enumerate().flat_map(|(i, ins)| (0..ins.op.n_out() as CellIdx).map(move |k| (ins.out + k, i))).collect();
-        ReferenceEvaluator { doc, producer }
+        ReferenceEvaluator { doc, producer, memo: RefCell::new(HashMap::new()) }
     }
 
     pub fn value(&self, cell: CellIdx) -> f64 {
@@ -22,18 +26,24 @@ impl<'a> ReferenceEvaluator<'a> {
         let Some(&p) = self.producer.get(&cell) else {
             return self.doc.cells[cell as usize];
         };
+        if let Some(&v) = self.memo.borrow().get(&cell) {
+            return v;
+        }
         let ins = &self.doc.program.instrs[p];
         // Build a scratch view where only this instruction's inputs are filled.
         let mut scratch = vec![f64::NAN; self.doc.cells.len()];
         for input in ins.op.inputs(&self.doc.program.extra) {
             scratch[input as usize] = self.value(input);
         }
-        if let crate::ops::Op::Vec(..) = ins.op {
-            let mut buf = [0.0f64; 16];
-            ins.op.eval_vec(&scratch, &self.doc.program.extra, &mut buf[..ins.op.n_out()]);
-            return buf[(cell - ins.out) as usize];
-        }
-        ins.op.eval(&scratch, &self.doc.program.arena)
+        let v = if let crate::ops::Op::Vec(..) = ins.op {
+            let mut buf = vec![0.0f64; ins.op.n_out()];
+            ins.op.eval_vec(&scratch, &self.doc.program.extra, &mut buf);
+            buf[(cell - ins.out) as usize]
+        } else {
+            ins.op.eval(&scratch, &self.doc.program.arena)
+        };
+        self.memo.borrow_mut().insert(cell, v);
+        v
     }
 
     /// Every derived cell, recomputed from scratch.

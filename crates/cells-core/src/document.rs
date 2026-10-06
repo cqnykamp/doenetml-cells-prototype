@@ -100,6 +100,29 @@ impl Components {
         self.kind.is_empty()
     }
 
+    /// A sticky group's members: its children that take part, with repeats
+    /// and collects replaced by what they expanded to, as the current core's
+    /// composites are.
+    pub fn sticky_members(&self, group: CompIdx) -> Vec<CompIdx> {
+        let mut out = Vec::new();
+        let mut stack = vec![group];
+        while let Some(c) = stack.pop() {
+            let start = self.child_start[c as usize] as usize;
+            let kids = &self.child_list[start..start + self.child_count[c as usize] as usize];
+            for &k in kids.iter().rev() {
+                if k & TEXT_BIT != 0 {
+                    continue;
+                }
+                match self.kind[k as usize] {
+                    ComponentKind::RepeatForSequence | ComponentKind::Collect => stack.push(k),
+                    kind if kind.sticky_layout().is_some() => out.push(k),
+                    _ => {}
+                }
+            }
+        }
+        out
+    }
+
     pub fn heap_bytes(&self) -> usize {
         self.kind.capacity() * std::mem::size_of::<ComponentKind>()
             + 4 * (self.name.capacity()

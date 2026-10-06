@@ -49,6 +49,8 @@ mod emit;
 mod expand;
 mod geometry;
 mod plan;
+#[cfg(not(feature = "sticky-prepass"))]
+mod sticky;
 
 type SlotId = u32;
 type TemplateId = usize;
@@ -404,9 +406,9 @@ enum Source {
     /// Operator over `op_inputs[start..start + n]`.
     Op(OpSpec, u32, u8),
     /// Head (output 0) of a vector instruction over `op_inputs[start..start + n]`.
-    Vec(VecOp, u32, u8),
+    Vec(VecOp, u32, u32),
     /// Output `k` of the vector instruction headed at `head`.
-    VecOut(SlotId, u8),
+    VecOut(SlotId, u32),
 }
 
 /// A built document whose program has not yet been scheduled.
@@ -449,6 +451,8 @@ pub fn build(dast: &Dast, prior: &Prior) -> Result<Unscheduled> {
     lap("expand");
     b.resolve_all()?;
     lap("resolve");
+    #[cfg(not(feature = "sticky-prepass"))]
+    b.wire_sticky_groups();
     let u = b.finish()?;
     lap("cells, program");
     Ok(u)
@@ -510,6 +514,9 @@ struct Builder<'c, 'a> {
     missing: Option<SlotId>,
     arena: Arena,
     root: CompIdx,
+    /// An essential source a sticky group moved out of a component's slot,
+    /// keyed under the slot it came from so its value survives rebuilds.
+    moved_from: HashMap<SlotId, SlotId>,
 }
 
 

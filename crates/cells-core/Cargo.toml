@@ -10,3 +10,8 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 web-time = "1"
+
+[features]
+# Plan 4: wire sticky groups as a request-engine pre-pass instead of a
+# `Sticky` instruction.
+sticky-prepass = []
