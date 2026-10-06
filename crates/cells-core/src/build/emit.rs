@@ -1,0 +1,279 @@
+//! Emit: merge aliases into cells with a union-find, number cells
+//! (essential, fixed, derived), bind operators to instructions, and measure
+//! structural depth.
+
+use super::*;
+
+impl<'c, 'a> Builder<'c, 'a> {
+    pub(super) fn finish(mut self) -> Result<Unscheduled> {
+        let profile = std::env::var_os("CELLS_BUILD_PROFILE").is_some();
+        let clock = web_time::Instant::now();
+        let lap = |what: &str| {
+            if profile {
+                eprintln!("    cd/{what}: {:.2?}", clock.elapsed());
+            }
+        };
+        let n = self.sources.len();
+        let mut uf = UnionFind::new(n);
+        for (s, src) in self.sources.iter().enumerate() {
+            if let Source::Alias(t) = src {
+                uf.union(s as SlotId, *t);
+            }
+        }
+        // The one non-alias slot in each class defines its cell.
+        let mut class_def: Vec<u32> = vec![NONE; n];
+        for (s, src) in self.sources.iter().enumerate() {
+            match src {
+                Source::Alias(_) => {}
+                Source::Unset => unreachable!("slot {} never received a source", self.slot_label(s as SlotId)),
+                _ => {
+                    let root = uf.find(s as SlotId) as usize;
+                    debug_assert!(class_def[root] == NONE, "two sources in one alias class");
+                    class_def[root] = s as u32;
+                }
+            }
+        }
+        lap("union-find");
+
+        // Number cells: essential classes first, then fixed, then derived.
+        // Essential values come from the prior build when the slot existed.
+        let roots: Vec<u32> = (0..n as SlotId).map(|s| uf.find(s)).collect();
+        if let Some(s) = (0..n).find(|&s| class_def[roots[s] as usize] == NONE) {
+            return Err(Error::Cycle(self.slot_label(s as SlotId)));
+        }
+        let mut slot_cell: Vec<CellIdx> = vec![NONE; n];
+        let mut cells = Vec::with_capacity(n);
+        let mut cell_def_slot: Vec<SlotId> = Vec::with_capacity(n);
+        let mut essential_slots: Vec<(ScopeId, u32)> = Vec::new();
+        let mut fixed_defs = Vec::new();
+        let mut derived_defs = Vec::new();
+        let mut outputs = Vec::new();
+        for s in 0..n {
+            let root = roots[s] as usize;
+            if class_def[root] as usize != s {
+                continue; // not the defining slot of its class
+            }
+            match &self.sources[s] {
+                Source::Literal(v) | Source::Default(v) => {
+                    let (scope, tslot) = self.template_slot(s as SlotId);
+                    let value = self.prior.values.get(scope as usize).and_then(|row| row.get(tslot as usize).copied().flatten()).unwrap_or(*v);
+                    slot_cell[root] = cells.len() as CellIdx;
+                    cells.push(value);
+                    cell_def_slot.push(s as SlotId);
+                    essential_slots.push((scope, tslot));
+                }
+                Source::Fixed(_) => fixed_defs.push(s),
+                Source::Op(..) | Source::OpVec(..) => derived_defs.push(s),
+                Source::OutputOf(..) => outputs.push(s),
+                _ => unreachable!(),
+            }
+        }
+        let n_essential = cells.len();
+        for &s in &fixed_defs {
+            let Source::Fixed(v) = self.sources[s] else { unreachable!() };
+            let root = roots[s] as usize;
+            slot_cell[root] = cells.len() as CellIdx;
+            cells.push(v);
+            cell_def_slot.push(s as SlotId);
+        }
+        let n_fixed = fixed_defs.len();
+        // A vector instruction's outputs are consecutive cells after its head.
+        for &s in &derived_defs {
+            let root = roots[s] as usize;
+            slot_cell[root] = cells.len() as CellIdx;
+            let n_out = match self.sources[s] {
+                Source::OpVec(v, ..) => v.n_out(),
+                _ => 1,
+            };
+            for _ in 0..n_out {
+                cells.push(f64::NAN);
+                cell_def_slot.push(s as SlotId);
+            }
+        }
+        for &s in &outputs {
+            let Source::OutputOf(head, k) = self.sources[s] else { unreachable!() };
+            let head_cell = slot_cell[roots[head as usize] as usize];
+            debug_assert!(head_cell != NONE, "vector output before its head");
+            slot_cell[roots[s] as usize] = head_cell + k as CellIdx;
+            cell_def_slot[(head_cell + k as CellIdx) as usize] = s as SlotId;
+        }
+        let slot_to_cell: Vec<CellIdx> = roots.iter().map(|&r| slot_cell[r as usize]).collect();
+        lap("number cells");
+
+        let mut instrs = Vec::with_capacity(derived_defs.len());
+        let mut extra = Vec::new();
+        let mut bound: Vec<CellIdx> = Vec::with_capacity(8);
+        for &s in &derived_defs {
+            let (spec, start, count) = match &self.sources[s] {
+                Source::Op(spec, start, count) => (*spec, *start, *count),
+                Source::OpVec(v, start, count) => (OpSpec::Vec(*v), *start, *count),
+                _ => unreachable!(),
+            };
+            bound.clear();
+            bound.extend(self.op_inputs[start as usize..start as usize + count as usize].iter().map(|&i| slot_to_cell[i as usize]));
+            instrs.push(Instr { out: slot_to_cell[s], op: spec.bind(&bound, &mut extra) });
+        }
+        lap("bind instructions");
+
+        // Prop cells: contiguous per component, in slot order.
+        let n_comps = self.comps.len();
+        self.comps.prop_base = Vec::with_capacity(n_comps);
+        self.comps.prop_cells = Vec::with_capacity(n);
+        for c in 0..n_comps {
+            let np = self.comps.kind[c].prop_defs().len();
+            self.comps.prop_base.push(self.comps.prop_cells.len() as u32);
+            let base = self.slot_base[c] as usize;
+            self.comps.prop_cells.extend_from_slice(&slot_to_cell[base..base + np]);
+        }
+        lap("prop cells");
+
+        let (depths, cross_reads) = self.structural_depths();
+        lap("structural depth");
+
+        // Cell leaves in the arena were slots; they are cells now.
+        let mut arena = self.arena;
+        arena.map_cells(|slot| slot_to_cell[slot as usize]);
+
+        // The value store grows with the scope table; rows fill lazily.
+        let mut values = self.prior.values.clone();
+        values.resize(self.scopes.len(), Vec::new());
+
+        let structure = Structure {
+            scopes: self.scopes,
+            scope_index: self.scope_index,
+            essential_slots,
+            values,
+            structural_depth: depths.iter().copied().max().unwrap_or(0),
+            repeat_depths: depths,
+            repeat_cross_reads: cross_reads,
+            repeats: self.repeats,
+            counts_used: self.counts_used,
+        };
+
+        // Lazy labels for cycle errors.
+        let slot_comp = self.slot_comp;
+        let slot_base = self.slot_base;
+        let kinds = self.comps.kind.clone();
+        let names: Vec<Option<String>> = self.comps.name.iter().map(|&s| (s != NONE).then(|| self.c.dast.strings.get(s).trim().to_string())).collect();
+        let cell_label = Box::new(move |cell: CellIdx| {
+            let slot = cell_def_slot[cell as usize];
+            let comp = slot_comp[slot as usize];
+            if comp == NONE {
+                return "(anonymous cell)".to_string();
+            }
+            let pi = (slot - slot_base[comp as usize]) as usize;
+            let owner = names[comp as usize].clone().unwrap_or_else(|| format!("<{}>#{}", kinds[comp as usize].tag(), comp));
+            match kinds[comp as usize].prop_defs().get(pi) {
+                Some(def) => format!("{owner}.{}", def.name),
+                None => format!("{owner}.(hidden slot {pi})"),
+            }
+        });
+
+        let mut comps = self.comps;
+        comps.kind.shrink_to_fit();
+        comps.name.shrink_to_fit();
+        comps.parent.shrink_to_fit();
+        comps.child_start.shrink_to_fit();
+        comps.child_count.shrink_to_fit();
+        comps.child_list.shrink_to_fit();
+        comps.prop_cells.shrink_to_fit();
+        comps.node.shrink_to_fit();
+        comps.scope.shrink_to_fit();
+        Ok(Unscheduled { cells, n_essential, n_fixed, instrs, comps, strings: self.c.dast.strings.clone(), root: self.root, structure, arena, extra, cell_label })
+    }
+
+    /// The (scope, template slot) an essential slot's value is saved under.
+    /// Only template elements have essential slots; copies alias theirs.
+    pub(super) fn template_slot(&self, slot: SlotId) -> (ScopeId, u32) {
+        let comp = self.slot_comp[slot as usize];
+        let inst = self.instances[self.comp_instance[comp as usize] as usize];
+        let pi = slot - self.slot_base[comp as usize];
+        (inst.scope, self.c.templates[inst.template].elems[inst.elem].slot_off + pi)
+    }
+
+    /// Structural depth per repeat: how many repeats must be expanded, in
+    /// sequence, before its count can be computed, plus one. Nesting adds
+    /// one; a count that reads a cell inside another repeat's iterations adds
+    /// one, and is flagged (`cross`) since authors can avoid it.
+    pub(super) fn structural_depths(&self) -> (Vec<u32>, Vec<bool>) {
+        let count_pi = ComponentKind::RepeatForSequence.prop_index("count").unwrap();
+        let mut owner: HashMap<ScopeId, usize> = HashMap::new();
+        for (ri, r) in self.repeats.iter().enumerate() {
+            for &s in &r.iter_scopes {
+                owner.insert(s, ri);
+            }
+        }
+        let is_ancestor_or_self = |s: ScopeId, of: ScopeId| -> bool {
+            let mut cur = of;
+            loop {
+                if cur == s {
+                    return true;
+                }
+                if cur == 0 {
+                    return false;
+                }
+                cur = self.scopes[cur as usize].0;
+            }
+        };
+        let mut reads: Vec<Vec<usize>> = vec![Vec::new(); self.repeats.len()];
+        let mut cross = vec![false; self.repeats.len()];
+        let mut seen = vec![false; self.sources.len()];
+        let mut stack = Vec::new();
+        let mut touched = Vec::new();
+        for (ri, r) in self.repeats.iter().enumerate() {
+            if let Some(&o) = owner.get(&r.scope) {
+                reads[ri].push(o);
+            }
+            stack.clear();
+            stack.push(self.slot(r.comp, count_pi));
+            touched.clear();
+            while let Some(sl) = stack.pop() {
+                if seen[sl as usize] {
+                    continue;
+                }
+                seen[sl as usize] = true;
+                touched.push(sl);
+                let comp = self.slot_comp[sl as usize];
+                if comp != NONE {
+                    let scope = self.comps.scope[comp as usize];
+                    if scope != 0
+                        && !is_ancestor_or_self(scope, r.scope)
+                        && let Some(&o) = owner.get(&scope)
+                        && o != ri
+                    {
+                        cross[ri] = true;
+                        if !reads[ri].contains(&o) {
+                            reads[ri].push(o);
+                        }
+                    }
+                }
+                match &self.sources[sl as usize] {
+                    Source::Alias(t) => stack.push(*t),
+                    Source::Op(_, start, n) | Source::OpVec(_, start, n) => stack.extend_from_slice(&self.op_inputs[*start as usize..*start as usize + *n as usize]),
+                    Source::OutputOf(head, _) => stack.push(*head),
+                    _ => {}
+                }
+            }
+            for &sl in &touched {
+                seen[sl as usize] = false;
+            }
+        }
+        fn depth(ri: usize, reads: &[Vec<usize>], memo: &mut [u32], visiting: &mut [bool]) -> u32 {
+            if memo[ri] != 0 {
+                return memo[ri];
+            }
+            if visiting[ri] {
+                return 1;
+            }
+            visiting[ri] = true;
+            let d = 1 + reads[ri].iter().map(|&o| depth(o, reads, memo, visiting)).max().unwrap_or(0);
+            visiting[ri] = false;
+            memo[ri] = d;
+            d
+        }
+        let mut memo = vec![0u32; self.repeats.len()];
+        let mut visiting = vec![false; self.repeats.len()];
+        let depths = (0..self.repeats.len()).map(|ri| depth(ri, &reads, &mut memo, &mut visiting)).collect();
+        (depths, cross)
+    }
+}

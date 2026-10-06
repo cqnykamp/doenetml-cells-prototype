@@ -288,7 +288,7 @@ fn rigid_polygon_rotates_about_its_centroid_when_one_vertex_is_dragged() {
            <graph extend="$g2" name="g3"/>"#,
     )
     .unwrap();
-    assert_eq!(v(&doc, "pg", "numVertices"), 4.0);
+    assert_eq!(v(&doc, "g1.pg", "numVertices"), 4.0);
     let mut verts = [[3.0, 7.0], [-4.0, -1.0], [8.0, 2.0], [-3.0, 4.0]];
     let c = [verts.iter().map(|p| p[0]).sum::<f64>() / 4.0, verts.iter().map(|p| p[1]).sum::<f64>() / 4.0];
     // Rotate 90 degrees counterclockwise about the centroid, asking for half the length.
@@ -296,7 +296,7 @@ fn rigid_polygon_rotates_about_its_centroid_when_one_vertex_is_dragged() {
     for p in &mut verts {
         *p = [-(p[1] - c[1]) + c[0], p[0] - c[0] + c[1]];
     }
-    doc.request(&[req(&doc, "pg", "x2", requested[0]), req(&doc, "pg", "y2", requested[1])]);
+    doc.request(&[req(&doc, "g1.pg", "x2", requested[0]), req(&doc, "g1.pg", "y2", requested[1])]);
     for (i, p) in verts.iter().enumerate() {
         assert_close!(v(&doc, &format!("p{}", i + 1), "x"), p[0]);
         assert_close!(v(&doc, &format!("p{}", i + 1), "y"), p[1]);

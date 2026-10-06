@@ -177,7 +177,8 @@ fn evaluators_agree() {
         let mut doc = base.clone();
         let mut tick = Tick::default();
         for &r in &reqs {
-            let (cell, value) = doc.program.invert_to_essential(&doc.cells, r.cell, r.value).unwrap();
+            let inv = doc.program.invert_requests(&doc.cells, doc.n_essential, &[r], &[]);
+            let (cell, value) = inv.writes[0];
             doc.cells[cell as usize] = value;
             tick.changed.push(cell);
         }

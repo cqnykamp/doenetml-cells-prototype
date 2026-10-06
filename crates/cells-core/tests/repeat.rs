@@ -11,7 +11,19 @@ fn req(_doc: &Document, cell: u32, value: f64) -> Request {
 /// Cell of `$path.prop` where `path` alternates names and 1-based positions,
 /// e.g. `["r", "3", "p"]`.
 fn cell(doc: &Document, path: &[&str], prop: &str) -> u32 {
-    let c = doc.scoped_component(path).unwrap_or_else(|| panic!("no component at {path:?}"));
+    // ["r", "3", "p"] is the path `r[3].p`.
+    let mut text = String::new();
+    for (i, part) in path.iter().enumerate() {
+        if part.parse::<usize>().is_ok() {
+            text.push_str(&format!("[{part}]"));
+        } else {
+            if i > 0 {
+                text.push('.');
+            }
+            text.push_str(part);
+        }
+    }
+    let c = doc.resolve_path(&text).unwrap_or_else(|| panic!("no component at {path:?}"));
     doc.prop_cells(c, prop).unwrap()[0]
 }
 

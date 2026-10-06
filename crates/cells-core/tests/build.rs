@@ -151,7 +151,8 @@ fn operator_cycle_is_rejected() {
 fn error_cases() {
     assert!(matches!(load(r#"<point x="$nope"/>"#).unwrap_err(), Error::UnknownName(_)));
     assert!(matches!(load(r#"<point name="a"/><point name="a"/>"#).unwrap_err(), Error::DuplicateName(_)));
-    assert!(matches!(load(r#"<point x="1+2"/>"#).unwrap_err(), Error::BadValue { .. }));
+    // Math in an attribute lowers (plan 2); a constant folds to an essential.
+    assert_eq!(load(r#"<point name="p" x="1+2"/>"#).unwrap().value("p", "x"), Some(3.0));
     assert!(matches!(load(r#"<point name="p"/><point x="$p"/>"#).unwrap_err(), Error::ArityMismatch { .. }));
     assert!(matches!(load(r#"<point name="p"/><number extend="$p"/>"#).unwrap_err(), Error::ExtendKindMismatch { .. }));
     assert!(matches!(load(r#"<point name="p"/><op kind="add" args="$p.x"/>"#).unwrap_err(), Error::OpArity { .. }));

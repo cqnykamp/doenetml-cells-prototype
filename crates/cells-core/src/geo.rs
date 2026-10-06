@@ -34,8 +34,8 @@ pub enum Pivot {
     Centroid,
     /// A vertex, 0-based.
     Vertex(u8),
-    /// A point given by the last two inputs of the instruction.
-    Input,
+    /// The point held by the instruction's last two inputs.
+    Point,
 }
 
 /// How a rigid shape may move. One dragged vertex rotates and, if `dilate`,
@@ -81,8 +81,8 @@ impl Produced {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum VecOp {
-    /// Identity on `n` points (2n inputs, 2n outputs) that move rigidly;
-    /// with `Pivot::Input` two more inputs hold the pivot.
+    /// Identity on `n` points (2n outputs) that move rigidly. Inputs are the
+    /// 2n coordinates followed by a pivot point (NaN unless `Pivot::Point`).
     Shape { n: u8, opts: RigidOpts },
     /// Inputs (cx, cy, px, py); outputs (cx, cy, r).
     CircleCenterPoint,
@@ -105,8 +105,7 @@ pub enum VecOp {
 impl VecOp {
     pub fn n_in(&self) -> usize {
         match *self {
-            VecOp::Shape { n, opts: RigidOpts { pivot: Pivot::Input, .. } } => 2 * n as usize + 2,
-            VecOp::Shape { n, .. } => 2 * n as usize,
+            VecOp::Shape { n, .. } => 2 * n as usize + 2,
             VecOp::CircleCenterPoint => 4,
             VecOp::CirclePoints { n } => 2 * n as usize,
             VecOp::CircleTwoPointsRadius => 5,
@@ -323,7 +322,7 @@ fn invert_rigid(n: usize, opts: RigidOpts, inputs: &[CellIdx], inp: &[f64], desi
             Pivot::Centroid => centroid(inp, n),
             Pivot::Vertex(k) if (k as usize) < n => (inp[2 * k as usize], inp[2 * k as usize + 1]),
             Pivot::Vertex(_) => centroid(inp, n),
-            Pivot::Input => {
+            Pivot::Point => {
                 let (x, y) = (inp[2 * n], inp[2 * n + 1]);
                 if x.is_finite() && y.is_finite() { (x, y) } else { centroid(inp, n) }
             }

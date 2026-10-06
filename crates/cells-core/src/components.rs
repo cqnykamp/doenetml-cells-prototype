@@ -85,25 +85,20 @@ const CIRCLE_PROPS: &[PropDef] = &[
     /* 1 */ planned("cy"),
     /* 2 */ planned("radius"),
     /* 3 */ computed("diameter", OpSpec::Scale { k: 2.0 }, &[2]),
-    /* 4 */
-    computed("circumference", OpSpec::Scale { k: std::f64::consts::TAU }, &[2]),
-    /* 5 */ computed("radiusSquared", OpSpec::Mul, &[2, 2]),
-    /* 6 */
-    computed("area", OpSpec::Scale { k: std::f64::consts::PI }, &[5]),
+    /* 4 */ computed("circumference", OpSpec::Scale { k: std::f64::consts::TAU }, &[2]),
+    /* 5 */ planned("area"),
     // The center as a *reference*: the prescribed center when there is one
     // (so a point extending `$c.center` drags that point alone, as in the
-    // current core), else the derived center. Names follow the current
-    // core's array entries.
-    /* 7 */
-    planned("centerX1"),
-    /* 8 */ planned("centerX2"),
-    /* 9 */ planned("throughPointX1_1"),
-    /* 10 */ planned("throughPointX1_2"),
-    /* 11 */ planned("throughPointX2_1"),
-    /* 12 */ planned("throughPointX2_2"),
-    /* 13 */ planned("throughPointX3_1"),
-    /* 14 */ planned("throughPointX3_2"),
-    /* 15 */ planned("numThroughPoints"),
+    // current core), else the derived center.
+    /* 6 */ planned("centerX"),
+    /* 7 */ planned("centerY"),
+    /* 8 */ planned("throughX1"),
+    /* 9 */ planned("throughY1"),
+    /* 10 */ planned("throughX2"),
+    /* 11 */ planned("throughY2"),
+    /* 12 */ planned("throughX3"),
+    /* 13 */ planned("throughY3"),
+    /* 14 */ planned("numThroughPoints"),
 ];
 
 /// `<line>` and `<lineSegment>`. The first four props are the shape's own
@@ -334,7 +329,7 @@ impl ComponentKind {
     pub fn prop_defs(self) -> &'static [PropDef] {
         const GRAPH: &[PropDef] = &[attr("xmin", -10.0), attr("xmax", 10.0), attr("ymin", -10.0), attr("ymax", 10.0)];
         // `hide` is a boolean in the current core; here it is a 0/1 cell.
-        const POINT: &[PropDef] = &[attr("x", 0.0), attr("y", 0.0), attr("hide", 0.0)];
+        const POINT: &[PropDef] = &[planned("x"), planned("y"), planned("hide")];
         const BOOLEAN_INPUT: &[PropDef] = &[attr("value", 0.0)];
         // Both of a math's props are set by the builder from its children.
         const MATH: &[PropDef] = &[
@@ -374,18 +369,35 @@ impl ComponentKind {
     }
 
     pub fn prop_index(self, name: &str) -> Option<usize> {
+        let name = self.canonical_prop(name);
         self.prop_defs().iter().position(|p| p.name == name)
+    }
+
+    /// The current core's spellings of a few props, accepted in references
+    /// so its documents resolve unchanged.
+    pub fn canonical_prop<'a>(self, name: &'a str) -> &'a str {
+        match (self, name) {
+            (Self::Circle, "centerX1") => "centerX",
+            (Self::Circle, "centerX2") => "centerY",
+            (Self::Circle, "throughPointX1_1") => "throughX1",
+            (Self::Circle, "throughPointX1_2") => "throughY1",
+            (Self::Circle, "throughPointX2_1") => "throughX2",
+            (Self::Circle, "throughPointX2_2") => "throughY2",
+            (Self::Circle, "throughPointX3_1") => "throughX3",
+            (Self::Circle, "throughPointX3_2") => "throughY3",
+            _ => name,
+        }
     }
 
     /// Multi-cell props that are views over single-cell props.
     pub fn virtual_prop(self, name: &str) -> Option<&'static [&'static str]> {
         match (self, name) {
             (Self::Point, "coords") => Some(&["x", "y"]),
-            (Self::Circle, "center") => Some(&["centerX1", "centerX2"]),
+            (Self::Circle, "center") => Some(&["centerX", "centerY"]),
             (Self::Circle, "numericalCenter") => Some(&["cx", "cy"]),
-            (Self::Circle, "throughPoint1") => Some(&["throughPointX1_1", "throughPointX1_2"]),
-            (Self::Circle, "throughPoint2") => Some(&["throughPointX2_1", "throughPointX2_2"]),
-            (Self::Circle, "throughPoint3") => Some(&["throughPointX3_1", "throughPointX3_2"]),
+            (Self::Circle, "throughPoint1") => Some(&["throughX1", "throughY1"]),
+            (Self::Circle, "throughPoint2") => Some(&["throughX2", "throughY2"]),
+            (Self::Circle, "throughPoint3") => Some(&["throughX3", "throughY3"]),
             (Self::Line | Self::LineSegment, "point1") => Some(&["x1", "y1"]),
             (Self::Line | Self::LineSegment, "point2") => Some(&["x2", "y2"]),
             (Self::Polygon, v) if v.starts_with("vertex") => {
@@ -403,7 +415,7 @@ impl ComponentKind {
         match (self, name) {
             (Self::Line | Self::LineSegment, "points" | "endpoints") => Some(vec![["x1", "y1"], ["x2", "y2"]]),
             (Self::Polygon, "vertices") => Some(POLYGON_PROPS[1..].chunks(2).map(|c| [c[0].name, c[1].name]).collect()),
-            (Self::Circle, "throughPoints") => Some(vec![["throughPointX1_1", "throughPointX1_2"], ["throughPointX2_1", "throughPointX2_2"], ["throughPointX3_1", "throughPointX3_2"]]),
+            (Self::Circle, "throughPoints") => Some(vec![["throughX1", "throughY1"], ["throughX2", "throughY2"], ["throughX3", "throughY3"]]),
             _ => None,
         }
     }
@@ -440,7 +452,7 @@ impl ComponentKind {
     /// Kinds whose prop sources the builder plans from the element's
     /// attributes and children rather than from `PropFrom`.
     pub fn planned(self) -> bool {
-        matches!(self, Self::Circle | Self::Line | Self::LineSegment | Self::Polygon)
+        matches!(self, Self::Point | Self::Circle | Self::Line | Self::LineSegment | Self::Polygon)
     }
 
     /// Whether `<collect componentType="...">` may name this kind.

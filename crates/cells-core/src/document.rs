@@ -2,14 +2,16 @@
 //! the columnar component layer that names cells for references and the
 //! renderer.
 
-use std::cell::OnceCell;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
 use crate::components::ComponentKind;
 use crate::dast::{Dast, NodeId, StrId, StringTable};
-use crate::program::{PointRequest, Program};
+use crate::invert::PointRequest;
+use crate::program::Program;
+
+mod table;
 
 pub type CellIdx = u32;
 pub type CompIdx = u32;
@@ -136,7 +138,6 @@ pub struct Document {
     pub structure: Structure,
     /// The document as loaded, kept for rebuilds.
     pub dast: Arc<Dast>,
-    name_map: OnceCell<HashMap<String, CompIdx>>,
 }
 
 /// A renderer's ask to change one cell to a value.
@@ -177,7 +178,7 @@ pub struct LoadTimings {
 impl Document {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(cells: Vec<f64>, n_essential: usize, n_fixed: usize, program: Program, comps: Components, strings: StringTable, root: CompIdx, structure: Structure, dast: Arc<Dast>) -> Self {
-        Document { cells, n_essential, n_fixed, program, comps, strings, root, structure, dast, name_map: OnceCell::new() }
+        Document { cells, n_essential, n_fixed, program, comps, strings, root, structure, dast }
     }
 
     /// Load from DAST JSON and compute initial values.
@@ -394,47 +395,58 @@ impl Document {
     /// iteration of a repeat or the k-th child of a collect or point list.
     pub fn resolve_path(&self, path: &str) -> Option<CompIdx> {
         let mut cur: Option<CompIdx> = None;
+        // After `r[3]` on a repeat: the iteration a following name picks from.
+        let mut iteration: Option<ScopeId> = None;
         for part in path.split('.') {
             let (name, indices) = match part.find('[') {
                 Some(i) => (&part[..i], &part[i..]),
                 None => (part, ""),
             };
             if !name.is_empty() {
-                cur = Some(match cur {
-                    None => self.find_in_scope(None, name)?,
-                    Some(c) => self.find_in_scope(Some(c), name)?,
+                cur = Some(match (cur, iteration.take()) {
+                    (Some(repeat), Some(scope)) => self
+                        .children(repeat)
+                        .filter_map(|ch| match ch {
+                            Child::Component(c) if self.comps.scope[c as usize] == scope && self.name(c) == Some(name) => Some(c),
+                            _ => None,
+                        })
+                        .next()?,
+                    (scope, None) => self.find_in_scope(scope, name)?,
+                    (None, Some(_)) => unreachable!("an iteration always follows a repeat"),
                 });
             }
             for idx in indices.trim_end_matches(']').split(']').filter(|s| !s.is_empty()) {
                 let k: usize = idx.trim_start_matches('[').parse().ok()?;
                 let c = cur?;
-                cur = Some(match self.kind(c) {
+                match self.kind(c) {
                     ComponentKind::RepeatForSequence => {
                         let r = self.structure.repeats.iter().find(|r| r.comp == c)?;
-                        let scope = *r.iter_scopes.get(k.checked_sub(1)?)?;
-                        // The iteration's single component, or the repeat
-                        // itself re-scoped (a following name picks a child).
-                        let mut in_scope = self.children(c).filter_map(|ch| match ch {
-                            Child::Component(cc) if self.comps.scope[cc as usize] == scope => Some(cc),
-                            _ => None,
-                        });
-                        let first = in_scope.next()?;
-                        if in_scope.next().is_some() {
-                            return self.scoped_component(&path.replace("].", " ").replace(['[', ']'], " ").split_whitespace().collect::<Vec<_>>());
-                        }
-                        first
+                        iteration = Some(*r.iter_scopes.get(k.checked_sub(1)?)?);
                     }
-                    _ => self
-                        .children(c)
-                        .filter_map(|ch| match ch {
-                            Child::Component(cc) => Some(cc),
-                            _ => None,
-                        })
-                        .nth(k.checked_sub(1)?)?,
-                });
+                    _ => {
+                        cur = self
+                            .children(c)
+                            .filter_map(|ch| match ch {
+                                Child::Component(cc) => Some(cc),
+                                _ => None,
+                            })
+                            .nth(k.checked_sub(1)?);
+                    }
+                }
             }
         }
-        cur
+        // A path ending at `r[3]` names the iteration's single component.
+        match (cur, iteration) {
+            (Some(repeat), Some(scope)) => {
+                let mut in_scope = self.children(repeat).filter_map(|ch| match ch {
+                    Child::Component(c) if self.comps.scope[c as usize] == scope => Some(c),
+                    _ => None,
+                });
+                let first = in_scope.next();
+                if in_scope.next().is_some() { None } else { first }
+            }
+            _ => cur,
+        }
     }
 
     /// The unique component named `name` visible from `scope` (None: the
@@ -500,126 +512,6 @@ impl Document {
             p = self.parent(pc);
         }
         scope.is_none()
-    }
-
-    /// Cells of a prop of a component inside an iteration, by scoped path:
-    /// `scoped_cell(&["r", "3", "p"], "x")` names `$r[3].p.x`. For tests.
-    pub fn scoped_component(&self, path: &[&str]) -> Option<CompIdx> {
-        let mut comp = self.component(path[0])?;
-        let mut i = 1;
-        while i < path.len() {
-            let r = self.structure.repeats.iter().find(|r| r.comp == comp)?;
-            let k: usize = path[i].parse().ok()?;
-            let scope = *r.iter_scopes.get(k.checked_sub(1)?)?;
-            let name = path.get(i + 1).copied();
-            let mut in_scope = self.children(comp).filter_map(|c| match c {
-                Child::Component(c) if self.comp_scope_of(c) == Some(scope) && name.is_none_or(|n| self.name(c) == Some(n)) => Some(c),
-                _ => None,
-            });
-            comp = in_scope.next()?;
-            i += 2;
-        }
-        Some(comp)
-    }
-
-    fn comp_scope_of(&self, c: CompIdx) -> Option<ScopeId> {
-        Some(self.comps.scope[c as usize])
-    }
-
-    // ---- component accessors --------------------------------------------
-
-    pub fn n_components(&self) -> usize {
-        self.comps.len()
-    }
-
-    pub fn kind(&self, c: CompIdx) -> ComponentKind {
-        self.comps.kind[c as usize]
-    }
-
-    pub fn name(&self, c: CompIdx) -> Option<&str> {
-        let s = self.comps.name[c as usize];
-        (s != NONE).then(|| self.strings.get(s).trim())
-    }
-
-    pub fn parent(&self, c: CompIdx) -> Option<CompIdx> {
-        let p = self.comps.parent[c as usize];
-        (p != NONE).then_some(p)
-    }
-
-    pub fn children(&self, c: CompIdx) -> impl Iterator<Item = Child<'_>> + '_ {
-        let (s, n) = (self.comps.child_start[c as usize] as usize, self.comps.child_count[c as usize] as usize);
-        self.comps.child_list[s..s + n].iter().map(move |&e| if e & TEXT_BIT != 0 { Child::Text(self.strings.get(e & !TEXT_BIT)) } else { Child::Component(e) })
-    }
-
-    /// Cells of the single-cell props of `c`, in `kind.prop_defs()` order.
-    pub fn comp_cells(&self, c: CompIdx) -> &[CellIdx] {
-        let base = self.comps.prop_base[c as usize] as usize;
-        &self.comps.prop_cells[base..base + self.kind(c).prop_defs().len()]
-    }
-
-    /// The first component with this plain name, in document order. Names
-    /// inside a repeat template recur once per iteration; see
-    /// `scoped_component` to pick an iteration.
-    pub fn component(&self, name: &str) -> Option<CompIdx> {
-        self.name_map
-            .get_or_init(|| {
-                let mut m = HashMap::new();
-                for c in 0..self.comps.len() as CompIdx {
-                    if let Some(n) = self.name(c) {
-                        m.entry(n.to_string()).or_insert(c);
-                    }
-                }
-                m
-            })
-            .get(name)
-            .copied()
-    }
-
-    pub fn component_names(&self) -> impl Iterator<Item = (&str, CompIdx)> {
-        (0..self.comps.len() as CompIdx).filter_map(|c| self.name(c).map(|n| (n, c)))
-    }
-
-    /// Cells of a prop, including virtual props such as a point's `coords`
-    /// and array props such as a line's `points` (items flattened, live
-    /// items only).
-    pub fn prop_cells(&self, comp: CompIdx, prop: &str) -> Option<Vec<CellIdx>> {
-        let kind = self.kind(comp);
-        if let Some(parts) = kind.virtual_prop(prop) {
-            return parts.iter().map(|p| self.prop_cells(comp, p).map(|v| v[0])).collect();
-        }
-        if let Some(items) = kind.array_prop(prop) {
-            let live = match kind {
-                ComponentKind::Polygon => self.cells[self.comp_cells(comp)[0] as usize] as usize,
-                _ => items.len(),
-            };
-            return items.iter().take(live).map(|[x, y]| Some([self.prop_cells(comp, x)?[0], self.prop_cells(comp, y)?[0]])).collect::<Option<Vec<_>>>().map(|v| v.concat());
-        }
-        let i = kind.prop_index(prop)?;
-        Some(vec![self.comp_cells(comp)[i]])
-    }
-
-    /// The single cell behind `name.prop`.
-    pub fn cell(&self, name: &str, prop: &str) -> Option<CellIdx> {
-        let cells = self.prop_cells(self.component(name)?, prop)?;
-        (cells.len() == 1).then(|| cells[0])
-    }
-
-    pub fn value(&self, name: &str, prop: &str) -> Option<f64> {
-        self.cell(name, prop).map(|c| self.cells[c as usize])
-    }
-
-    pub fn memory_estimate(&self) -> MemoryEstimate {
-        MemoryEstimate {
-            cells: self.cells.capacity() * 8,
-            program: self.program.instrs.capacity() * std::mem::size_of::<crate::ops::Instr>() + self.program.producer.capacity() * 4 + self.program.arena.heap_bytes(),
-            components: self.comps.heap_bytes(),
-            strings: self.strings.heap_bytes(),
-            structure: self.structure.scopes.capacity() * 12
-                + self.structure.essential_slots.capacity() * 8
-                + self.structure.values.iter().map(|r| r.capacity() * 16 + 24).sum::<usize>()
-                + self.structure.scope_index.capacity() * 16,
-            dast: self.dast.heap_bytes(),
-        }
     }
 }
 
