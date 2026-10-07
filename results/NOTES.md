@@ -128,3 +128,74 @@ Drags are full-recompute averages over 300 ticks, from `cargo run --release -p c
 
 **Verdict.** B, kept; A deleted after measurement (it is in commit 461639b). Sticky groups need no new concept in the cell graph or the inversion engine. They need a group table on the document and one pass over a tick's requests, beside the point groups of plan 3, and the inverse system stays exactly as plan 3 left it. The snap kernel is the only sticky-specific code, a pure function of current and requested points with no state from earlier ticks. Tier 3's rotation snapping is the open question. In the current core it depends on a pre-snap cache, which would be the first state carried between ticks.
 
+
+## Plan 5: symbolic math
+
+_The fifth round put symbolic math into the tick (`docs/plan-5.md`, ADR 0008) behind one engine interface, `SymEngine` in `cells-sym`, and built two engines for it: A, a flat hash-consed arena written for the prototype, and R, math-expressions-rs (the engine the current core calls through wasm), linked natively. R is also the behavior oracle: `cells-sym-mer/tests/oracle.rs` checks A against it, `tests/core_r.rs` runs the core's symbolic tests on R, and one test checks that both engines reach the state the current core reached on `symchain-10`. Raw outputs are in `results/raw/plan5-*` (local). Numbers are from 2026-10-07._
+
+**Q1, best case: symbolic work does not threaten the budget except where it multiplies into sampling.** Per operation, A is 3 to 17 times faster than R natively (geometric means over one corpus, `examples/ops_bench.rs`), and R through `@doenet/math` in Node pays another 2 to 4 times for the wasm boundary:
+
+| op | A | R native | R via `@doenet/math` |
+|---|---|---|---|
+| parse | 2.2 µs | 7.6 µs | 32 µs |
+| simplify | 1.3 µs | 10 µs | 22 µs |
+| expand | 5.9 µs | 18 µs | 32 µs |
+| derivative | 3.3 µs | 32 µs | 59 µs |
+| equals (sampling) | 0.5 µs | 8.9 µs | 18 µs |
+| evaluate | 0.14 µs | 0.9 µs | 3.5 µs |
+| sample 200 points | 17 µs | 15 µs | 330 µs |
+
+A's `equals` samples 8 real points where R samples complex ones; that is the one known behavioral difference (`sqrt(x^2) = x`, recorded in the oracle). Ticks of the three fixtures, full recompute, native (wasm in Node is 1.0 to 1.5 times this; `examples/sym_tick.rs`, `bench/sym-wasm.mjs`), against the current core through its own actions in Chromium (`web/baseline/symbolic.mjs`; its worker runs math-expressions-rs in wasm):
+
+| tick | current core | A | R |
+|---|---|---|---|
+| answers-100: keystroke (+ commit in the current core) | 16 ms | 0.006 ms | 0.011 ms |
+| answers-100: submit | 8 ms | 0.004 ms | 0.017 ms |
+| curves-100: drag the shared coefficient | 2,050 ms | 2.0 ms | 4.3 ms |
+| curves-100: drag one function's coefficient | 116 ms | 0.05 ms | 0.11 ms |
+| symchain-100: keystroke | 560 ms | 0.33 ms | 4.8 ms |
+| symchain-100: drag `t` | 550 ms | 0.22 ms | 2.2 ms |
+
+At about 10,000 components, `symchain-4300` keystrokes take 15 ms with A and 220 ms with R. The budget miss is `curves-3400`: dragging a coefficient shared by all 6,800 curves takes 72 ms with A and 159 ms with R, which is 1.36 million point evaluations per tick. That is a limit on how many curves one drag may re-sample, like plan 1's 10,000 moving circles, not a cost of the cell architecture; nothing in the core is specific to curves. The current core takes 2 s for 200 curves. Going from the current core to R inside the cell core gains 100 to 500 times on the same engine, and going from R to A gains another 2 to 15 times. Most of the gain is the architecture, not the engine.
+
+**Q2, the interface: a handle in an ordinary cell, and an engine behind a trait.** A math cell is an `f64` cell holding a `u32` handle. Every symbolic operation is one instruction family, `Op::Sym`, with its inputs in `Program::extra` like the vector operators, so scheduling, dirty tracking, cycles, rebuilds and the reference evaluator needed no symbolic special case. The engine sits in the `Program` behind `RefCell<Box<dyn SymEngine>>` and is chosen at load (`Document::from_bytes_with`); it survives rebuilds, so an essential math cell's handle stays valid. Three things the shape buys, and one it did not:
+
+- *Gating for free.* A symbolic instruction keeps the input values it last ran on and its outputs, and reruns only when an input differs. Keying the memo on values rather than dirty flags makes stepping on a scratch copy (lookahead, the reference evaluator) give the same answer. An unrelated drag runs no symbolic work, and a submit runs exactly one `equals`.
+- *No boundary.* The engine is called in process with integer handles; R natively against R through `@doenet/math` is the 2 to 4 times in the table above.
+- *A renderer that never reads the engine.* A tick carries `(cell, LaTeX)` for each changed math cell.
+- *The equal-handle cutoff saved nothing on these fixtures.* A and R ran exactly the same number of symbolic instructions per tick on all three, because every recomputed expression really changed. The cutoff only fires when simplification absorbs a change (`0 $n + x`, tested). Hash-consing earns its place through memory and cheap `equals_syntax` (18 ns against 2 µs), not through cutoff.
+
+Inverses: an `Evaluate` writes a constant expression into an essential math cell, which is how a number typed into, or dragged onto, an unbound `<mathInput>` lands. Every other symbolic instruction drops the request, as decided.
+
+**Q3, memory layout: flat and shared works; never reclaiming does not.** A stores 12-byte nodes with a separate child array, hashes and a bucket chain: about 53 bytes per node with tables and capacity slack. R stores one boxed tree per handle. Math cells are cells like any other, so the expression layout is independent of the cell layout; they meet only at the handle. Growth over 10,000 keystrokes and then 10,000 drags of `t` through `symchain-100` (`examples/sym_growth.rs`), where every keystroke types a different expression:
+
+| | after 10,000 keystrokes | after 10,000 more drags |
+|---|---|---|
+| A | 3.5 M nodes, 185 MB | 6.8 M nodes, 369 MB |
+| R (estimate: nodes × `size_of::<Expr>`) | 4.0 M expressions, 2.2 GB | 6.0 M, 3.1 GB |
+
+That is about 18 KB per keystroke with A, several megabytes per minute of typing, so the condition the plan set for building mark-and-compact is met for documents like fixture 3. Answer checking grows by 3 nodes per keystroke and would never need it. Tick time did not drift as either engine grew.
+
+**Q4, what is bounded at build time.** A survey of the current core (`doenetml-worker-javascript/src/components`; file:line in `results/raw/plan5-classification.md`) puts its symbolic props in three classes. None of the optimizations was built.
+
+| class | current-core props (examples) | what would apply |
+|---|---|---|
+| build-time only | Math parse and inverse maps; Award's parsed correct answer; Point dimensions; Sequence values; Substitute; PiecewiseFunction, ODE latex | parse and cache once at build |
+| tick-time, fixed shape with numeric leaves | Point.coords `expand().simplify()` on every drag; Line.equation (about four `simplify` plus a `substitute` into `a x + b y + c = 0`) and slope/intercepts; Vector, Ray, Rectangle (about 9 `simplify` per evaluation), Circle radius/center/area, Polygon center, Parabola; Number/Integer/Sum etc.; Math.value with leaves; Evaluate with a numeric input (full `simplify` by default); Boolean/When on numeric operands; every rendered latex | lower to a numeric chain (what ADR 0005 already does for numeric `<math>`), template expressions with cell leaves, latex templates with numeric holes, compiling a function once with parameter slots |
+| unbounded (student or author supplies the expression) | MathInput (a LaTeX parse per keystroke); answer checking (checkEquality, HasSameFactoring, MatchesPattern) on submit; `<math>`/`<function>` with author formulas and the symbolic function calls; FunctionIterates; SolveEquations; Text.math | nothing beyond caching the author side; gate on the event |
+
+The finding is that most of the current core's per-drag symbolic work is in the middle class: fixed shapes with numeric leaves that a build step could compile away. The cell core already lowers numeric `<math>` and plans geometry as operator chains (plan 3), so it does none of it. What remains genuinely symbolic at tick time is what the student or author types, and that is rare per tick.
+
+**Q5, interleaving: no special case.** Symbolic and numeric instructions share one schedule. `symchain` alternates math → number (`<evaluate>`) → math, and a drag of the number reruns exactly the part of the chain downstream of it (228 of 434 instructions in `symchain-100`). A numeric leaf that changes is substituted and its math re-simplified, as decided. A reference inside math names a math cell when its referent holds an expression (a symbolic math, an unbound mathInput, a function), else a number.
+
+**Choices and deviations, recorded once each.**
+
+1. A numeric `<math>` keeps `expr` NaN: it is not a math cell (ADR 0005).
+2. A curve's x-values are implicit, evenly spaced over its graph's `xmin..xmax`, so a curve owns 200 cells, not 400.
+3. `<answer response="$mi">correct</answer>` is prototype syntax; the baseline uses the current core's own form.
+4. A forward reference inside math to a later symbolic math is treated as numeric.
+5. A prototype keystroke updates what reads the input at once; the current core does so on commit. The baseline's keystroke row includes the commit for that reason.
+6. Every symbolic `<math>` also evaluates its `value` on each change even when nothing reads it, which doubles the symbolic runs in `symchain`. Left as is (no optimizations without asking).
+7. Plan 5 added about 0.1 ms per tick to the 100,000-cell numeric chains (the LaTeX check and one branch), measured against the commit before it. Separately, inverting a drag through a 100,000-step chain takes about 11 ms both before and after Plan 5. That predates this round (the plan 1 figure above, 0.7 ms including inversion, no longer holds) and is not investigated here.
+
+**Verdict.** Pass, with one noted limit and one open item. Symbolic math fits the cell architecture as one more instruction family: no component-specific code in the core and no new concept beyond the math cell and its engine. Every fixture meets the 50 ms budget at 10,000 components except the shared-coefficient drag over 6,800 curves, which is bounded by sampling volume. A is the engine to keep: it is faster per operation and an order of magnitude leaner in memory. Its cutoff advantage did not show on these fixtures. The open item is reclamation. The arena grows by megabytes per minute of typing through a symbolic chain, which is the threshold the plan set for building mark-and-compact. Whether to build it is Charles's call; B (a postfix buffer per cell) is not needed.

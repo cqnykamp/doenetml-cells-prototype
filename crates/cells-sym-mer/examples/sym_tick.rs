@@ -101,7 +101,7 @@ fn main() {
                 for (what, mut make, timed_setup) in interactions(spec, &doc) {
                     let mut ev: Box<dyn Evaluator> = if evaluator == "full" { Box::new(FullRecompute) } else { Box::new(DirtyClosure::new(&doc.program, doc.cells.len())) };
                     // Fewer reps where one tick is slow.
-                    let reps = if spec.ends_with("-10000") || spec == "curves-1000" { 20 } else { 200 };
+                    let reps = if spec.ends_with("-10000") || spec.ends_with("-3400") || spec.ends_with("-4300") || spec == "curves-1000" { 20 } else { 200 };
                     // Runs and growth are counted over what is timed only
                     // (an untimed setup request is not part of the tick).
                     // `len` is O(1) in both engines; R's `heap_bytes` walks
