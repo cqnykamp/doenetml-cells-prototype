@@ -15,4 +15,5 @@ num-complex = "0.4"
 
 [dev-dependencies]
 cells-core = { path = "../cells-core" }
+cells-docgen = { path = "../cells-docgen" }
 serde_json.workspace = true

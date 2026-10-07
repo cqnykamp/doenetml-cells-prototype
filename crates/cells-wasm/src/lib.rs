@@ -23,10 +23,38 @@ impl Core {
     /// detected by content) and compute its initial values.
     #[wasm_bindgen(constructor)]
     pub fn new(dast: &[u8]) -> Result<Core, JsError> {
+        Core::with_engine(dast, "A")
+    }
+
+    /// Load with a named symbolic engine: "A" (this prototype's), or "R"
+    /// (math-expressions-rs) when built with the `engine-r` feature.
+    pub fn with_engine(dast: &[u8], engine: &str) -> Result<Core, JsError> {
         console_error_panic_hook::set_once();
-        let (doc, timings) = Document::load_timed(dast).map_err(|e| JsError::new(&e.to_string()))?;
+        let engine: Box<dyn cells_sym::SymEngine> = match engine {
+            "A" => Box::new(cells_sym::flat::Flat::new()),
+            #[cfg(feature = "engine-r")]
+            "R" => Box::new(cells_sym_mer::Mer::new()),
+            other => return Err(JsError::new(&format!("no symbolic engine '{other}' in this build"))),
+        };
+        let (doc, timings) = Document::load_timed_with(dast, engine).map_err(|e| JsError::new(&e.to_string()))?;
         let evaluator: Box<dyn Evaluator> = Box::new(DirtyClosure::new(&doc.program, doc.cells.len()));
         Ok(Core { doc, evaluator, timings, last_dropped: 0, last_rebuilt: false, last_rebuild_error: None, last_rebuild_ms: 0.0 })
+    }
+
+    /// Parse what a student typed into the engine: the value to request on
+    /// a mathInput's `expr` cell.
+    pub fn parse_math(&self, text: &str) -> Result<f64, JsError> {
+        self.doc.parse_math(text).map_err(|e| JsError::new(&e))
+    }
+
+    /// Symbolic instructions that called the engine since load.
+    pub fn sym_runs(&self) -> f64 {
+        self.doc.program.sym.stats.get().runs as f64
+    }
+
+    /// Expressions (R) or nodes (A) the engine holds.
+    pub fn engine_len(&self) -> usize {
+        self.doc.program.sym.engine.borrow().len()
     }
 
     /// Pointer to the cell array inside wasm memory. Valid until the next

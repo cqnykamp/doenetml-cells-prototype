@@ -266,6 +266,72 @@ pub fn sticky(n: usize, sticky: bool) -> String {
     s
 }
 
+/// Plan 5, fixture 1: N answers, each a mathInput response checked against
+/// a symbolic correct answer. Typing into one costs a parse; submitting one
+/// costs one `equals`.
+pub fn answers(n: usize) -> String {
+    let mut s = String::new();
+    for i in 0..n {
+        let _ = writeln!(s, "<mathInput name=\"mi{i}\"/><answer name=\"a{i}\" response=\"$mi{i}\">{}</answer>", correct_answer(i));
+    }
+    s
+}
+
+/// The correct answer of `answers`' i-th question.
+pub fn correct_answer(i: usize) -> String {
+    let k = i % 7 + 1;
+    match i % 4 {
+        0 => format!("(x+{k})^2"),
+        1 => format!("{k}x^2-{}x+1", k + 1),
+        2 => format!("sin(x)^2+{k}"),
+        _ => format!("(x-{k})(x+{k})"),
+    }
+}
+
+/// Plan 5, fixture 2: N functions with cell leaves, each with its
+/// derivative, all drawn as curves in one graph. `a` is shared by every
+/// function (dragging it re-derives and resamples all N); `b{i}` belongs to
+/// one.
+pub fn curves(n: usize) -> String {
+    let mut s = String::from("<numberInput name=\"a\" value=\"1\"/>\n");
+    for i in 0..n {
+        let _ = writeln!(s, "<numberInput name=\"b{i}\" value=\"{}\"/>", i % 5);
+    }
+    s.push_str("<graph name=\"g\" xmin=\"-5\" xmax=\"5\">\n");
+    for i in 0..n {
+        let _ = writeln!(s, "  <function name=\"f{i}\">$a x^2 + $b{i} x + {}</function><derivative name=\"df{i}\">$f{i}</derivative>", i % 7);
+    }
+    s.push_str("</graph>\n");
+    s
+}
+
+/// Plan 5, fixture 3: a mathInput feeding a chain of N simplified maths
+/// and a fan-out of N more. Every third chain link goes through a number:
+/// the previous math evaluated at `t`, fed back into the next math (math →
+/// number → math). Typing reruns everything; dragging `t` reruns the chain
+/// from the first evaluate on.
+pub fn symchain(n: usize) -> String {
+    let mut s = String::from("<mathInput name=\"mi\" prefill=\"x^2+1\"/>\n<numberInput name=\"t\" value=\"1\"/>\n");
+    let mut prev = "mi".to_string();
+    for i in 0..n {
+        let k = i % 5 + 1;
+        let body = match i % 3 {
+            0 => format!("${prev} + {k} x"),
+            1 => format!("${prev} - {k} x"),
+            _ => {
+                let _ = writeln!(s, "<evaluate name=\"e{i}\" function=\"${prev}\" input=\"$t\"/>");
+                format!("${prev} + 0.001 $e{i}")
+            }
+        };
+        let _ = writeln!(s, "<math name=\"m{i}\" simplify>{body}</math>");
+        prev = format!("m{i}");
+    }
+    for i in 0..n {
+        let _ = writeln!(s, "<math name=\"f{i}\" simplify>{} $mi + x</math>", i % 9 + 1);
+    }
+    s
+}
+
 /// Parse a CLI-style spec such as `chain-1000` or `grid-100x10`.
 pub fn from_spec(spec: &str) -> Option<String> {
     let (shape, size) = spec.split_once('-')?;
@@ -284,6 +350,9 @@ pub fn from_spec(spec: &str) -> Option<String> {
         "circles3" => circles3(size.parse().ok()?),
         "sticky" => sticky(size.parse().ok()?, true),
         "stickyfree" => sticky(size.parse().ok()?, false),
+        "answers" => answers(size.parse().ok()?),
+        "curves" => curves(size.parse().ok()?),
+        "symchain" => symchain(size.parse().ok()?),
         "grid" => {
             let (n, l) = size.split_once('x')?;
             grid(n.parse().ok()?, l.parse().ok()?)
@@ -308,6 +377,9 @@ pub const DEFAULT_SWEEP: &[&str] = &[
     "hidden-1000",
     "circles3-1000", "circles3-10000",
     "sticky-100", "sticky-1000", "stickyfree-100", "stickyfree-1000",
+    "answers-10", "answers-100", "answers-1000", "answers-10000",
+    "curves-10", "curves-100", "curves-1000",
+    "symchain-10", "symchain-100", "symchain-1000", "symchain-10000",
 ];
 
 /// The current-core counterpart of a spec, for the baseline measurement.

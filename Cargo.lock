@@ -75,6 +75,7 @@ name = "cells-sym-mer"
 version = "0.1.0"
 dependencies = [
  "cells-core",
+ "cells-docgen",
  "cells-sym",
  "math-expressions",
  "num-complex",
@@ -86,6 +87,8 @@ name = "cells-wasm"
 version = "0.1.0"
 dependencies = [
  "cells-core",
+ "cells-sym",
+ "cells-sym-mer",
  "console_error_panic_hook",
  "serde_json",
  "wasm-bindgen",
