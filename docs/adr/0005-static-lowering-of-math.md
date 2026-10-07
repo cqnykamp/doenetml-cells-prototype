@@ -1,5 +1,7 @@
 # `<math>` lowers to operators when its leaves are numeric
 
+Revised by ADR 0008: symbolic rewriting now runs inside a tick. Lowering is unchanged.
+
 A `<math>` whose leaves are all number literals or references to numeric
 cells is turned into ordinary operators at build time (`3$a + 2` becomes
 `Scale` then `Offset`), exactly as if the author had written the chain by

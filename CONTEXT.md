@@ -123,12 +123,19 @@ has: the floor of its driving value, clamped to zero and the repeat's cap, with
 a non-number counting as zero.
 
 **Math cell** — A cell whose value is a handle into the expression arena rather
-than a number. Operators on math cells live in the same program and schedule as
-numeric operators.
+than a number. A math cell may be essential (a `mathInput`'s expression),
+fixed (an expression written in the document) or derived (the result of a
+symbolic instruction). Operators on math cells live in the same program and
+schedule as numeric operators.
 
-**Expression arena** — The core's store of symbolic expression trees. Math
-cells point into it; the core treats expressions as opaque except for the
-operations the arena offers (evaluate to a constant, substitute).
+**Symbolic instruction** — An instruction whose output is a math cell computed
+from other math cells (simplify, expand, substitute, derivative), or whose
+output is a number computed from math cells (evaluate, equals). Symbolic
+instructions run inside a tick, like any other instruction.
+
+**Expression arena** — The core's store of symbolic expressions. Math cells
+point into it; the core treats expressions as opaque and reaches them only
+through the operations the symbolic engine offers.
 
 **Lowering** — Replacing a `<math>` whose leaves are all number literals or
 number-typed components with numeric operators at build time, so it never
