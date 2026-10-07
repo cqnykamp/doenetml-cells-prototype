@@ -423,6 +423,9 @@ pub fn legacy_from_spec(spec: &str) -> Option<String> {
                 max = n * 2
             )
         }
+        // The current core's own answer form: the input inside the answer,
+        // the correct answer in an award.
+        "answers" => (0..n).map(|i| format!("<answer name=\"a{i}\"><mathInput name=\"mi{i}\"/><award><math>{}</math></award></answer>\n", correct_answer(i))).collect(),
         _ => to_legacy(&from_spec(spec)?),
     })
 }

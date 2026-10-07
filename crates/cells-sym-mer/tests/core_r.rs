@@ -67,3 +67,19 @@ fn no_cutoff_without_hash_consing() {
     doc.request(&[req(&doc, "n", "value", 3.0)]);
     assert_eq!(runs(&doc) - before, 4);
 }
+
+/// The state the current core reached in `web/baseline/symbolic.mjs` on
+/// `symchain-10` after its last keystroke and drag: mi = x^2+20, t = 1.002,
+/// where it computed e2 = 20.002004 and m9 = x^2 + 2x + 20.057059036014.
+#[test]
+fn symchain_matches_the_current_core() {
+    let src = cells_docgen::symchain(10);
+    for engine in ["A", "R"] {
+        let e: Box<dyn cells_sym::SymEngine> = if engine == "A" { Box::new(cells_sym::flat::Flat::new()) } else { Box::new(Mer::new()) };
+        let mut doc = Document::from_bytes_with(dast_json(&src).as_bytes(), e).unwrap();
+        let h = doc.parse_math("x^2+20").unwrap();
+        doc.request(&[req(&doc, "mi", "expr", h), req(&doc, "t", "value", 1.002)]);
+        assert!((doc.value("e2", "value").unwrap() - 20.002004).abs() < 1e-9, "{engine}");
+        assert!(expr_is(&doc, "m9", "x^2 + 2x + 20.057059036014"), "{engine}: {}", doc.math_text(doc.cell("m9", "expr").unwrap()));
+    }
+}
