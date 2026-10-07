@@ -434,6 +434,7 @@ pub struct Unscheduled {
     structure: Structure,
     extra: Vec<CellIdx>,
     math: Vec<bool>,
+    tapes: Vec<cells_sym::tape::Tape>,
     /// Human-readable owner of a cell, e.g. "p1.x". Computed lazily because
     /// a cycle error is the only consumer.
     cell_label: Box<dyn Fn(CellIdx) -> String>,
@@ -446,7 +447,10 @@ impl Unscheduled {
         let n = self.cells.len();
         let sym = Sym::new(std::mem::replace(engine, Box::new(cells_sym::flat::Flat::new())));
         let program = match Program::schedule(self.instrs, n, sym, self.extra, self.math) {
-            Ok(p) => p,
+            Ok(mut p) => {
+                p.tapes = self.tapes;
+                p
+            }
             Err((cell, sym)) => {
                 *engine = sym.into_engine();
                 return Err(Error::Cycle((self.cell_label)(cell)));

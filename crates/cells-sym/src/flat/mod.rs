@@ -566,6 +566,19 @@ impl SymEngine for Flat {
         a == b
     }
 
+    fn export(&self, h: Handle) -> Option<Tree> {
+        let n = self.node(h);
+        Some(match n.tag {
+            Tag::Num | Tag::Rat => Tree::Num(self.number(h).unwrap()),
+            Tag::Sym => Tree::Sym(self.sym_name(n.a).to_string()),
+            Tag::Cell => Tree::Cell { cell: n.a, math: n.b == 1 },
+            Tag::Add => Tree::Add(self.kids(h).iter().map(|&k| self.export(k)).collect::<Option<_>>()?),
+            Tag::Mul => Tree::Mul(self.kids(h).iter().map(|&k| self.export(k)).collect::<Option<_>>()?),
+            Tag::Pow => Tree::Pow(Box::new(self.export(n.a)?), Box::new(self.export(n.b)?)),
+            Tag::Apply => Tree::Apply(self.sym_name(n.a).to_string(), Box::new(self.export(n.b)?)),
+        })
+    }
+
     fn has_symbols(&mut self, h: Handle) -> bool {
         self.flags[h as usize] & HAS_SYMS != 0
     }

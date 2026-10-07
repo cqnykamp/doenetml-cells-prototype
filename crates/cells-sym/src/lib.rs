@@ -8,6 +8,7 @@
 
 pub mod flat;
 pub mod parse;
+pub mod tape;
 
 pub type Handle = u32;
 
@@ -66,6 +67,10 @@ pub trait SymEngine {
     /// Structural equality after reordering (`symbolicEquality`).
     fn equals_syntax(&mut self, a: Handle, b: Handle) -> bool;
     fn has_symbols(&mut self, h: Handle) -> bool;
+    /// The expression as a builder tree, cell leaves included, for
+    /// compiling (`tape::Tape`). `None` when it uses something a tree cannot
+    /// say (sets, relations, a function of several arguments).
+    fn export(&self, h: Handle) -> Option<Tree>;
     fn text(&self, h: Handle) -> String;
     fn latex(&self, h: Handle) -> String;
     /// Number of stored expression nodes (A) or expressions (R).

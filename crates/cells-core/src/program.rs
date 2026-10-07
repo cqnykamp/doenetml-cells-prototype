@@ -18,6 +18,8 @@ pub struct Sym {
     /// values it last ran on, then its outputs from that run.
     memo: RefCell<Vec<f64>>,
     pub stats: Cell<SymStats>,
+    /// Scratch columns for `SampleTape`.
+    tape_stack: RefCell<Vec<f64>>,
 }
 
 /// Counters for the cutoff measurement.
@@ -40,7 +42,7 @@ impl Default for Sym {
 
 impl Sym {
     pub fn new(engine: Box<dyn SymEngine>) -> Self {
-        Sym { engine: RefCell::new(engine), memo: RefCell::new(Vec::new()), stats: Cell::new(SymStats::default()) }
+        Sym { engine: RefCell::new(engine), memo: RefCell::new(Vec::new()), stats: Cell::new(SymStats::default()), tape_stack: RefCell::new(Vec::new()) }
     }
 
     pub fn into_engine(self) -> Box<dyn SymEngine> {
@@ -64,6 +66,8 @@ pub struct Program {
     pub extra: Vec<CellIdx>,
     /// Whether each cell holds an expression handle (a math cell).
     pub math: Vec<bool>,
+    /// Compiled curves that `SampleTape` instructions run.
+    pub tapes: Vec<cells_sym::tape::Tape>,
     /// Whether creation order was already a valid evaluation order, so no
     /// sort ran. Diagnostic.
     pub in_creation_order: bool,
@@ -102,7 +106,7 @@ impl Program {
             })
         });
         if in_order {
-            return Ok(Program { instrs, producer, sym, extra, math, in_creation_order: true });
+            return Ok(Program { instrs, producer, sym, extra, math, tapes: Vec::new(), in_creation_order: true });
         }
 
         // Kahn's algorithm over instructions, with the dependents lists in
@@ -156,7 +160,7 @@ impl Program {
                 producer[ins.out as usize + k] = i as u32;
             }
         }
-        Ok(Program { instrs: order, producer, sym, extra, math, in_creation_order: false })
+        Ok(Program { instrs: order, producer, sym, extra, math, tapes: Vec::new(), in_creation_order: false })
     }
 
     /// Evaluate one instruction into `cells`. With `changed`, outputs whose
@@ -212,8 +216,12 @@ impl Program {
             for (m, &c) in last.iter_mut().zip(inputs) {
                 *m = cells[c as usize];
             }
-            let mut engine = self.sym.engine.borrow_mut();
-            run_sym(&mut **engine, kind, cells, inputs, outs);
+            if let SymKind::SampleTape { tape } = kind {
+                self.run_tape(&self.tapes[tape as usize], cells, inputs, outs);
+            } else {
+                let mut engine = self.sym.engine.borrow_mut();
+                run_sym(&mut **engine, kind, cells, inputs, outs);
+            }
         }
         self.sym.stats.set(stats);
         match changed {
@@ -227,6 +235,23 @@ impl Program {
             }
             None => cells[out..out + n_out].copy_from_slice(outs),
         }
+    }
+
+    /// A compiled curve: inputs are `xmin`, `xmax`, then the parameters.
+    fn run_tape(&self, tape: &cells_sym::tape::Tape, cells: &[f64], inputs: &[CellIdx], out: &mut [f64]) {
+        let (lo, hi) = (cells[inputs[0] as usize], cells[inputs[1] as usize]);
+        if !lo.is_finite() || !hi.is_finite() {
+            out.fill(f64::NAN);
+            return;
+        }
+        let step = (hi - lo) / (SAMPLES - 1) as f64;
+        let mut xs = [0.0f64; SAMPLES];
+        for (i, x) in xs.iter_mut().enumerate() {
+            *x = lo + step * i as f64;
+        }
+        let params: Vec<f64> = inputs[2..].iter().map(|&c| cells[c as usize]).collect();
+        let mut stack = self.sym.tape_stack.borrow_mut();
+        tape.eval_many(&params, &xs, out, &mut stack);
     }
 
     /// Evaluate one instruction's outputs into `out` without writing cells.
@@ -298,6 +323,7 @@ fn run_sym(engine: &mut dyn SymEngine, kind: SymKind, cells: &[f64], inputs: &[C
                 _ => 0.0,
             }
         }
+        SymKind::SampleTape { .. } => unreachable!("tapes run in step_sym"),
         SymKind::Sample => {
             let (lo, hi) = (v(1), v(2));
             match handle(v(0)) {

@@ -41,6 +41,11 @@ pub enum SymKind {
     EqualsSyntax,
     /// Input 0 at `SAMPLES` evenly spaced x from input 1 to input 2.
     Sample,
+    /// `Program::tapes[tape]` at `SAMPLES` evenly spaced x from input 0 to
+    /// input 1; inputs 2.. are the tape's parameter cells. What `Sample`
+    /// becomes when the expression's shape is fixed at build time: no engine
+    /// call at tick time.
+    SampleTape { tape: u32 },
 }
 
 /// What a `<math>` does to its expression after instantiating it.
@@ -54,7 +59,7 @@ pub enum Post {
 impl SymKind {
     pub fn n_out(self) -> usize {
         match self {
-            SymKind::Sample => SAMPLES,
+            SymKind::Sample | SymKind::SampleTape { .. } => SAMPLES,
             _ => 1,
         }
     }
@@ -330,6 +335,7 @@ impl Op {
                 SymKind::Equals => "equals",
                 SymKind::EqualsSyntax => "equalsSyntax",
                 SymKind::Sample => "sample",
+                SymKind::SampleTape { .. } => "sampleTape",
             },
         }
     }
@@ -366,7 +372,7 @@ impl OpSpec {
             OpSpec::Add | OpSpec::Sub | OpSpec::Mul | OpSpec::Div | OpSpec::Min | OpSpec::Max | OpSpec::Default | OpSpec::Lerp { .. } | OpSpec::Pow | OpSpec::Gate => 2,
             OpSpec::Negate | OpSpec::Round | OpSpec::Floor | OpSpec::Scale { .. } | OpSpec::Offset { .. } | OpSpec::Clamp { .. } | OpSpec::NanTo { .. } => 1,
             OpSpec::Vec(v) => v.n_in(),
-            OpSpec::Sym(SymKind::Instantiate { .. }) => usize::MAX,
+            OpSpec::Sym(SymKind::Instantiate { .. } | SymKind::SampleTape { .. }) => usize::MAX,
             OpSpec::Sym(SymKind::Evaluate | SymKind::Derivative) => 1,
             OpSpec::Sym(SymKind::EvalAt | SymKind::Equals | SymKind::EqualsSyntax) => 2,
             OpSpec::Sym(SymKind::Sample) => 3,
@@ -385,7 +391,7 @@ impl OpSpec {
     /// in `extra`; a symbolic one also reserves `n_out` entries after them
     /// for its memo.
     pub fn bind(&self, inputs: &[CellIdx], extra: &mut Vec<CellIdx>) -> Op {
-        debug_assert!(inputs.len() == self.arity() || matches!(self, OpSpec::Sym(SymKind::Instantiate { .. })));
+        debug_assert!(inputs.len() == self.arity() || matches!(self, OpSpec::Sym(SymKind::Instantiate { .. } | SymKind::SampleTape { .. })));
         let park = |extra: &mut Vec<CellIdx>, leaves: &[CellIdx]| {
             let start = extra.len() as u32;
             extra.extend_from_slice(leaves);

@@ -105,6 +105,11 @@ impl<'c, 'a> Builder<'c, 'a> {
         let mut extra = Vec::new();
         let mut bound: Vec<CellIdx> = Vec::with_capacity(8);
         let mut math = vec![false; cells.len()];
+        let mut tapes = Vec::new();
+        // Compile curves whose expression has a fixed shape (plan 5, change
+        // 1). `CELLS_COMPILE_CURVES=0` turns it off, for measuring.
+        let compile = std::env::var("CELLS_COMPILE_CURVES").map_or(true, |v| v != "0");
+        let mut fixed_shape: HashMap<SlotId, Option<cells_sym::Handle>> = HashMap::new();
         for &s in &derived_defs {
             let (mut spec, start, count) = match &self.sources[s] {
                 Source::Op(spec, start, count) => (*spec, *start, *count),
@@ -121,6 +126,31 @@ impl<'c, 'a> Builder<'c, 'a> {
                 if let SymKind::Instantiate { template, post } = kind {
                     let tree = rebind(&self.sym_templates[template as usize], &slot_to_cell);
                     spec = OpSpec::Sym(SymKind::Instantiate { template: self.engine.import(&tree), post });
+                }
+                let input = self.op_inputs[start as usize];
+                // A derivative of a fixed shape is taken once, here; the tick
+                // only fills in the parameters.
+                if compile
+                    && kind == SymKind::Derivative
+                    && let Some(d) = self.fixed_shape(s as SlotId, &slot_to_cell, &mut fixed_shape)
+                    && let Some(tree) = self.engine.export(d)
+                {
+                    bound.clear();
+                    cell_leaves(&tree, &mut bound);
+                    spec = OpSpec::Sym(SymKind::Instantiate { template: d, post: Post::Simplify });
+                }
+                // A curve of a fixed shape samples a compiled tape.
+                if compile
+                    && kind == SymKind::Sample
+                    && let Some(h) = self.fixed_shape(input, &slot_to_cell, &mut fixed_shape)
+                    && let Some(tape) = self.engine.export(h).and_then(|t| cells_sym::tape::Tape::compile(&t, "x"))
+                {
+                    let (lo, hi) = (bound[1], bound[2]);
+                    bound.clear();
+                    bound.extend([lo, hi]);
+                    bound.extend_from_slice(&tape.params);
+                    spec = OpSpec::Sym(SymKind::SampleTape { tape: tapes.len() as u32 });
+                    tapes.push(tape);
                 }
             }
             instrs.push(Instr { out: slot_to_cell[s], op: spec.bind(&bound, &mut extra) });
@@ -190,7 +220,35 @@ impl<'c, 'a> Builder<'c, 'a> {
         comps.prop_cells.shrink_to_fit();
         comps.node.shrink_to_fit();
         comps.scope.shrink_to_fit();
-        Ok(Unscheduled { cells, n_essential, n_fixed, instrs, comps, strings: self.c.dast.strings.clone(), root: self.root, structure, extra, math, cell_label })
+        Ok(Unscheduled { cells, n_essential, n_fixed, instrs, comps, strings: self.c.dast.strings.clone(), root: self.root, structure, extra, math, tapes, cell_label })
+    }
+
+    /// The expression a slot will hold as a template over numeric cell
+    /// leaves, when its shape is fixed at build time: a fixed handle, an
+    /// instantiated template, or the derivative of one (taken here, once).
+    /// `None` when it depends on a math cell whose shape can change.
+    fn fixed_shape(&mut self, slot: SlotId, slot_to_cell: &[CellIdx], memo: &mut HashMap<SlotId, Option<cells_sym::Handle>>) -> Option<cells_sym::Handle> {
+        let mut root = slot;
+        while let Source::Alias(t) = self.sources[root as usize] {
+            root = t;
+        }
+        if let Some(&h) = memo.get(&root) {
+            return h;
+        }
+        let h = match self.sources[root as usize] {
+            Source::Fixed(h) if !h.is_nan() => Some(h as cells_sym::Handle),
+            Source::Op(OpSpec::Sym(SymKind::Instantiate { template, .. }), _, _) => {
+                let tree = rebind(&self.sym_templates[template as usize], slot_to_cell);
+                if has_math_leaf(&tree) { None } else { Some(self.engine.import(&tree)) }
+            }
+            Source::Op(OpSpec::Sym(SymKind::Derivative), start, _) => {
+                let input = self.op_inputs[start as usize];
+                self.fixed_shape(input, slot_to_cell, memo).map(|h| self.engine.derivative(h, "x"))
+            }
+            _ => None,
+        };
+        memo.insert(root, h);
+        h
     }
 
     /// The (scope, template slot) an essential slot's value is saved under.
@@ -303,5 +361,33 @@ fn rebind(t: &Tree, slot_to_cell: &[CellIdx]) -> Tree {
         Tree::Pow(a, b) => Tree::Pow(one(a), one(b)),
         Tree::Neg(a) => Tree::Neg(one(a)),
         Tree::Apply(f, a) => Tree::Apply(f.clone(), one(a)),
+    }
+}
+
+fn has_math_leaf(t: &Tree) -> bool {
+    match t {
+        Tree::Cell { math, .. } => *math,
+        Tree::Num(_) | Tree::Sym(_) => false,
+        Tree::Add(ts) | Tree::Mul(ts) => ts.iter().any(has_math_leaf),
+        Tree::Sub(a, b) | Tree::Div(a, b) | Tree::Pow(a, b) => has_math_leaf(a) || has_math_leaf(b),
+        Tree::Neg(a) | Tree::Apply(_, a) => has_math_leaf(a),
+    }
+}
+
+/// Distinct cell leaves of a tree, in first-seen order.
+fn cell_leaves(t: &Tree, out: &mut Vec<CellIdx>) {
+    match t {
+        Tree::Cell { cell, .. } => {
+            if !out.contains(cell) {
+                out.push(*cell);
+            }
+        }
+        Tree::Num(_) | Tree::Sym(_) => {}
+        Tree::Add(ts) | Tree::Mul(ts) => ts.iter().for_each(|k| cell_leaves(k, out)),
+        Tree::Sub(a, b) | Tree::Div(a, b) | Tree::Pow(a, b) => {
+            cell_leaves(a, out);
+            cell_leaves(b, out);
+        }
+        Tree::Neg(a) | Tree::Apply(_, a) => cell_leaves(a, out),
     }
 }

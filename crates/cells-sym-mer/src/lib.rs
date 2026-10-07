@@ -156,6 +156,10 @@ impl SymEngine for Mer {
         !me::variables(&self.exprs[h as usize]).is_empty()
     }
 
+    fn export(&self, h: Handle) -> Option<Tree> {
+        to_tree(&self.exprs[h as usize])
+    }
+
     fn text(&self, h: Handle) -> String {
         me::to_text(&self.exprs[h as usize], &TextOpts::default())
     }
@@ -176,4 +180,34 @@ impl SymEngine for Mer {
     fn box_clone(&self) -> Box<dyn SymEngine> {
         Box::new(Mer { exprs: self.exprs.clone(), leaves: self.leaves.clone(), parser: TextToAst::new(TextToAstOptions::default()), eq: self.eq.clone() })
     }
+}
+
+/// An R expression as a builder tree; cell leaves come back from their
+/// `cellN<i>`/`cellM<i>` symbol names.
+fn to_tree(e: &Expr) -> Option<Tree> {
+    let all = |es: &[Expr]| es.iter().map(to_tree).collect::<Option<Vec<_>>>();
+    let one = |e: &Expr| to_tree(e).map(Box::new);
+    Some(match e {
+        Expr::Num(n) => Tree::Num(n.to_f64()),
+        Expr::Sym(s) => {
+            let name = s.name();
+            match (name.strip_prefix("cellN"), name.strip_prefix("cellM")) {
+                (Some(c), _) => Tree::Cell { cell: c.parse().ok()?, math: false },
+                (_, Some(c)) => Tree::Cell { cell: c.parse().ok()?, math: true },
+                _ => Tree::Sym(name),
+            }
+        }
+        Expr::Const(me::MathConst::Pi) => Tree::Sym("pi".into()),
+        Expr::Const(me::MathConst::E) => Tree::Sym("e".into()),
+        Expr::Add(es) => Tree::Add(all(es)?),
+        Expr::Mul(es) => Tree::Mul(all(es)?),
+        Expr::Div(a, b) => Tree::Div(one(a)?, one(b)?),
+        Expr::Pow(a, b) => Tree::Pow(one(a)?, one(b)?),
+        Expr::Neg(a) => Tree::Neg(one(a)?),
+        Expr::Apply(head, args) if args.len() == 1 => match &**head {
+            Expr::Sym(f) => Tree::Apply(f.name(), one(&args[0])?),
+            _ => return None,
+        },
+        _ => return None,
+    })
 }
