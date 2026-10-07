@@ -53,7 +53,7 @@ export interface TickResult {
 interface Backend {
   cells(): Float64Array;
   /** Infix text of an expression handle, when the core is on this thread. */
-  exprText?(handle: number): string;
+  exprText?(cell: number): string;
   /** Resolves once the main-thread cell view is up to date. With `points`,
    * the cells are `x0, y0, x1, y1, ...` of points dragged together (one
    * point group, ADR 0006). */
@@ -86,8 +86,8 @@ class MainBackend implements Backend {
   setEvaluator(name: string) {
     this.core.set_evaluator(name);
   }
-  exprText(handle: number) {
-    return this.core.expr_text(handle);
+  exprText(cell: number) {
+    return this.core.expr_text(cell);
   }
 }
 
@@ -179,8 +179,8 @@ export class CellStore {
     this.backend.setEvaluator(name);
   }
 
-  exprText(handle: number): string | null {
-    return this.backend.exprText?.(handle) ?? null;
+  exprText(cell: number): string | null {
+    return this.backend.exprText?.(cell) ?? null;
   }
 
   /** Cell-addressed write. Listeners fire once the changed cells are readable here. */

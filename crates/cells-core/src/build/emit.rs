@@ -83,6 +83,7 @@ impl<'c, 'a> Builder<'c, 'a> {
             slot_cell[root] = cells.len() as CellIdx;
             let n_out = match self.sources[s] {
                 Source::Vec(v, ..) => v.n_out(),
+                Source::Op(spec, ..) => spec.n_out(),
                 _ => 1,
             };
             for _ in 0..n_out {
@@ -103,15 +104,29 @@ impl<'c, 'a> Builder<'c, 'a> {
         let mut instrs = Vec::with_capacity(derived_defs.len());
         let mut extra = Vec::new();
         let mut bound: Vec<CellIdx> = Vec::with_capacity(8);
+        let mut math = vec![false; cells.len()];
         for &s in &derived_defs {
-            let (spec, start, count) = match &self.sources[s] {
+            let (mut spec, start, count) = match &self.sources[s] {
                 Source::Op(spec, start, count) => (*spec, *start, *count),
                 Source::Vec(v, start, count) => (OpSpec::Vec(*v), *start, *count),
                 _ => unreachable!(),
             };
             bound.clear();
             bound.extend(self.op_inputs[start as usize..start as usize + count as usize].iter().map(|&i| slot_to_cell[i as usize]));
+            if let OpSpec::Sym(kind) = spec {
+                if kind.makes_math() {
+                    math[slot_to_cell[s] as usize] = true;
+                }
+                // The template's leaves were slots; they are cells now.
+                if let SymKind::Instantiate { template, post } = kind {
+                    let tree = rebind(&self.sym_templates[template as usize], &slot_to_cell);
+                    spec = OpSpec::Sym(SymKind::Instantiate { template: self.engine.import(&tree), post });
+                }
+            }
             instrs.push(Instr { out: slot_to_cell[s], op: spec.bind(&bound, &mut extra) });
+        }
+        for &s in &self.math_slots {
+            math[slot_to_cell[s as usize] as usize] = true;
         }
         lap("bind instructions");
 
@@ -129,10 +144,6 @@ impl<'c, 'a> Builder<'c, 'a> {
 
         let (depths, cross_reads) = self.structural_depths();
         lap("structural depth");
-
-        // Cell leaves in the arena were slots; they are cells now.
-        let mut arena = self.arena;
-        arena.map_cells(|slot| slot_to_cell[slot as usize]);
 
         // The value store grows with the scope table; rows fill lazily.
         let mut values = self.prior.values.clone();
@@ -179,7 +190,7 @@ impl<'c, 'a> Builder<'c, 'a> {
         comps.prop_cells.shrink_to_fit();
         comps.node.shrink_to_fit();
         comps.scope.shrink_to_fit();
-        Ok(Unscheduled { cells, n_essential, n_fixed, instrs, comps, strings: self.c.dast.strings.clone(), root: self.root, structure, arena, extra, cell_label })
+        Ok(Unscheduled { cells, n_essential, n_fixed, instrs, comps, strings: self.c.dast.strings.clone(), root: self.root, structure, extra, math, cell_label })
     }
 
     /// The (scope, template slot) an essential slot's value is saved under.
@@ -275,5 +286,22 @@ impl<'c, 'a> Builder<'c, 'a> {
         let mut visiting = vec![false; self.repeats.len()];
         let depths = (0..self.repeats.len()).map(|ri| depth(ri, &reads, &mut memo, &mut visiting)).collect();
         (depths, cross)
+    }
+}
+
+/// A template with its slot leaves replaced by cells.
+fn rebind(t: &Tree, slot_to_cell: &[CellIdx]) -> Tree {
+    let all = |ts: &[Tree]| ts.iter().map(|k| rebind(k, slot_to_cell)).collect();
+    let one = |k: &Tree| Box::new(rebind(k, slot_to_cell));
+    match t {
+        Tree::Cell { cell, math } => Tree::Cell { cell: slot_to_cell[*cell as usize], math: *math },
+        Tree::Num(_) | Tree::Sym(_) => t.clone(),
+        Tree::Add(ts) => Tree::Add(all(ts)),
+        Tree::Mul(ts) => Tree::Mul(all(ts)),
+        Tree::Sub(a, b) => Tree::Sub(one(a), one(b)),
+        Tree::Div(a, b) => Tree::Div(one(a), one(b)),
+        Tree::Pow(a, b) => Tree::Pow(one(a), one(b)),
+        Tree::Neg(a) => Tree::Neg(one(a)),
+        Tree::Apply(f, a) => Tree::Apply(f.clone(), one(a)),
     }
 }

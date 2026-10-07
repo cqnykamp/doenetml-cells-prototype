@@ -46,6 +46,7 @@ name = "cells-bench"
 version = "0.1.0"
 dependencies = [
  "cells-core",
+ "cells-sym",
  "criterion",
  "serde_json",
 ]
@@ -54,6 +55,7 @@ dependencies = [
 name = "cells-core"
 version = "0.1.0"
 dependencies = [
+ "cells-sym",
  "serde",
  "serde_json",
  "thiserror",
@@ -72,6 +74,7 @@ version = "0.1.0"
 name = "cells-sym-mer"
 version = "0.1.0"
 dependencies = [
+ "cells-core",
  "cells-sym",
  "math-expressions",
  "num-complex",

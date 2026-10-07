@@ -8,7 +8,7 @@
 //! code of its own: the chain is data, and inversion through it is the
 //! generic operator inverse.
 
-use crate::ops::OpSpec;
+use crate::ops::{OpSpec, SymKind};
 
 /// `repr(u8)` so the renderer can read the kind column as a byte array; the
 /// discriminant order matches `ComponentKind::ALL`.
@@ -32,15 +32,19 @@ pub enum ComponentKind {
     SequenceValue = 9,
     /// A checkbox: its value cell holds 0 or 1 like any other `f64` cell.
     BooleanInput = 10,
-    /// `<math>`: `expr` is a fixed handle into the expression arena; `value`
-    /// is the lowered numeric chain when the expression has no free symbols,
-    /// else an `Evaluate` of the handle (NaN).
+    /// `<math>`: lowered to a numeric chain in `value` when its expression
+    /// is all numbers and numeric cells (`expr` is then NaN). Otherwise a
+    /// math cell: `expr` holds an engine handle, instantiated from the
+    /// template whenever a leaf changes (then simplified or expanded if the
+    /// attribute says so), and `value` evaluates it (NaN with free symbols).
     Math = 11,
     /// `<evaluate function="$m" input="$a"/>`: the math's expression with
     /// its free symbol set to the input.
     Evaluate = 12,
-    /// `<mathInput>`: a numeric input whose value may be bound to another
-    /// cell by a child reference or `bindValueTo`.
+    /// `<mathInput>`: bound to another cell by a child reference or
+    /// `bindValueTo`, it is a numeric input (`expr` NaN). Unbound, its `expr`
+    /// is an essential math cell (typing writes a parsed handle) and `value`
+    /// evaluates it; a request on `value` writes a constant expression.
     MathInput = 13,
     /// `<circle>`: center and radius are derived or essential depending on
     /// how the circle is specified (plan 3). Chains are planned in `build.rs`.
@@ -62,6 +66,17 @@ pub enum ComponentKind {
     /// `<stickyGroup>`: a container whose members snap to one another when
     /// dragged (plan 4). `threshold` NaN means the default.
     StickyGroup = 21,
+    /// `<function>`: a math cell `expr` (variable `x`) and, as a curve, the
+    /// `SAMPLES` cells from `samples` on, filled by a `Sample` instruction
+    /// over the enclosing graph's x-range.
+    Function = 22,
+    /// `<derivative>$f</derivative>`: d/dx of a function or math, sampled
+    /// like a function.
+    Derivative = 23,
+    /// `<answer response="$mi">correct</answer>`: `submitted` is an
+    /// essential math cell that a submit request sets to the response;
+    /// `credit` compares it with `correct` (`symbolicEquality`: as written).
+    Answer = 24,
 }
 
 /// Largest polygon the fixed prop layout holds.
@@ -252,7 +267,7 @@ const SEQUENCE_VALUE_PROPS: &[PropDef] = &[
 ];
 
 impl ComponentKind {
-    pub const ALL: [ComponentKind; 22] = [
+    pub const ALL: [ComponentKind; 25] = [
         Self::Document,
         Self::Graph,
         Self::Point,
@@ -275,6 +290,9 @@ impl ComponentKind {
         Self::P,
         Self::Setup,
         Self::StickyGroup,
+        Self::Function,
+        Self::Derivative,
+        Self::Answer,
     ];
 
     pub fn from_tag(tag: &str) -> Option<Self> {
@@ -300,6 +318,9 @@ impl ComponentKind {
             "p" => Self::P,
             "setup" => Self::Setup,
             "stickyGroup" => Self::StickyGroup,
+            "function" => Self::Function,
+            "derivative" => Self::Derivative,
+            "answer" => Self::Answer,
             _ => return None,
         })
     }
@@ -328,6 +349,9 @@ impl ComponentKind {
             Self::P => "p",
             Self::Setup => "setup",
             Self::StickyGroup => "stickyGroup",
+            Self::Function => "function",
+            Self::Derivative => "derivative",
+            Self::Answer => "answer",
         }
     }
 
@@ -342,13 +366,34 @@ impl ComponentKind {
             PropDef { name: "expr", default: f64::NAN, from: PropFrom::Children, attr: None, bind: None, ref_prop: None },
             PropDef { name: "value", default: f64::NAN, from: PropFrom::Children, attr: None, bind: None, ref_prop: None },
         ];
-        const EVALUATE: &[PropDef] =
-            &[PropDef { name: "function", default: f64::NAN, from: PropFrom::Attribute, attr: None, bind: None, ref_prop: Some("expr") }, attr("input", f64::NAN), computed("value", OpSpec::EvalAt, &[0, 1])];
+        const EVALUATE: &[PropDef] = &[
+            PropDef { name: "function", default: f64::NAN, from: PropFrom::Attribute, attr: None, bind: None, ref_prop: Some("expr") },
+            attr("input", f64::NAN),
+            computed("value", OpSpec::Sym(SymKind::EvalAt), &[0, 1]),
+        ];
         const NUMBER: &[PropDef] = &[PropDef { name: "value", default: f64::NAN, from: PropFrom::Children, attr: None, bind: None, ref_prop: None }];
         const NUMBER_INPUT: &[PropDef] = &[attr("value", f64::NAN)];
         // A mathInput's value is bound by a child reference or `bindValueTo`,
-        // else it is the `prefill` (the builder reads it).
-        const MATH_INPUT: &[PropDef] = &[PropDef { name: "value", default: f64::NAN, from: PropFrom::Children, attr: Some("prefill"), bind: Some("bindValueTo"), ref_prop: None }];
+        // else it is the `prefill` (the builder reads it). The builder plans
+        // `expr` from what `value` turned out to be.
+        const MATH_INPUT: &[PropDef] = &[
+            PropDef { name: "value", default: f64::NAN, from: PropFrom::Children, attr: Some("prefill"), bind: Some("bindValueTo"), ref_prop: None },
+            PropDef { name: "expr", default: f64::NAN, from: PropFrom::Attribute, attr: Some("(planned)"), bind: None, ref_prop: None },
+        ];
+        // Planned by the builder (`plan_symbolic`); `samples` is the first of
+        // `SAMPLES` consecutive cells.
+        const CURVE: &[PropDef] = &[
+            PropDef { name: "expr", default: f64::NAN, from: PropFrom::Children, attr: None, bind: None, ref_prop: None },
+            planned("xmin"),
+            planned("xmax"),
+            planned("samples"),
+        ];
+        const ANSWER: &[PropDef] = &[
+            PropDef { name: "response", default: f64::NAN, from: PropFrom::Attribute, attr: None, bind: None, ref_prop: Some("expr") },
+            PropDef { name: "correct", default: f64::NAN, from: PropFrom::Children, attr: None, bind: None, ref_prop: None },
+            attr("submitted", f64::NAN),
+            planned("credit"),
+        ];
         const OP: &[PropDef] = &[PropDef { name: "value", default: f64::NAN, from: PropFrom::Derived, attr: None, bind: None, ref_prop: None }];
         const COLLECT: &[PropDef] = &[attr("count", 0.0)];
         const STICKY_GROUP: &[PropDef] = &[attr("threshold", f64::NAN), attr("relativeToGraphScales", 0.0)];
@@ -372,6 +417,8 @@ impl ComponentKind {
             Self::LineSegment => LINE_SEGMENT_PROPS,
             Self::Polygon => POLYGON_PROPS,
             Self::StickyGroup => STICKY_GROUP,
+            Self::Function | Self::Derivative => CURVE,
+            Self::Answer => ANSWER,
             Self::PointList | Self::P | Self::Setup => &[],
         }
     }
@@ -443,6 +490,8 @@ impl ComponentKind {
         match self {
             Self::Point => Some("coords"),
             Self::Number | Self::NumberInput | Self::Op | Self::Slider | Self::SequenceValue | Self::BooleanInput | Self::Math | Self::Evaluate | Self::MathInput => Some("value"),
+            Self::Function | Self::Derivative => Some("expr"),
+            Self::Answer => Some("credit"),
             Self::Document | Self::Graph | Self::RepeatForSequence | Self::Collect | Self::Circle | Self::Line | Self::LineSegment | Self::Polygon | Self::PointList | Self::P | Self::Setup | Self::StickyGroup => None,
         }
     }

@@ -12,13 +12,15 @@ enum ElemShape {
     ContainerCopy(PlanId),
     Planned(Option<PlanId>),
     Math,
+    /// `<function>`, `<derivative>`, `<answer>` (`plan_symbolic`).
+    Symbolic,
     Collect,
     Generic(Option<PlanId>),
 }
 
 impl<'a> Compiler<'a> {
     pub(super) fn compile(dast: &'a Dast) -> Result<Compiled<'a>> {
-        let mut cp = Compiler { c: Compiled { dast, templates: vec![Template::default()], plans: Vec::new(), arena: Arena::default() }, pending_elems: Vec::new(), pending_macros: Vec::new() };
+        let mut cp = Compiler { c: Compiled { dast, templates: vec![Template::default()], plans: Vec::new(), arena: Arena::default(), sym_text: HashMap::new() }, pending_elems: Vec::new(), pending_macros: Vec::new() };
         // Template 0 is the document: its one child is the root component.
         let doc_el = dast.children(Dast::ROOT).iter().copied().find(|&n| dast.kind(n) == NodeKind::Element && dast.str(n) == "document");
         let children = match doc_el {
@@ -229,10 +231,18 @@ impl<'a> Compiler<'a> {
                     self.c.templates[t].elems[e].props = vec![xy[0].clone(), xy[1].clone(), SourcePlan::Default(hide)];
                     return Ok(());
                 }
-                let id = self.plan_math(t, scope, &nodes)?;
-                self.c.templates[t].elems[e].props = vec![SourcePlan::MathHandle(id), SourcePlan::MathValue(id)];
+                let id = self.plan_sym_math(t, scope, &nodes)?;
+                let post = if self.attr_on(el, "expand") {
+                    Post::Expand
+                } else if self.attr_on(el, "simplify") {
+                    Post::Simplify
+                } else {
+                    Post::None
+                };
+                self.c.templates[t].elems[e].props = vec![SourcePlan::MathHandle(id, post), SourcePlan::MathValue(id)];
                 Ok(())
             }
+            ElemShape::Symbolic => self.plan_symbolic(t, e),
             ElemShape::Collect => {
                 let from = d.attr(el, "from").and_then(|a| self.single_macro(a)).ok_or(Error::BadCollect)?;
                 let type_text = d.attr(el, "componentType").and_then(|a| self.attr_text(a)).ok_or(Error::BadCollect)?;
@@ -285,6 +295,7 @@ impl<'a> Compiler<'a> {
             (ComponentKind::PointList, _) => return Err(Error::BadValue { attr: "extend".into(), text: "<pointList> needs extend=\"$shape.points\"".into() }),
             (k, _) if k.planned() => ElemShape::Planned(extend),
             (ComponentKind::Math, _) => ElemShape::Math,
+            (ComponentKind::Function | ComponentKind::Derivative | ComponentKind::Answer, _) => ElemShape::Symbolic,
             (ComponentKind::Collect, _) => ElemShape::Collect,
             _ => ElemShape::Generic(extend),
         })
@@ -354,6 +365,9 @@ impl<'a> Compiler<'a> {
             props[pi] = Some(plan);
         }
         let mut props: Vec<Option<SourcePlan>> = props;
+        if kind == ComponentKind::MathInput {
+            self.plan_math_input(el, &mut props)?;
+        }
         let fix_attrs: &[&str] = if kind == ComponentKind::Graph { &["fixed", "fixAxes"] } else { &["fixed"] };
         match self.plan_fix(t, scope, el, fix_attrs)? {
             Fix::Off => {}
@@ -362,6 +376,89 @@ impl<'a> Compiler<'a> {
         }
         self.c.templates[t].elems[e].props = props.into_iter().map(|p| p.unwrap()).collect();
         Ok(())
+    }
+
+    /// A mathInput bound to a cell (a reference child or `bindValueTo`)
+    /// stays a numeric input. Unbound, its `expr` is an essential math cell
+    /// holding the prefill (or its children's text) and `value` evaluates it.
+    fn plan_math_input(&mut self, el: NodeId, props: &mut [Option<SourcePlan>]) -> Result<()> {
+        let d = self.c.dast;
+        let nodes = match d.attr(el, "prefill") {
+            Some(a) => d.attr_children(a),
+            None => d.children(el),
+        };
+        let bound = matches!(props[0], Some(SourcePlan::Alias(_))) || nodes.iter().any(|&n| d.kind(n) == NodeKind::Macro);
+        if bound {
+            props[1] = Some(SourcePlan::Fixed(f64::NAN));
+            return Ok(());
+        }
+        let text: String = nodes.iter().filter(|&&n| d.kind(n) == NodeKind::Text).map(|&n| d.str(n)).collect();
+        let text = text.trim();
+        let tree = if text.is_empty() { None } else { Some(cells_sym::parse::parse(text).map_err(|reason| Error::BadMath { text: text.into(), reason })?) };
+        props[1] = Some(SourcePlan::MathEssential(tree));
+        props[0] = Some(SourcePlan::Op(OpSpec::Sym(SymKind::Evaluate), vec![Arg::Own(1)]));
+        Ok(())
+    }
+
+    /// `<function>`, `<derivative>`, `<answer>`. A curve samples over the
+    /// x-range of the graph it sits in, else [-10, 10].
+    fn plan_symbolic(&mut self, t: TemplateId, e: ElemId) -> Result<()> {
+        let d = self.c.dast;
+        let (el, kind, scope) = {
+            let x = &self.c.templates[t].elems[e];
+            (x.node, x.kind, x.name_scope)
+        };
+        let nodes: Vec<NodeId> = d.children(el).to_vec();
+        let id = self.plan_sym_math(t, scope, &nodes)?;
+        let mut plan = ElemPlan::new(kind.prop_defs().len());
+        match kind {
+            ComponentKind::Function | ComponentKind::Derivative => {
+                if kind == ComponentKind::Function {
+                    plan.set(0, SourcePlan::SymExpr(id, Post::None));
+                } else {
+                    let of = plan.hidden(SourcePlan::SymExpr(id, Post::None));
+                    plan.set(0, SourcePlan::Op(OpSpec::Sym(SymKind::Derivative), vec![Arg::Own(of)]));
+                }
+                let graph = (scope != ROOT_SCOPE && self.c.templates[t].elems[scope].kind == ComponentKind::Graph).then_some(scope);
+                match graph {
+                    Some(g) => {
+                        plan.set(1, SourcePlan::Alias(Arg::Elem(g, 0)));
+                        plan.set(2, SourcePlan::Alias(Arg::Elem(g, 1)));
+                    }
+                    None => {
+                        plan.set(1, SourcePlan::Fixed(-10.0));
+                        plan.set(2, SourcePlan::Fixed(10.0));
+                    }
+                }
+                plan.set(3, SourcePlan::Op(OpSpec::Sym(SymKind::Sample), vec![Arg::Own(0), Arg::Own(1), Arg::Own(2)]));
+            }
+            ComponentKind::Answer => {
+                let response = match d.attr(el, "response") {
+                    Some(a) => self.plan_value(t, scope, "response", d.attr_children(a), Some("expr"))?,
+                    None => SourcePlan::Fixed(f64::NAN),
+                };
+                plan.set(0, response);
+                plan.set(1, SourcePlan::SymExpr(id, Post::None));
+                plan.set(2, SourcePlan::MathEssential(None));
+                let eq = if self.attr_on(el, "symbolicEquality") { SymKind::EqualsSyntax } else { SymKind::Equals };
+                plan.set(3, SourcePlan::Op(OpSpec::Sym(eq), vec![Arg::Own(2), Arg::Own(1)]));
+            }
+            _ => unreachable!(),
+        }
+        self.c.templates[t].elems[e].props = plan.finish();
+        Ok(())
+    }
+
+    /// An on/off attribute that may also take a value: present and not
+    /// `false` or `none` (`simplify`, `simplify="full"`).
+    fn attr_on(&self, el: NodeId, name: &str) -> bool {
+        match self.c.dast.attr(el, name) {
+            None => false,
+            Some(a) => {
+                let text = self.attr_text(a).unwrap_or_default();
+                !matches!(text.trim().to_ascii_lowercase().as_str(), "false" | "none")
+            }
+        }
     }
 
     /// A literal number or a single reference.
@@ -438,27 +535,46 @@ impl<'a> Compiler<'a> {
         Parser::parse(&toks, &mut self.c.arena).map_err(|reason| Error::BadMath { text, reason })
     }
 
+    /// Math text and `$ref` children to an expression template, recording
+    /// the text for the symbolic engine in case the math turns out symbolic.
+    pub(super) fn plan_sym_math(&mut self, t: TemplateId, scope: ElemId, nodes: &[NodeId]) -> Result<ExprId> {
+        let (toks, text, sym) = self.math_tokens_sym(t, scope, nodes)?;
+        let id = Parser::parse(&toks, &mut self.c.arena).map_err(|reason| Error::BadMath { text, reason })?;
+        self.c.sym_text.insert(id, sym);
+        Ok(id)
+    }
+
     /// Tokenize math text with `$ref` children as cell leaves holding plan ids.
     pub(super) fn math_tokens(&mut self, t: TemplateId, scope: ElemId, nodes: &[NodeId]) -> Result<(Vec<Token>, String)> {
+        let (toks, text, _) = self.math_tokens_sym(t, scope, nodes)?;
+        Ok((toks, text))
+    }
+
+    /// `math_tokens`, plus the text with each `$ref` written `#plan`.
+    fn math_tokens_sym(&mut self, t: TemplateId, scope: ElemId, nodes: &[NodeId]) -> Result<(Vec<Token>, String, String)> {
         let d = self.c.dast;
         let mut toks: Vec<Token> = Vec::new();
         let mut text = String::new();
+        let mut sym = String::new();
         for &n in nodes {
             match d.kind(n) {
                 NodeKind::Text => {
                     text.push_str(d.str(n));
+                    sym.push_str(d.str(n));
                     crate::expr::tokenize(d.str(n), &mut toks).map_err(|reason| Error::BadMath { text: text.clone(), reason })?;
                 }
                 NodeKind::Macro => {
                     text.push('$');
                     text.push_str(&d.macro_display(n));
                     let p = self.plan_ref(t, scope, n)?;
+                    // Spaces keep `2$a` from reading as one token.
+                    sym.push_str(&format!(" #{p} "));
                     toks.push(Token::Cell(p as CellIdx));
                 }
                 _ => {}
             }
         }
-        Ok((toks, text.trim().to_string()))
+        Ok((toks, text.trim().to_string(), sym))
     }
 
     // ---- planned kinds -------------------------------------------------------

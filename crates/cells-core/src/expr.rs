@@ -1,10 +1,8 @@
-//! The expression arena: symbolic expression trees the core holds for
-//! `<math>`. A math cell is an ordinary `f64` cell whose value is an index
-//! into this arena. Expressions are built once at build time; ticks never
-//! create or rewrite them, they only evaluate (see `Op::Evaluate` and
-//! `Op::EvalAt`). A real expression library would replace the operations
-//! here; the arena's shape (indices into a flat node list, numeric leaves
-//! bound to cells) is the interface the cell architecture needs from it.
+//! The builder's expression arena: math text parsed at build time, cell
+//! leaves holding plan ids or slots. It decides whether a math is numeric and
+//! lowers it to operators (ADR 0005), and gives geometry its linear
+//! coefficients. It is not used at tick time: a symbolic math becomes a math
+//! cell in the document's symbolic engine (`cells-sym`, ADR 0008).
 
 use crate::document::CellIdx;
 

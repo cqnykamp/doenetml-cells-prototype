@@ -12,8 +12,58 @@
 //! `invert.rs` gathers requests and keeps point groups together.
 
 use crate::document::CellIdx;
-use crate::expr::Arena;
 use crate::geo::VecOp;
+
+/// Samples a function curve owns: `Sample` writes this many y-values over
+/// evenly spaced x-values from the graph's `xmin` to `xmax`.
+pub const SAMPLES: usize = 200;
+
+/// A symbolic instruction (ADR 0008): it calls the document's symbolic
+/// engine. Inputs are cells holding numbers or expression handles; every
+/// input is in `Program::extra`. Each one keeps the input values it last ran
+/// on and its outputs, and reruns only when an input changed.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SymKind {
+    /// The template with each cell leaf replaced by its cell's value (a
+    /// number, or the expression a math cell holds), then `post`. Inputs
+    /// are the template's leaf cells. Before emit, `template` indexes the
+    /// builder's template list; after, it is an engine handle.
+    Instantiate { template: u32, post: Post },
+    /// The expression in input 0 as a number; NaN with free symbols.
+    Evaluate,
+    /// Input 0 with `x` set to input 1.
+    EvalAt,
+    /// d/dx of input 0.
+    Derivative,
+    /// 1 if inputs 0 and 1 are mathematically equal (by sampling), else 0.
+    Equals,
+    /// 1 if inputs 0 and 1 are the same expression as written, else 0.
+    EqualsSyntax,
+    /// Input 0 at `SAMPLES` evenly spaced x from input 1 to input 2.
+    Sample,
+}
+
+/// What a `<math>` does to its expression after instantiating it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Post {
+    None,
+    Simplify,
+    Expand,
+}
+
+impl SymKind {
+    pub fn n_out(self) -> usize {
+        match self {
+            SymKind::Sample => SAMPLES,
+            _ => 1,
+        }
+    }
+
+    /// Whether the output is an expression handle (a math cell).
+    pub fn makes_math(self) -> bool {
+        matches!(self, SymKind::Instantiate { .. } | SymKind::Derivative)
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Op {
@@ -46,14 +96,9 @@ pub enum Op {
     /// `fixAxes`. The flag is still an input, so the gate is an edge in the
     /// graph, like `Shape`'s pivot.
     Gate(CellIdx, CellIdx),
-    /// Evaluate the expression whose arena handle the cell holds; NaN while
-    /// it has free symbols. The expression's cell leaves are the
-    /// instruction's extra inputs `extra[start..start + n]` (see
-    /// `Program::extra`), so scheduling and dirty tracking see them.
-    Evaluate(CellIdx, u32, u8),
-    /// Evaluate the expression in the first cell with its free symbol set to
-    /// the second cell's value; extra inputs as for `Evaluate`.
-    EvalAt(CellIdx, CellIdx, u32, u8),
+    /// A symbolic instruction: inputs are `extra[start..start + n]`; the
+    /// `n_out` entries after them hold its memo (see `Program::step`).
+    Sym(SymKind, u32, u8),
     /// A vector operator (`geo.rs`): inputs are `extra[start..start + n_in]`,
     /// outputs are the `n_out` cells from the instruction's `out`.
     Vec(VecOp, u32, u8, u8),
@@ -85,7 +130,7 @@ fn nan_max(a: f64, b: f64) -> f64 {
 
 impl Op {
     #[inline(always)]
-    pub fn eval(&self, cells: &[f64], arena: &Arena) -> f64 {
+    pub fn eval(&self, cells: &[f64]) -> f64 {
         match *self {
             Op::Add(a, b) => cells[a as usize] + cells[b as usize],
             Op::Sub(a, b) => cells[a as usize] - cells[b as usize],
@@ -113,9 +158,8 @@ impl Op {
             }
             Op::Pow(a, b) => cells[a as usize].powf(cells[b as usize]),
             Op::Gate(a, _) => cells[a as usize],
-            Op::Evaluate(h, ..) => arena.eval(cells[h as usize] as u32, cells, None),
-            Op::EvalAt(h, x, ..) => arena.eval(cells[h as usize] as u32, cells, Some(cells[x as usize])),
             Op::Vec(..) => unreachable!("vector operators are evaluated with eval_vec"),
+            Op::Sym(..) => unreachable!("symbolic instructions are evaluated by the program"),
         }
     }
 
@@ -196,8 +240,10 @@ impl Op {
                 }
                 (a, desired)
             }
-            // Symbolic inverses are out of scope (plan 2, follow-ups).
-            Op::Pow(..) | Op::Evaluate(..) | Op::EvalAt(..) => return None,
+            // Symbolic inverses are out of scope (plan 5); `Evaluate`'s
+            // constant-expression inverse needs the engine, so the request
+            // engine handles it (`invert.rs`).
+            Op::Pow(..) | Op::Sym(..) => return None,
             Op::Vec(..) => unreachable!("vector operators are inverted jointly by the program"),
         })
     }
@@ -206,9 +252,9 @@ impl Op {
     #[inline(always)]
     pub fn input_pair(&self) -> (CellIdx, Option<CellIdx>) {
         match *self {
-            Op::Add(a, b) | Op::Sub(a, b) | Op::Mul(a, b) | Op::Div(a, b) | Op::Min(a, b) | Op::Max(a, b) | Op::Default(a, b) | Op::Lerp(a, b, _) | Op::Pow(a, b) | Op::Gate(a, b) | Op::EvalAt(a, b, ..) => (a, Some(b)),
-            Op::Negate(a) | Op::Round(a) | Op::Floor(a) | Op::Scale(a, _) | Op::Offset(a, _) | Op::Clamp(a, _, _) | Op::NanTo(a, _) | Op::Evaluate(a, ..) => (a, None),
-            Op::Vec(..) => unreachable!("vector operators keep every input in extra"),
+            Op::Add(a, b) | Op::Sub(a, b) | Op::Mul(a, b) | Op::Div(a, b) | Op::Min(a, b) | Op::Max(a, b) | Op::Default(a, b) | Op::Lerp(a, b, _) | Op::Pow(a, b) | Op::Gate(a, b) => (a, Some(b)),
+            Op::Negate(a) | Op::Round(a) | Op::Floor(a) | Op::Scale(a, _) | Op::Offset(a, _) | Op::Clamp(a, _, _) | Op::NanTo(a, _) => (a, None),
+            Op::Vec(..) | Op::Sym(..) => unreachable!("vector and symbolic operators keep every input in extra"),
         }
     }
 
@@ -217,6 +263,7 @@ impl Op {
     pub fn n_out(&self) -> usize {
         match *self {
             Op::Vec(_, _, _, n_out) => n_out as usize,
+            Op::Sym(k, ..) => k.n_out(),
             _ => 1,
         }
     }
@@ -233,11 +280,12 @@ impl Op {
         v.eval(&inp[..n_in], out);
     }
 
-    /// Range into `Program::extra` of further inputs (only `Evaluate`/`EvalAt`).
+    /// Range into `Program::extra` of inputs kept there (vector and
+    /// symbolic operators).
     #[inline(always)]
     pub fn extra_range(&self) -> std::ops::Range<usize> {
         match *self {
-            Op::Evaluate(_, start, n) | Op::EvalAt(_, _, start, n) | Op::Vec(_, start, n, _) => start as usize..start as usize + n as usize,
+            Op::Vec(_, start, n, _) | Op::Sym(_, start, n) => start as usize..start as usize + n as usize,
             _ => 0..0,
         }
     }
@@ -245,7 +293,7 @@ impl Op {
     /// All input cells, direct and extra.
     pub fn inputs<'a>(&self, extra: &'a [CellIdx]) -> impl Iterator<Item = CellIdx> + 'a {
         let (a, b) = match self {
-            Op::Vec(..) => (None, None),
+            Op::Vec(..) | Op::Sym(..) => (None, None),
             _ => {
                 let (a, b) = self.input_pair();
                 (Some(a), b)
@@ -273,9 +321,16 @@ impl Op {
             Op::Lerp(..) => "lerp",
             Op::Pow(..) => "pow",
             Op::Gate(..) => "gate",
-            Op::Evaluate(..) => "evaluate",
-            Op::EvalAt(..) => "evalAt",
             Op::Vec(v, ..) => v.name(),
+            Op::Sym(k, ..) => match k {
+                SymKind::Instantiate { .. } => "instantiate",
+                SymKind::Evaluate => "evaluate",
+                SymKind::EvalAt => "evalAt",
+                SymKind::Derivative => "derivative",
+                SymKind::Equals => "equals",
+                SymKind::EqualsSyntax => "equalsSyntax",
+                SymKind::Sample => "sample",
+            },
         }
     }
 }
@@ -300,31 +355,37 @@ pub enum OpSpec {
     Lerp { t: f64 },
     Pow,
     Gate,
-    Evaluate,
-    EvalAt,
     Vec(VecOp),
+    /// Any number of inputs (a template's leaves); see `SymKind`.
+    Sym(SymKind),
 }
 
 impl OpSpec {
     pub fn arity(&self) -> usize {
         match self {
-            OpSpec::Add | OpSpec::Sub | OpSpec::Mul | OpSpec::Div | OpSpec::Min | OpSpec::Max | OpSpec::Default | OpSpec::Lerp { .. } | OpSpec::Pow | OpSpec::Gate | OpSpec::EvalAt => 2,
-            OpSpec::Negate | OpSpec::Round | OpSpec::Floor | OpSpec::Scale { .. } | OpSpec::Offset { .. } | OpSpec::Clamp { .. } | OpSpec::NanTo { .. } | OpSpec::Evaluate => 1,
+            OpSpec::Add | OpSpec::Sub | OpSpec::Mul | OpSpec::Div | OpSpec::Min | OpSpec::Max | OpSpec::Default | OpSpec::Lerp { .. } | OpSpec::Pow | OpSpec::Gate => 2,
+            OpSpec::Negate | OpSpec::Round | OpSpec::Floor | OpSpec::Scale { .. } | OpSpec::Offset { .. } | OpSpec::Clamp { .. } | OpSpec::NanTo { .. } => 1,
             OpSpec::Vec(v) => v.n_in(),
+            OpSpec::Sym(SymKind::Instantiate { .. }) => usize::MAX,
+            OpSpec::Sym(SymKind::Evaluate | SymKind::Derivative) => 1,
+            OpSpec::Sym(SymKind::EvalAt | SymKind::Equals | SymKind::EqualsSyntax) => 2,
+            OpSpec::Sym(SymKind::Sample) => 3,
         }
     }
 
     pub fn n_out(&self) -> usize {
         match self {
             OpSpec::Vec(v) => v.n_out(),
+            OpSpec::Sym(k) => k.n_out(),
             _ => 1,
         }
     }
 
-    /// Bind to input cells. `Evaluate`/`EvalAt` take their cell leaves after
-    /// the direct inputs and park them in `extra`.
+    /// Bind to input cells. Vector and symbolic operators park their inputs
+    /// in `extra`; a symbolic one also reserves `n_out` entries after them
+    /// for its memo.
     pub fn bind(&self, inputs: &[CellIdx], extra: &mut Vec<CellIdx>) -> Op {
-        debug_assert!(inputs.len() == self.arity() || matches!(self, OpSpec::Evaluate | OpSpec::EvalAt));
+        debug_assert!(inputs.len() == self.arity() || matches!(self, OpSpec::Sym(SymKind::Instantiate { .. })));
         let park = |extra: &mut Vec<CellIdx>, leaves: &[CellIdx]| {
             let start = extra.len() as u32;
             extra.extend_from_slice(leaves);
@@ -348,13 +409,10 @@ impl OpSpec {
             OpSpec::Lerp { t } => Op::Lerp(inputs[0], inputs[1], t),
             OpSpec::Pow => Op::Pow(inputs[0], inputs[1]),
             OpSpec::Gate => Op::Gate(inputs[0], inputs[1]),
-            OpSpec::Evaluate => {
-                let (start, n) = park(extra, &inputs[1..]);
-                Op::Evaluate(inputs[0], start, n)
-            }
-            OpSpec::EvalAt => {
-                let (start, n) = park(extra, &inputs[2..]);
-                Op::EvalAt(inputs[0], inputs[1], start, n)
+            OpSpec::Sym(k) => {
+                let (start, n) = park(extra, inputs);
+                extra.extend(std::iter::repeat_n(crate::document::NONE, k.n_out()));
+                Op::Sym(k, start, n)
             }
             OpSpec::Vec(v) => {
                 let (start, n) = park(extra, inputs);

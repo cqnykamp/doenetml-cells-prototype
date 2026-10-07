@@ -23,10 +23,11 @@ fn main() {
         let prior = cells_core::build::Prior::from_document(&d2);
         let t_prior = c.elapsed();
         let c = Instant::now();
-        let u = cells_core::build::build(&d2.dast, &prior).unwrap();
+        let mut engine = d2.program.sym.engine.borrow().box_clone();
+        let u = cells_core::build::build(&d2.dast, &prior, &mut *engine).unwrap();
         let t_build = c.elapsed();
         let c = Instant::now();
-        let mut d3 = u.schedule(d2.dast.clone()).unwrap();
+        let mut d3 = u.schedule(d2.dast.clone(), &mut engine).unwrap();
         let t_sched = c.elapsed();
         let c = Instant::now();
         d3.recompute();

@@ -28,12 +28,9 @@ impl<'a> ReferenceEvaluator<'a> {
         for input in ins.op.inputs(&self.doc.program.extra) {
             scratch[input as usize] = self.value(input);
         }
-        if let crate::ops::Op::Vec(..) = ins.op {
-            let mut buf = [0.0f64; 16];
-            ins.op.eval_vec(&scratch, &self.doc.program.extra, &mut buf[..ins.op.n_out()]);
-            return buf[(cell - ins.out) as usize];
-        }
-        ins.op.eval(&scratch, &self.doc.program.arena)
+        let mut out = vec![0.0; ins.op.n_out()];
+        self.doc.program.eval_into(ins, &scratch, &mut out);
+        out[(cell - ins.out) as usize]
     }
 
     /// Every derived cell, recomputed from scratch.

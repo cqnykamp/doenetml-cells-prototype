@@ -545,7 +545,7 @@ impl<'a> Compiler<'a> {
                     return id;
                 }
                 match self.c.templates[t].elems[target].props.first() {
-                    Some(SourcePlan::MathHandle(inner)) => {
+                    Some(SourcePlan::MathHandle(inner, _)) => {
                         let inner = *inner;
                         let mut syms = Vec::new();
                         self.c.arena.symbols(inner, &mut syms);

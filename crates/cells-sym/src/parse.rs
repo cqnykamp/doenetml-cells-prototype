@@ -1,7 +1,9 @@
 //! Math text to [`Tree`]: `+ - * / ^`, unary minus, parentheses,
 //! juxtaposition, and the functions in [`FUNCTIONS`]. A letter run that is
 //! not a function name or `pi` is split into single-letter symbols, as
-//! math-expressions does (`xy` is `x y`).
+//! math-expressions does (`xy` is `x y`). `#12` is a placeholder the core's
+//! builder writes for a `$ref` inside math text: a numeric cell leaf with
+//! cell 12, which the builder rebinds once it knows what the reference names.
 
 use crate::{FUNCTIONS, Tree};
 
@@ -10,6 +12,7 @@ enum Tok {
     Num(f64),
     Ident(String),
     Func(String),
+    Cell(u32),
     Op(char),
     LParen,
     RParen,
@@ -37,6 +40,14 @@ fn tokenize(text: &str) -> Result<Vec<Tok>, String> {
             }
             let run: String = chars[start..i].iter().collect();
             split_letters(&run, &mut out);
+        } else if c == '#' {
+            let start = i + 1;
+            i = start;
+            while i < chars.len() && chars[i].is_ascii_digit() {
+                i += 1;
+            }
+            let s: String = chars[start..i].iter().collect();
+            out.push(Tok::Cell(s.parse().map_err(|_| format!("bad placeholder '#{s}'"))?));
         } else {
             out.push(match c {
                 '+' | '-' | '*' | '/' | '^' => Tok::Op(c),
@@ -117,7 +128,7 @@ impl Parser<'_> {
                     let rhs = self.unary()?;
                     lhs = Tree::Div(Box::new(lhs), Box::new(rhs));
                 }
-                Some(Tok::Num(_) | Tok::Ident(_) | Tok::Func(_) | Tok::LParen) => {
+                Some(Tok::Num(_) | Tok::Ident(_) | Tok::Func(_) | Tok::Cell(_) | Tok::LParen) => {
                     let rhs = self.power()?;
                     lhs = mul(lhs, rhs);
                 }
@@ -156,6 +167,7 @@ impl Parser<'_> {
         Ok(match t {
             Tok::Num(v) => Tree::Num(v),
             Tok::Ident(s) => Tree::Sym(s),
+            Tok::Cell(c) => Tree::Cell { cell: c, math: false },
             Tok::Func(f) => {
                 // `sin(x)`, `sin x`, and `sin^2(x)`.
                 let mut power = None;
@@ -206,5 +218,13 @@ mod tests {
         assert_eq!(terms[1], Tree::Apply("sin".into(), Box::new(Tree::Sym("x".into()))));
         assert!(parse("3 +").is_err());
         assert!(parse("(1").is_err());
+    }
+
+    #[test]
+    fn placeholders_are_cell_leaves() {
+        let t = parse("#3 x + sin(#12)").unwrap();
+        let Tree::Add(terms) = t else { panic!() };
+        assert_eq!(terms[0], Tree::Mul(vec![Tree::Cell { cell: 3, math: false }, Tree::Sym("x".into())]));
+        assert_eq!(terms[1], Tree::Apply("sin".into(), Box::new(Tree::Cell { cell: 12, math: false })));
     }
 }

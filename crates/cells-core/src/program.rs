@@ -1,11 +1,52 @@
 //! The instruction list and its topological schedule; the inversion engine
 //! is `invert.rs`.
 
+use std::cell::{Cell, RefCell};
+
+use cells_sym::{Handle, SymEngine};
+
 use crate::document::CellIdx;
-use crate::expr::Arena;
-use crate::ops::{Instr, Op};
+use crate::ops::{Instr, Op, SAMPLES, SymKind};
 
+/// The document's symbolic engine and the memo of every symbolic
+/// instruction. Interior mutability because instructions run through
+/// `&Program`; the engine only grows (Plan 5 measures by how much).
+#[derive(Debug, Clone)]
+pub struct Sym {
+    pub engine: RefCell<Box<dyn SymEngine>>,
+    /// Parallel to `Program::extra`: for a symbolic instruction, the input
+    /// values it last ran on, then its outputs from that run.
+    memo: RefCell<Vec<f64>>,
+    pub stats: Cell<SymStats>,
+}
 
+/// Counters for the cutoff measurement.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SymStats {
+    /// Symbolic instructions stepped.
+    pub steps: u64,
+    /// Of those, how many called the engine (an input had changed).
+    pub runs: u64,
+}
+
+/// Bits no computation produces: a memo that has never run matches no input.
+const NEVER: f64 = f64::from_bits(0x7ff8_dead_beef_0001);
+
+impl Default for Sym {
+    fn default() -> Self {
+        Sym::new(Box::new(cells_sym::flat::Flat::new()))
+    }
+}
+
+impl Sym {
+    pub fn new(engine: Box<dyn SymEngine>) -> Self {
+        Sym { engine: RefCell::new(engine), memo: RefCell::new(Vec::new()), stats: Cell::new(SymStats::default()) }
+    }
+
+    pub fn into_engine(self) -> Box<dyn SymEngine> {
+        self.engine.into_inner()
+    }
+}
 
 /// Instructions in a valid evaluation order: every instruction's inputs are
 /// either essential cells or outputs of earlier instructions.
@@ -16,11 +57,13 @@ pub struct Program {
     /// cell, or `u32::MAX` for essential and fixed cells. A vector
     /// instruction produces several consecutive cells.
     pub producer: Vec<u32>,
-    /// Symbolic expressions that `Evaluate`/`EvalAt` instructions read.
-    pub arena: Arena,
-    /// Extra inputs: expression cell leaves of `Evaluate`/`EvalAt`, and every
-    /// input of a vector instruction.
+    /// The symbolic engine that math cells' handles index.
+    pub sym: Sym,
+    /// Every input of a vector or symbolic instruction (and, after a
+    /// symbolic instruction's inputs, placeholders for its memo).
     pub extra: Vec<CellIdx>,
+    /// Whether each cell holds an expression handle (a math cell).
+    pub math: Vec<bool>,
     /// Whether creation order was already a valid evaluation order, so no
     /// sort ran. Diagnostic.
     pub in_creation_order: bool,
@@ -34,7 +77,7 @@ fn differs(new: f64, old: f64) -> bool {
 
 impl Program {
     /// Orders `instrs` topologically. Returns the cell index of an output
-    /// involved in a cycle on failure.
+    /// involved in a cycle on failure, with the engine handed back.
     ///
     /// Fast path: the builder emits instructions in creation order, which
     /// for a template stamped per iteration is almost always already a valid
@@ -42,7 +85,8 @@ impl Program {
     /// order; a lag of `k - d` reads an earlier iteration). One linear pass
     /// checks that every input is essential, fixed, or produced earlier; only
     /// when that fails does the general sort run.
-    pub fn schedule(instrs: Vec<Instr>, n_cells: usize, arena: Arena, extra: Vec<CellIdx>) -> std::result::Result<Program, CellIdx> {
+    pub fn schedule(instrs: Vec<Instr>, n_cells: usize, sym: Sym, extra: Vec<CellIdx>, math: Vec<bool>) -> std::result::Result<Program, (CellIdx, Sym)> {
+        sym.memo.replace(vec![NEVER; extra.len()]);
         let mut producer = vec![u32::MAX; n_cells];
         for (i, ins) in instrs.iter().enumerate() {
             for k in 0..ins.op.n_out() {
@@ -58,7 +102,7 @@ impl Program {
             })
         });
         if in_order {
-            return Ok(Program { instrs, producer, arena, extra, in_creation_order: true });
+            return Ok(Program { instrs, producer, sym, extra, math, in_creation_order: true });
         }
 
         // Kahn's algorithm over instructions, with the dependents lists in
@@ -104,7 +148,7 @@ impl Program {
         }
         if order.len() != n {
             let stuck = (0..n).find(|&i| indegree[i] > 0).unwrap();
-            return Err(instrs[stuck].out);
+            return Err((instrs[stuck].out, sym));
         }
         let mut producer = vec![u32::MAX; n_cells];
         for (i, ins) in order.iter().enumerate() {
@@ -112,7 +156,7 @@ impl Program {
                 producer[ins.out as usize + k] = i as u32;
             }
         }
-        Ok(Program { instrs: order, producer, arena, extra, in_creation_order: false })
+        Ok(Program { instrs: order, producer, sym, extra, math, in_creation_order: false })
     }
 
     /// Evaluate one instruction into `cells`. With `changed`, outputs whose
@@ -120,7 +164,9 @@ impl Program {
     #[inline(always)]
     pub fn step(&self, ins: &Instr, cells: &mut [f64], changed: Option<&mut Vec<CellIdx>>) {
         let out = ins.out as usize;
-        if let Op::Vec(..) = ins.op {
+        if let Op::Sym(kind, start, n) = ins.op {
+            self.step_sym(kind, start as usize, n as usize, out, cells, changed);
+        } else if let Op::Vec(..) = ins.op {
             let mut buf = [0.0f64; 16];
             let n = ins.op.n_out();
             ins.op.eval_vec(cells, &self.extra, &mut buf[..n]);
@@ -136,7 +182,7 @@ impl Program {
                 None => cells[out..out + n].copy_from_slice(&buf[..n]),
             }
         } else {
-            let new = ins.op.eval(cells, &self.arena);
+            let new = ins.op.eval(cells);
             match changed {
                 Some(changed) => {
                     if differs(new, cells[out]) {
@@ -147,6 +193,47 @@ impl Program {
                 None => cells[out] = new,
             }
         }
+    }
+
+    /// A symbolic instruction: rerun only if an input changed since its last
+    /// run, then write the outputs of that run. Keyed on input values rather
+    /// than on a dirty flag, so stepping on a scratch copy (`realize`, the
+    /// reference evaluator) gives the same answer as stepping on the cells.
+    #[inline(never)]
+    fn step_sym(&self, kind: SymKind, start: usize, n: usize, out: usize, cells: &mut [f64], changed: Option<&mut Vec<CellIdx>>) {
+        let n_out = kind.n_out();
+        let inputs = &self.extra[start..start + n];
+        let mut memo = self.sym.memo.borrow_mut();
+        let (last, outs) = memo[start..start + n + n_out].split_at_mut(n);
+        let mut stats = self.sym.stats.get();
+        stats.steps += 1;
+        if !inputs.iter().zip(last.iter()).all(|(&c, m)| cells[c as usize].to_bits() == m.to_bits()) {
+            stats.runs += 1;
+            for (m, &c) in last.iter_mut().zip(inputs) {
+                *m = cells[c as usize];
+            }
+            let mut engine = self.sym.engine.borrow_mut();
+            run_sym(&mut **engine, kind, cells, inputs, outs);
+        }
+        self.sym.stats.set(stats);
+        match changed {
+            Some(changed) => {
+                for (k, &v) in outs.iter().enumerate() {
+                    if differs(v, cells[out + k]) {
+                        cells[out + k] = v;
+                        changed.push((out + k) as CellIdx);
+                    }
+                }
+            }
+            None => cells[out..out + n_out].copy_from_slice(outs),
+        }
+    }
+
+    /// Evaluate one instruction's outputs into `out` without writing cells.
+    pub fn eval_into(&self, ins: &Instr, cells: &[f64], out: &mut [f64]) {
+        let mut scratch = cells.to_vec();
+        self.step(ins, &mut scratch, None);
+        out.copy_from_slice(&scratch[ins.out as usize..ins.out as usize + ins.op.n_out()]);
     }
 
     /// Recompute every derived cell, appending the indices whose value
@@ -178,5 +265,49 @@ impl Program {
 
     pub fn is_empty(&self) -> bool {
         self.instrs.is_empty()
+    }
+}
+
+fn handle(v: f64) -> Option<Handle> {
+    (!v.is_nan()).then_some(v as Handle)
+}
+
+/// One symbolic operation. A NaN handle is a blank expression: evaluating it
+/// gives NaN, comparing it gives 0.
+fn run_sym(engine: &mut dyn SymEngine, kind: SymKind, cells: &[f64], inputs: &[CellIdx], out: &mut [f64]) {
+    let v = |k: usize| cells[inputs[k] as usize];
+    match kind {
+        SymKind::Instantiate { template, post } => {
+            let h = engine.instantiate(template, cells);
+            let h = match post {
+                crate::ops::Post::None => h,
+                crate::ops::Post::Simplify => engine.simplify(h),
+                crate::ops::Post::Expand => engine.expand(h),
+            };
+            out[0] = h as f64;
+        }
+        SymKind::Evaluate => out[0] = handle(v(0)).map_or(f64::NAN, |h| engine.evaluate(h, None)),
+        SymKind::EvalAt => out[0] = handle(v(0)).map_or(f64::NAN, |h| engine.evaluate(h, Some(("x", v(1))))),
+        SymKind::Derivative => out[0] = handle(v(0)).map_or(f64::NAN, |h| engine.derivative(h, "x") as f64),
+        SymKind::Equals | SymKind::EqualsSyntax => {
+            out[0] = match (handle(v(0)), handle(v(1))) {
+                (Some(a), Some(b)) => {
+                    let eq = if kind == SymKind::Equals { engine.equals(a, b) } else { engine.equals_syntax(a, b) };
+                    if eq { 1.0 } else { 0.0 }
+                }
+                _ => 0.0,
+            }
+        }
+        SymKind::Sample => {
+            let (lo, hi) = (v(1), v(2));
+            match handle(v(0)) {
+                Some(h) if lo.is_finite() && hi.is_finite() => {
+                    let step = (hi - lo) / (SAMPLES - 1) as f64;
+                    let xs: Vec<f64> = (0..SAMPLES).map(|i| lo + step * i as f64).collect();
+                    engine.evaluate_many(h, "x", &xs, out);
+                }
+                _ => out.fill(f64::NAN),
+            }
+        }
     }
 }

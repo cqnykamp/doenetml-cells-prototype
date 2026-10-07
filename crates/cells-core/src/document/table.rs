@@ -74,7 +74,7 @@ impl Document {
     pub fn memory_estimate(&self) -> MemoryEstimate {
         MemoryEstimate {
             cells: self.cells.capacity() * 8,
-            program: self.program.instrs.capacity() * std::mem::size_of::<crate::ops::Instr>() + self.program.producer.capacity() * 4 + self.program.arena.heap_bytes(),
+            program: self.program.instrs.capacity() * std::mem::size_of::<crate::ops::Instr>() + self.program.producer.capacity() * 4 + self.program.sym.engine.borrow().heap_bytes(),
             components: self.comps.heap_bytes(),
             strings: self.strings.heap_bytes(),
             structure: self.structure.scopes.capacity() * 12

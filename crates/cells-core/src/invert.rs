@@ -6,7 +6,7 @@ use std::collections::{BinaryHeap, HashMap, HashSet};
 
 use crate::document::{CellIdx, Request};
 use crate::geo::{PointWrite, Produced};
-use crate::ops::Op;
+use crate::ops::{Op, SymKind};
 use crate::program::Program;
 
 /// A request on both cells of a point, issued together with others as a
@@ -185,6 +185,14 @@ impl Engine<'_> {
                     let inp: Vec<f64> = inputs.iter().map(|&c| self.cells[c as usize]).collect();
                     let cur: Vec<f64> = (0..n_out).map(|k| self.cells[ins.out as usize + k]).collect();
                     v.invert(inputs, &inp, &cur, &desired, &mut produced)
+                }
+                // A math input's value: write the constant expression.
+                Op::Sym(SymKind::Evaluate, start, _) => {
+                    let expr = self.program.extra[start as usize];
+                    let d = desired[0].unwrap();
+                    let h = if d.is_nan() { f64::NAN } else { self.program.sym.engine.borrow_mut().num(d) as f64 };
+                    produced.write(expr, h);
+                    true
                 }
                 _ => match ins.op.invert(self.cells, desired[0].unwrap()) {
                     Some((c, v)) => {

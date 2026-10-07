@@ -235,12 +235,14 @@ impl Core {
         self.last_rebuild_error.clone()
     }
 
-    /// Infix text of the expression a math cell's handle names, for display.
-    pub fn expr_text(&self, handle: f64) -> String {
-        if handle.is_nan() || handle < 0.0 || handle as usize >= self.doc.program.arena.nodes.len() {
-            return String::new();
-        }
-        self.doc.program.arena.display(handle as u32, &|c| format!("[{c}]"))
+    /// Text of the expression a math cell holds, for display.
+    pub fn expr_text(&self, cell: u32) -> String {
+        self.doc.math_text(cell)
+    }
+
+    /// LaTeX of the expression a math cell holds.
+    pub fn expr_latex(&self, cell: u32) -> String {
+        self.doc.math_latex(cell)
     }
 
     /// Build passes the load took to settle repeat counts.

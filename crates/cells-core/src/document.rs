@@ -6,6 +6,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use cells_sym::SymEngine;
+
 use crate::components::ComponentKind;
 use crate::dast::{Dast, NodeId, StrId, StringTable};
 use crate::invert::PointRequest;
@@ -187,6 +189,9 @@ pub struct Tick {
     pub rebuilt: bool,
     /// The rebuild failed and the document is unchanged from before it.
     pub rebuild_error: Option<String>,
+    /// For each changed math cell, its expression as LaTeX, so a renderer
+    /// never reads the engine (Plan 5).
+    pub latex: Vec<(CellIdx, String)>,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -234,27 +239,37 @@ impl Document {
     /// schedule and compute repeat until every repeat's iteration count
     /// matches its `count` cell; the timings sum over passes.
     pub fn load_timed(bytes: &[u8]) -> crate::Result<(Document, LoadTimings)> {
+        Self::load_timed_with(bytes, Box::new(cells_sym::flat::Flat::new()))
+    }
+
+    /// `load_timed` with a chosen symbolic engine (engine A by default).
+    pub fn load_timed_with(bytes: &[u8], engine: Box<dyn SymEngine>) -> crate::Result<(Document, LoadTimings)> {
         let mut t = LoadTimings::default();
         let clock = web_time::Instant::now();
         let dast = Arc::new(crate::dast::load(bytes)?);
         t.deserialize = clock.elapsed();
-        let doc = Self::build_settled(dast, &mut t)?;
+        let doc = Self::build_settled(dast, &mut t, engine)?;
         Ok((doc, t))
     }
 
-    pub fn from_dast(dast: Arc<Dast>) -> crate::Result<Document> {
-        Self::build_settled(dast, &mut LoadTimings::default())
+    /// Load with a chosen symbolic engine.
+    pub fn from_bytes_with(bytes: &[u8], engine: Box<dyn SymEngine>) -> crate::Result<Document> {
+        Ok(Self::load_timed_with(bytes, engine)?.0)
     }
 
-    fn build_settled(dast: Arc<Dast>, t: &mut LoadTimings) -> crate::Result<Document> {
+    pub fn from_dast(dast: Arc<Dast>) -> crate::Result<Document> {
+        Self::build_settled(dast, &mut LoadTimings::default(), Box::new(cells_sym::flat::Flat::new()))
+    }
+
+    fn build_settled(dast: Arc<Dast>, t: &mut LoadTimings, mut engine: Box<dyn SymEngine>) -> crate::Result<Document> {
         let mut prior = crate::build::Prior::default();
         for _ in 0..MAX_PASSES {
             let clock = web_time::Instant::now();
-            let unscheduled = crate::build::build(&dast, &prior)?;
+            let unscheduled = crate::build::build(&dast, &prior, &mut *engine)?;
             t.build += clock.elapsed();
 
             let clock = web_time::Instant::now();
-            let mut doc = unscheduled.schedule(dast.clone())?;
+            let mut doc = unscheduled.schedule(dast.clone(), &mut engine)?;
             t.schedule += clock.elapsed();
 
             let clock = web_time::Instant::now();
@@ -266,8 +281,53 @@ impl Document {
                 return Ok(doc);
             }
             prior = crate::build::Prior::take_from(&mut doc);
+            engine = doc.take_engine();
         }
         Err(crate::Error::UnstableStructure(MAX_PASSES))
+    }
+
+    /// Move the symbolic engine out, leaving an empty one (the document is
+    /// about to be replaced by a rebuild).
+    fn take_engine(&mut self) -> Box<dyn SymEngine> {
+        std::mem::take(&mut self.program.sym).into_engine()
+    }
+
+    fn put_engine(&mut self, engine: Box<dyn SymEngine>) {
+        self.program.sym = crate::program::Sym::new(engine);
+        // The memo was dropped with the old `Sym`: recompute so it refills.
+        self.program.run_all(&mut self.cells);
+    }
+
+    /// Name of the symbolic engine ("A" or "R").
+    pub fn engine_name(&self) -> &'static str {
+        self.program.sym.engine.borrow().name()
+    }
+
+    /// Parse math text (what a student typed) into the engine: the value to
+    /// request on a mathInput's `expr` cell.
+    pub fn parse_math(&self, text: &str) -> std::result::Result<f64, String> {
+        Ok(self.program.sym.engine.borrow_mut().parse(text)? as f64)
+    }
+
+    /// The expression a math cell holds, as text; empty when blank.
+    pub fn math_text(&self, cell: CellIdx) -> String {
+        let h = self.cells[cell as usize];
+        if h.is_nan() { String::new() } else { self.program.sym.engine.borrow().text(h as cells_sym::Handle) }
+    }
+
+    /// The expression a math cell holds, as LaTeX; empty when blank.
+    pub fn math_latex(&self, cell: CellIdx) -> String {
+        let h = self.cells[cell as usize];
+        if h.is_nan() { String::new() } else { self.program.sym.engine.borrow().latex(h as cells_sym::Handle) }
+    }
+
+    /// Submit an answer: an ordinary request copying the live response
+    /// handle into its `submitted` cell.
+    pub fn submit(&mut self, answer: CompIdx) -> Tick {
+        let cells = self.comp_cells(answer);
+        let (response, submitted) = (cells[0], cells[2]);
+        let value = self.cells[response as usize];
+        self.request(&[Request { cell: submitted, value }])
     }
 
     /// Authoring warnings about the loaded document. Today: repeats whose
@@ -305,20 +365,22 @@ impl Document {
         let profile = std::env::var_os("CELLS_BUILD_PROFILE").is_some();
         let dast = self.dast.clone();
         let clock = web_time::Instant::now();
-        // The value store moves into the prior; on failure it moves back.
+        // The value store and the engine move into the new build; on
+        // failure they move back.
         let mut prior = crate::build::Prior::take_from(self);
+        let mut engine = self.take_engine();
         if profile {
             eprintln!("rebuild/prior: {:.2?}", clock.elapsed());
         }
         let result = (|| {
             for _ in 0..MAX_PASSES {
                 let clock = web_time::Instant::now();
-                let u = crate::build::build(&dast, &prior)?;
+                let u = crate::build::build(&dast, &prior, &mut *engine)?;
                 if profile {
                     eprintln!("rebuild/build: {:.2?}", clock.elapsed());
                 }
                 let clock = web_time::Instant::now();
-                let mut doc = u.schedule(dast.clone())?;
+                let mut doc = u.schedule(dast.clone(), &mut engine)?;
                 if profile {
                     eprintln!("rebuild/schedule: {:.2?} (creation order valid: {})", clock.elapsed(), doc.program.in_creation_order);
                 }
@@ -331,6 +393,7 @@ impl Document {
                     return Ok(doc);
                 }
                 prior = crate::build::Prior::take_from(&mut doc);
+                engine = doc.take_engine();
             }
             Err(crate::Error::UnstableStructure(MAX_PASSES))
         })();
@@ -341,6 +404,7 @@ impl Document {
             }
             Err(e) => {
                 prior.restore(self);
+                self.put_engine(engine);
                 Err(e)
             }
         }
@@ -422,6 +486,11 @@ impl Document {
         }
         if !tick.changed.is_empty() {
             evaluator.recompute(&self.program, &mut self.cells, &mut tick.changed);
+            for &c in &tick.changed {
+                if self.program.math[c as usize] {
+                    tick.latex.push((c, self.math_latex(c)));
+                }
+            }
             if !self.structure_settled() {
                 match self.rebuild() {
                     Ok(()) => {

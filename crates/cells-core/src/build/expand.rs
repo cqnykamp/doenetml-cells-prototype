@@ -5,12 +5,16 @@
 use super::*;
 
 impl<'c, 'a> Builder<'c, 'a> {
-    pub(super) fn new(c: &'c Compiled<'a>, prior: &'c Prior) -> Self {
+    pub(super) fn new(c: &'c Compiled<'a>, prior: &'c Prior, engine: &'c mut dyn SymEngine) -> Self {
         // Size the columns from the previous build when there was one.
         let guess = prior.values.iter().map(|v| v.len()).sum::<usize>().max(c.templates.iter().map(|t| t.elems.len()).sum::<usize>() * 2);
         Builder {
             c,
             prior,
+            engine,
+            sym_templates: Vec::new(),
+            math_slots: Vec::new(),
+            symbolic: Vec::new(),
             comps: Components {
                 kind: Vec::with_capacity(guess),
                 name: Vec::with_capacity(guess),
@@ -438,8 +442,6 @@ impl<'c, 'a> Builder<'c, 'a> {
             }
             None => None,
         };
-        // A math's handle and value props share one instantiated expression.
-        let mut math_id: Option<ExprId> = None;
         let n_props = self.c.templates[inst.template].elems[inst.elem].props.len();
         for pi in 0..n_props {
             let s = self.slot(comp, pi);
@@ -462,44 +464,43 @@ impl<'c, 'a> Builder<'c, 'a> {
                         let slot = self.arg_slot(a, comp, inst.scope, kind, pi)?;
                         self.op_inputs.push(slot);
                     }
-                    let mut n = args.len() as u8;
-                    // `<evaluate>` reads the function's expression; its cell
-                    // leaves ride along so changes to them propagate.
-                    if *spec == OpSpec::EvalAt {
-                        let func = self.op_inputs[start as usize];
-                        n += self.push_expr_leaves(func) as u8;
-                    }
-                    Source::Op(*spec, start, n)
+                    Source::Op(*spec, start, args.len() as u8)
                 }
                 SourcePlan::IterIndex => Source::Fixed(self.scopes[inst.scope as usize].2 as f64),
                 SourcePlan::Math(expr) => {
                     let id = self.instantiate_expr(*expr, inst.scope)?;
                     if self.arena.is_numeric(id) { Source::Alias(self.lower(id)) } else { Source::Fixed(f64::NAN) }
                 }
-                SourcePlan::MathHandle(expr) => {
-                    let id = self.instantiate_expr(*expr, inst.scope)?;
-                    math_id = Some(id);
-                    Source::Fixed(id as f64)
+                SourcePlan::MathHandle(expr, post) => {
+                    if self.is_symbolic(comp) {
+                        self.sym_source(*expr, *post, inst.scope)?
+                    } else {
+                        // A numeric math is not a math cell (ADR 0005).
+                        Source::Fixed(f64::NAN)
+                    }
                 }
                 SourcePlan::MathValue(expr) => {
-                    let id = match math_id {
-                        Some(id) => id,
-                        None => self.instantiate_expr(*expr, inst.scope)?,
-                    };
-                    if let Expr::Num(v) = *self.arena.get(id) {
-                        // `<math>5</math>` is state, as a number literal is: a
-                        // drag that reaches it changes it, as in the current core.
-                        Source::Literal(v)
-                    } else if self.arena.is_numeric(id) {
-                        Source::Alias(self.lower(id))
-                    } else {
-                        // The handle, then the expression's cell leaves.
+                    if self.is_symbolic(comp) {
                         let start = self.op_inputs.len() as u32;
                         self.op_inputs.push(self.slot(comp, 0));
-                        let mut leaves = Vec::new();
-                        self.arena.cell_leaves(id, &mut leaves);
-                        self.op_inputs.extend_from_slice(&leaves);
-                        Source::Op(OpSpec::Evaluate, start, 1 + leaves.len() as u8)
+                        Source::Op(OpSpec::Sym(SymKind::Evaluate), start, 1)
+                    } else {
+                        let id = self.instantiate_expr(*expr, inst.scope)?;
+                        if let Expr::Num(v) = *self.arena.get(id) {
+                            // `<math>5</math>` is state, as a number literal is: a
+                            // drag that reaches it changes it, as in the current core.
+                            Source::Literal(v)
+                        } else {
+                            Source::Alias(self.lower(id))
+                        }
+                    }
+                }
+                SourcePlan::SymExpr(expr, post) => self.sym_source(*expr, *post, inst.scope)?,
+                SourcePlan::MathEssential(tree) => {
+                    self.math_slots.push(s);
+                    match tree {
+                        Some(tree) => Source::Literal(self.engine.import(tree) as f64),
+                        None => Source::Literal(f64::NAN),
                     }
                 }
                 SourcePlan::Vec(op, args) => {
@@ -512,29 +513,151 @@ impl<'c, 'a> Builder<'c, 'a> {
                 }
                 SourcePlan::VecOut(head, k) => Source::VecOut(self.slot(comp, *head as usize), *k),
             };
+            if let (Source::Fixed(h), SourcePlan::MathHandle(..) | SourcePlan::SymExpr(..)) = (&source, &c.templates[inst.template].elems[inst.elem].props[pi])
+                && !h.is_nan()
+            {
+                self.math_slots.push(s);
+            }
             self.sources[s as usize] = source;
         }
         Ok(())
     }
 
-    /// Append the cell leaves of the expression a slot holds (through
-    /// aliases) to `op_inputs`; returns how many. Nothing when the slot does
-    /// not hold an expression handle.
-    fn push_expr_leaves(&mut self, slot: SlotId) -> usize {
-        let mut root = slot;
-        while let Source::Alias(t) = self.sources[root as usize] {
-            root = t;
-        }
-        let Source::Fixed(handle) = self.sources[root as usize] else {
-            return 0;
-        };
-        if handle.is_nan() {
-            return 0;
-        }
+    // ---- symbolic math ---------------------------------------------------------
+
+    /// A math cell from a template's math text: a fixed handle when it has
+    /// no cell leaves, an alias when it is one math leaf and nothing else,
+    /// else an `Instantiate` over its leaves (each a number or a math cell).
+    fn sym_source(&mut self, expr: ExprId, post: Post, scope: ScopeId) -> Result<Source> {
+        let text = self.c.sym_text.get(&expr).ok_or_else(|| Error::BadMath { text: format!("{:?}", self.c.arena.get(expr)), reason: "no math text recorded".into() })?;
+        let tree = cells_sym::parse::parse(text).map_err(|reason| Error::BadMath { text: text.clone(), reason })?;
         let mut leaves = Vec::new();
-        self.arena.cell_leaves(handle as ExprId, &mut leaves);
+        let tree = self.bind_leaves(&tree, scope, &mut leaves)?;
+        if leaves.is_empty() {
+            let h = self.engine.import(&tree);
+            let h = match post {
+                Post::None => h,
+                Post::Simplify => self.engine.simplify(h),
+                Post::Expand => self.engine.expand(h),
+            };
+            return Ok(Source::Fixed(h as f64));
+        }
+        if let (Tree::Cell { cell, math: true }, Post::None) = (&tree, post) {
+            return Ok(Source::Alias(*cell));
+        }
+        let template = self.sym_templates.len() as u32;
+        self.sym_templates.push(tree);
+        let start = self.op_inputs.len() as u32;
+        let n = u8::try_from(leaves.len()).map_err(|_| Error::BadMath { text: text.clone(), reason: "more than 255 references".into() })?;
         self.op_inputs.extend_from_slice(&leaves);
-        leaves.len()
+        Ok(Source::Op(OpSpec::Sym(SymKind::Instantiate { template, post }), start, n))
+    }
+
+    /// Rebind a parsed template's `#plan` leaves to slots: a math leaf where
+    /// the reference names an expression, else a numeric leaf. Distinct leaf
+    /// slots are appended to `leaves`.
+    fn bind_leaves(&mut self, t: &Tree, scope: ScopeId, leaves: &mut Vec<SlotId>) -> Result<Tree> {
+        let mut kids = |ts: &[Tree], this: &mut Self| ts.iter().map(|k| this.bind_leaves(k, scope, leaves)).collect::<Result<Vec<_>>>();
+        Ok(match t {
+            Tree::Cell { cell: plan, .. } => {
+                let (slot, math) = self.leaf_slot(*plan as PlanId, scope)?;
+                if !leaves.contains(&slot) {
+                    leaves.push(slot);
+                }
+                Tree::Cell { cell: slot, math }
+            }
+            Tree::Num(_) | Tree::Sym(_) => t.clone(),
+            Tree::Add(ts) => Tree::Add(kids(ts, self)?),
+            Tree::Mul(ts) => Tree::Mul(kids(ts, self)?),
+            Tree::Sub(a, b) => Tree::Sub(Box::new(self.bind_leaves(a, scope, leaves)?), Box::new(self.bind_leaves(b, scope, leaves)?)),
+            Tree::Div(a, b) => Tree::Div(Box::new(self.bind_leaves(a, scope, leaves)?), Box::new(self.bind_leaves(b, scope, leaves)?)),
+            Tree::Pow(a, b) => Tree::Pow(Box::new(self.bind_leaves(a, scope, leaves)?), Box::new(self.bind_leaves(b, scope, leaves)?)),
+            Tree::Neg(a) => Tree::Neg(Box::new(self.bind_leaves(a, scope, leaves)?)),
+            Tree::Apply(f, a) => Tree::Apply(f.clone(), Box::new(self.bind_leaves(a, scope, leaves)?)),
+        })
+    }
+
+    /// The slot a `$ref` inside math names, and whether it holds an
+    /// expression (then the slot is the referent's math cell).
+    fn leaf_slot(&mut self, plan: PlanId, scope: ScopeId) -> Result<(SlotId, bool)> {
+        let display = &self.c.plans[plan].display;
+        let slot = self.resolve_one(plan, scope).map_err(|e| match e {
+            Error::ArityMismatch { .. } => Error::BadMath { text: display.clone(), reason: "a reference inside math must name one cell".into() },
+            other => other,
+        })?;
+        Ok(match self.math_target(slot) {
+            Some(m) => (m, true),
+            None => (slot, false),
+        })
+    }
+
+    /// When `slot` is a prop that stands for an expression (a symbolic
+    /// math's `expr` or `value`, a function, an answer's math props), the
+    /// slot of that expression.
+    fn math_target(&mut self, slot: SlotId) -> Option<SlotId> {
+        let comp = self.slot_comp[slot as usize];
+        if comp == NONE {
+            return None;
+        }
+        let kind = self.comps.kind[comp as usize];
+        let pi = (slot - self.slot_base[comp as usize]) as usize;
+        let name = kind.prop_defs().get(pi)?.name;
+        match (kind, name) {
+            (ComponentKind::Answer, "response" | "correct" | "submitted") => Some(slot),
+            (ComponentKind::Math | ComponentKind::MathInput | ComponentKind::Function | ComponentKind::Derivative, "expr" | "value") => {
+                self.is_symbolic(comp).then(|| self.slot(comp, kind.prop_index("expr").unwrap()))
+            }
+            _ => None,
+        }
+    }
+
+    /// Whether a component's `expr` is a math cell: a function, an unbound
+    /// mathInput, a math with a free symbol or a reference to an
+    /// expression. A copy is symbolic when its referent is. A reference
+    /// cycle counts as numeric (the cycle is reported later).
+    pub(super) fn is_symbolic(&mut self, comp: CompIdx) -> bool {
+        if self.symbolic.len() < self.comps.len() {
+            self.symbolic.resize(self.comps.len(), 0);
+        }
+        match self.symbolic[comp as usize] {
+            1 | 3 => return false,
+            2 => return true,
+            _ => {}
+        }
+        self.symbolic[comp as usize] = 3;
+        let kind = self.comps.kind[comp as usize];
+        let inst = self.comp_instance[comp as usize];
+        let yes = match kind {
+            ComponentKind::Function | ComponentKind::Derivative => true,
+            ComponentKind::Math | ComponentKind::MathInput if inst == NONE => match self.sources.get(self.slot(comp, 0) as usize) {
+                Some(Source::Alias(t)) => {
+                    let referent = self.slot_comp[*t as usize];
+                    referent != NONE && self.is_symbolic(referent)
+                }
+                _ => false,
+            },
+            ComponentKind::MathInput => {
+                let i = self.instances[inst as usize];
+                matches!(self.c.templates[i.template].elems[i.elem].props.get(1), Some(SourcePlan::MathEssential(_)))
+            }
+            ComponentKind::Math => {
+                let i = self.instances[inst as usize];
+                match self.c.templates[i.template].elems[i.elem].props.first() {
+                    Some(SourcePlan::MathHandle(id, _)) => {
+                        let id = *id;
+                        let mut syms = Vec::new();
+                        self.c.arena.symbols(id, &mut syms);
+                        let mut leaves = Vec::new();
+                        self.c.arena.cell_leaves(id, &mut leaves);
+                        !syms.is_empty() || leaves.into_iter().any(|p| self.resolve_one(p as PlanId, i.scope).is_ok_and(|s| self.math_target(s).is_some()))
+                    }
+                    _ => false,
+                }
+            }
+            _ => false,
+        };
+        self.symbolic[comp as usize] = if yes { 2 } else { 1 };
+        yes
     }
 
     /// The slot an `Arg` names for component `comp` in `scope`.

@@ -35,14 +35,16 @@
 
 use std::collections::HashMap;
 
+use cells_sym::{SymEngine, Tree};
+
 use crate::components::{ComponentKind, PropFrom};
 use crate::dast::{Dast, NodeId, NodeKind, StrId, StringTable};
 use crate::document::{CellIdx, CompIdx, Components, Document, NONE, Repeat, ScopeId, Structure, TEXT_BIT};
 use crate::error::{Error, Result};
 use crate::expr::{Arena, Expr, ExprId, Parser, Token};
 use crate::geo::{Pivot, RigidOpts, VecOp};
-use crate::ops::{Instr, OpSpec};
-use crate::program::Program;
+use crate::ops::{Instr, OpSpec, Post, SymKind};
+use crate::program::{Program, Sym};
 
 mod copies;
 mod emit;
@@ -100,12 +102,20 @@ enum SourcePlan {
     IterIndex,
     /// Math text: lowered to operators if numeric, else NaN.
     Math(ExprId),
-    /// A `<math>`'s `expr` prop: the fixed handle of its expression.
-    MathHandle(ExprId),
+    /// A `<math>`'s `expr` prop: NaN when the math is numeric (it lowers),
+    /// else as `SymExpr`.
+    MathHandle(ExprId, Post),
     /// A `<math>`'s `value` prop: the literal if the expression is a
-    /// number, the lowered operators if numeric, else an `Evaluate` of the
-    /// handle (NaN).
+    /// number, the lowered operators if numeric, else an `Evaluate` of its
+    /// `expr`.
     MathValue(ExprId),
+    /// A math cell from math text (`Compiled::sym_text`): a fixed handle
+    /// without cell leaves, an alias of a lone math leaf, else an
+    /// `Instantiate` instruction over the leaves.
+    SymExpr(ExprId, Post),
+    /// An essential math cell (an unbound mathInput's `expr`, an answer's
+    /// `submitted`) holding this expression, or blank (NaN).
+    MathEssential(Option<Tree>),
     /// Head of a vector instruction; this slot is output 0, the next
     /// `n_out - 1` slots are `VecOut`.
     Vec(VecOp, Vec<Arg>),
@@ -331,6 +341,9 @@ struct Compiled<'a> {
     plans: Vec<RefPlan>,
     /// Expression templates: cell leaves hold plan ids.
     arena: Arena,
+    /// The math text of templates that may be symbolic, with each `$ref`
+    /// written `#plan` (see `cells_sym::parse`).
+    sym_text: HashMap<ExprId, String>,
 }
 
 struct Compiler<'a> {
@@ -419,22 +432,33 @@ pub struct Unscheduled {
     strings: StringTable,
     root: CompIdx,
     structure: Structure,
-    arena: Arena,
     extra: Vec<CellIdx>,
+    math: Vec<bool>,
     /// Human-readable owner of a cell, e.g. "p1.x". Computed lazily because
     /// a cycle error is the only consumer.
     cell_label: Box<dyn Fn(CellIdx) -> String>,
 }
 
 impl Unscheduled {
-    pub fn schedule(self, dast: std::sync::Arc<Dast>) -> Result<Document> {
+    /// Schedule the program, moving the symbolic engine the build used into
+    /// it. On error the engine stays with the caller.
+    pub fn schedule(self, dast: std::sync::Arc<Dast>, engine: &mut Box<dyn SymEngine>) -> Result<Document> {
         let n = self.cells.len();
-        let program = Program::schedule(self.instrs, n, self.arena, self.extra).map_err(|cell| Error::Cycle((self.cell_label)(cell)))?;
+        let sym = Sym::new(std::mem::replace(engine, Box::new(cells_sym::flat::Flat::new())));
+        let program = match Program::schedule(self.instrs, n, sym, self.extra, self.math) {
+            Ok(p) => p,
+            Err((cell, sym)) => {
+                *engine = sym.into_engine();
+                return Err(Error::Cycle((self.cell_label)(cell)));
+            }
+        };
         Ok(Document::new(self.cells, self.n_essential, self.n_fixed, program, self.comps, self.strings, self.root, self.structure, dast))
     }
 }
 
-pub fn build(dast: &Dast, prior: &Prior) -> Result<Unscheduled> {
+/// Build with `engine` holding the document's expressions (the same engine
+/// across rebuilds, so essential math cells keep valid handles).
+pub fn build(dast: &Dast, prior: &Prior, engine: &mut dyn SymEngine) -> Result<Unscheduled> {
     let profile = std::env::var_os("CELLS_BUILD_PROFILE").is_some();
     let clock = web_time::Instant::now();
     let lap = |what: &str| {
@@ -444,7 +468,7 @@ pub fn build(dast: &Dast, prior: &Prior) -> Result<Unscheduled> {
     };
     let compiled = Compiler::compile(dast)?;
     lap("compile");
-    let mut b = Builder::new(&compiled, prior);
+    let mut b = Builder::new(&compiled, prior, engine);
     b.expand_all()?;
     lap("expand");
     b.resolve_all()?;
@@ -456,8 +480,8 @@ pub fn build(dast: &Dast, prior: &Prior) -> Result<Unscheduled> {
 
 /// One build pass with nothing carried over: every repeat has zero
 /// iterations. `Document::load_timed` iterates this to a fixed point.
-pub fn build_once(dast: &Dast) -> Result<Unscheduled> {
-    build(dast, &Prior::default())
+pub fn build_once(dast: &Dast, engine: &mut dyn SymEngine) -> Result<Unscheduled> {
+    build(dast, &Prior::default(), engine)
 }
 
 /// Where a reference path has arrived after walking its steps.
@@ -482,6 +506,15 @@ struct Instance {
 struct Builder<'c, 'a> {
     c: &'c Compiled<'a>,
     prior: &'c Prior,
+    engine: &'c mut dyn SymEngine,
+    /// Templates of `Instantiate` instructions, cell leaves holding slots
+    /// until emit rebinds them to cells and imports them.
+    sym_templates: Vec<Tree>,
+    /// Slots that hold expression handles without being an instruction's
+    /// output (essential and fixed math cells).
+    math_slots: Vec<SlotId>,
+    /// Per component: 0 not yet known, 1 numeric, 2 symbolic, 3 deciding.
+    symbolic: Vec<u8>,
     comps: Components,
     slot_base: Vec<u32>,
     sources: Vec<Source>,
