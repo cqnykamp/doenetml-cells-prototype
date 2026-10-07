@@ -75,6 +75,7 @@ dependencies = [
  "cells-sym",
  "math-expressions",
  "num-complex",
+ "serde_json",
 ]
 
 [[package]]

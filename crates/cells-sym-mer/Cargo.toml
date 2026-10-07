@@ -12,3 +12,6 @@ cells-sym = { path = "../cells-sym" }
 # binary that links this crate (DAST loading in those binaries only).
 math-expressions = { path = "../../../../math-expressions/packages/math-expressions-rs" }
 num-complex = "0.4"
+
+[dev-dependencies]
+serde_json.workspace = true
