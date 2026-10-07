@@ -2,7 +2,30 @@
 //! highest schedule position first, and inverted once; point groups are
 //! kept together through lookahead (ADR 0006).
 
-use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::collections::BinaryHeap;
+use std::hash::{BuildHasherDefault, Hasher};
+
+/// Keys here are cell and instruction indices: a multiply-shift hash is
+/// enough, and SipHash was most of the cost of a long inversion.
+#[derive(Default)]
+struct IndexHasher(u64);
+
+impl Hasher for IndexHasher {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+    fn write(&mut self, bytes: &[u8]) {
+        for &b in bytes {
+            self.0 = (self.0.rotate_left(5) ^ b as u64).wrapping_mul(0x517c_c1b7_2722_0a95);
+        }
+    }
+    fn write_u32(&mut self, n: u32) {
+        self.0 = (self.0.rotate_left(5) ^ n as u64).wrapping_mul(0x517c_c1b7_2722_0a95);
+    }
+}
+
+type HashMap<K, V> = std::collections::HashMap<K, V, BuildHasherDefault<IndexHasher>>;
+type HashSet<K> = std::collections::HashSet<K, BuildHasherDefault<IndexHasher>>;
 
 use crate::document::{CellIdx, Request};
 use crate::geo::{PointWrite, Produced};
@@ -47,9 +70,13 @@ impl Program {
     /// groups an inverse produces.
     pub fn invert_requests(&self, cells: &[f64], n_essential: usize, requests: &[Request], groups: &[Vec<PointRequest>]) -> Inversion {
         let mut engine =
-            Engine { program: self, cells, n_essential, pending: HashMap::new(), heap: BinaryHeap::new(), queued: HashSet::new(), write_index: HashMap::new(), inversion: Inversion::default(), origin: HashMap::new() };
-        for &r in requests {
-            engine.push(r.cell, r.value, r);
+            Engine { program: self, cells, n_essential, pending: HashMap::default(), heap: BinaryHeap::new(), queued: HashSet::default(), write_index: HashMap::default(), inversion: Inversion::default(), origin: HashMap::default() };
+        if let ([r], []) = (requests, groups) {
+            engine.walk(r.cell, r.value, *r);
+        } else {
+            for &r in requests {
+                engine.push(r.cell, r.value, r);
+            }
         }
         for g in groups {
             let pts: Vec<PointWrite> = g.iter().map(|p| [(p.cells[0], p.values[0]), (p.cells[1], p.values[1])]).collect();
@@ -122,6 +149,33 @@ impl Engine<'_> {
         self.origin.insert(cell, origin);
         if self.queued.insert(p) {
             self.heap.push(p);
+        }
+    }
+
+    /// A lone request: nothing else is pending (an empty heap means an
+    /// empty `pending`), so no other request can reach the instructions it
+    /// passes through and there is nothing to gather. Invert straight down
+    /// through scalar operators, as the queue would one step at a time, and
+    /// hand back to the queue at a vector or symbolic operator.
+    fn walk(&mut self, mut cell: CellIdx, mut value: f64, origin: Request) {
+        loop {
+            let p = self.program.producer[cell as usize];
+            if p == u32::MAX {
+                self.push(cell, value, origin);
+                return;
+            }
+            let op = self.program.instrs[p as usize].op;
+            if matches!(op, Op::Vec(..) | Op::Sym(..)) {
+                self.push(cell, value, origin);
+                return;
+            }
+            match op.invert(self.cells, value) {
+                Some((c, v)) => (cell, value) = (c, v),
+                None => {
+                    self.inversion.dropped.push(origin);
+                    return;
+                }
+            }
         }
     }
 
@@ -204,6 +258,11 @@ impl Engine<'_> {
             };
             if !ok {
                 self.inversion.dropped.push(origin);
+                continue;
+            }
+            if produced.writes.len() == 1 && produced.groups.is_empty() && self.heap.is_empty() {
+                let (c, v) = produced.writes[0];
+                self.walk(c, v, origin);
                 continue;
             }
             for &(c, v) in &produced.writes {
