@@ -51,3 +51,13 @@ build.
   every build and never stored.
 - Out of scope: variant naming (`selectForVariants`, `variantControl`),
   `<shuffle>`, `<cascade>`, and `isResponse` passing through choices.
+
+## Outcome (plan 6 verdict, `results/NOTES.md`)
+
+The sweep found the built mechanism faster on every tick: a built flip
+stays under 0.3 ms, while a rebuild flip is a whole-document build (25 ms
+beside 10,000 components, 256 ms beside 50,000) and a chain of rebuilt
+choices pays a build pass per link. Rebuilding pays only where inactive
+branches would keep resampling many curves, so the core keeps branches built
+up to a weight of 200,000 elements, a curve counting 50. Whether to keep the
+rebuild mechanism at all is open.

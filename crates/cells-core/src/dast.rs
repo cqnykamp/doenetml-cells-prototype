@@ -152,8 +152,9 @@ impl Dast {
         &self.children[s..s + c]
     }
 
+    /// An attribute by name; DoenetML attribute names ignore case.
     pub fn attr(&self, n: NodeId, name: &str) -> Option<AttrId> {
-        self.attrs(n).find(|&a| self.attr_name(a) == name)
+        self.attrs(n).find(|&a| self.attr_name(a).eq_ignore_ascii_case(name))
     }
 
     /// Path parts of a macro node, as string ids.

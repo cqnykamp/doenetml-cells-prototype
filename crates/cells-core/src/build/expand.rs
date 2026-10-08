@@ -289,7 +289,9 @@ impl<'c, 'a> Builder<'c, 'a> {
             }
             (_, Some(prop)) => {
                 let targets = self.targets_of(target, Some(prop), plan, Some(1))?;
-                self.comps.kind[idx as usize] = ComponentKind::Number;
+                // A text's value is a string id: it shows as a text.
+                let is_text = self.single_component(target, plan).is_ok_and(|c| self.comps.kind[c as usize] == ComponentKind::Text) && prop == "value";
+                self.comps.kind[idx as usize] = if is_text { ComponentKind::Text } else { ComponentKind::Number };
                 self.allocate_slots(idx, 1);
                 let s = self.slot(idx, 0);
                 self.sources[s as usize] = Source::Alias(targets[0]);
@@ -297,6 +299,9 @@ impl<'c, 'a> Builder<'c, 'a> {
             (target, None) => {
                 let referent = self.single_component(target, plan)?;
                 let kind = self.comps.kind[referent as usize];
+                if matches!(kind, ComponentKind::ConditionalContent | ComponentKind::Select | ComponentKind::Case) {
+                    return Err(Error::Banned(format!("copying a whole <{}>: reference its interface names instead", kind.tag())));
+                }
                 if !kind.copyable() {
                     return Err(Error::UncopyableKind(kind.tag().into()));
                 }

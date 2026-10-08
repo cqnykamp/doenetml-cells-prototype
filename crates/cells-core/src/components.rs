@@ -347,7 +347,8 @@ impl ComponentKind {
             "conditionalContent" => Self::ConditionalContent,
             "case" => Self::Case,
             "select" => Self::Select,
-            "group" => Self::Group,
+            // Containers the prototype renders nothing special for.
+            "group" | "section" | "label" => Self::Group,
             _ => return None,
         })
     }
@@ -452,9 +453,11 @@ impl ComponentKind {
             Self::Function | Self::Derivative => CURVE,
             Self::Answer => ANSWER,
             Self::Text => const { &[PropDef { name: "value", default: f64::NAN, from: PropFrom::Children, attr: None, bind: None, ref_prop: None }] },
-            Self::ConditionalContent => const { &[planned("choice")] },
+            // `hide` hides what the choice shows, not copies of its names.
+            Self::ConditionalContent => const { &[planned("choice"), planned("hide")] },
             Self::Case => const { &[planned("active")] },
-            Self::PointList | Self::P | Self::Setup | Self::Select | Self::Group => &[],
+            Self::Select => const { &[planned("hide")] },
+            Self::PointList | Self::P | Self::Setup | Self::Group => &[],
         }
     }
 

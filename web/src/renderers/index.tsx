@@ -9,6 +9,7 @@ import { Slider } from "./Slider";
 import { BooleanInput } from "./BooleanInput";
 import { MathView } from "./Math";
 import { Circle, Line, Polygon } from "./Shapes";
+import { CaseView, ChoiceView, TextView } from "./Choice";
 
 export function Component({ idx, inGraph }: { idx: number; inGraph: boolean }) {
   const store = useStore();
@@ -42,7 +43,15 @@ export function Component({ idx, inGraph }: { idx: number; inGraph: boolean }) {
     // A point list's children are points aliasing a shape's own points.
     case "pointList":
     case "p":
+    case "group":
       return <Children idx={idx} inGraph={inGraph} />;
+    case "text":
+      return <TextView idx={idx} />;
+    case "conditionalContent":
+    case "select":
+      return <ChoiceView idx={idx} inGraph={inGraph} />;
+    case "case":
+      return <CaseView idx={idx} inGraph={inGraph} />;
     case "setup":
       return null;
     case "evaluate":

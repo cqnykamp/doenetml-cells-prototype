@@ -194,8 +194,10 @@ impl<'a> Compiler<'a> {
                     }
                     kids.push(Child::Elem(self.add_elem(t, n, name_scope)?));
                 }
-                // Whitespace-only text carries no content and would become a DOM node.
-                NodeKind::Text if d.str(n).trim().is_empty() => {}
+                // Whitespace-only text between lines is layout and would only
+                // become a DOM node; a space between inline items is content
+                // (`The $animal $verb.`).
+                NodeKind::Text if d.str(n).trim().is_empty() && (d.str(n).contains('\n') || kids.is_empty()) => {}
                 NodeKind::Text => kids.push(Child::Text(d.str_id(n))),
                 NodeKind::Macro => {
                     self.pending_macros.push((t, owner, kids.len(), n));

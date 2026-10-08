@@ -209,3 +209,130 @@ In wasm, A's `curves-3400` drag is 30 ms compiled. One curve's 200 samples cost 
 7. Plan 5 added about 0.1 ms per tick to the 100,000-cell numeric chains (the LaTeX check and one branch), measured against the commit before it. Separately, inverting a drag through a 100,000-step chain had grown to about 11 ms, from before this round. Plan 3 replaced the plain walk from a request down its chain with a request engine that gathers requests per instruction. That engine paid six SipHash map operations and a heap push and pop on every step, even for a lone request, where there is nothing to gather. It now walks straight down a chain while a single request is pending and nothing else is queued, handing back to the queue at the first vector or symbolic operator, and its maps hash indices with a multiply-shift hash. `chain-100000` inverts in 0.7 ms again (1.3 ms for the whole tick, against 12 ms). `tests/invert_walk.rs` checks the walk against the queue on every cell of four documents; sticky and point-group drags are unchanged.
 
 **Verdict.** Pass, with one noted limit and one open item. Symbolic math fits the cell architecture as one more instruction family: no component-specific code in the core and no new concept beyond the math cell and its engine. Every fixture meets the 50 ms budget at 10,000 components except the shared-coefficient drag over 6,800 curves, which is bounded by sampling volume; compiling curves whose shape is fixed (follow-up above) brings that drag to 18 ms natively and 30 ms in wasm. A is the engine to keep: it is faster per operation and an order of magnitude leaner in memory. Its cutoff advantage did not show on these fixtures. The open item is reclamation. The arena grows by megabytes per minute of typing through a symbolic chain, which is the threshold the plan set for building mark-and-compact. Whether to build it is Charles's call; B (a postfix buffer per cell) is not needed.
+
+## Plan 6: conditional content
+
+_The sixth round added choices (`docs/plan-6.md`, ADR 0009): `<select>` as a load-time choice drawn from a document seed, and `<conditionalContent>` as a reactive one, both under one rule, the branch interface. The core is `crates/cells-core/src/build/choice.rs`; tests are `tests/choice.rs`. Measurements come from `examples/choice_bench.rs` (native, full recompute) and the Playwright flip in `web/e2e/perf.spec.ts` (wasm, dirty closure), and are stored in `results/raw/plan6/` (local). The oracle is the current core's `conditionalcontent.test.ts` and `select.test.ts` through the adapter, plus `oracle/plan6-rewrites.test.ts`. Numbers are from 2026-10-08._
+
+**How a choice is built.**
+
+- **Branches.** Each case or option is its own template, as a repeat's body is, so its names are private. A reference reaches a name inside only through the interface: the names every branch declares, each with the same kind. The build checks the interface once every element is planned. A violation is an error that names the reason: "'x' is a `<math>` in case 1 but a `<text>` in case 2", "case 2 has no 'x'", or "it has no `<else>`, so no branch is active when every condition fails".
+- **Selects.** A select picks options while the document is built. Its random stream mixes the document seed with the select's element and the chain of iterations it sits in, so it draws the same way in every build, including inside a repeat that rebuilds. Unchosen options are compiled but never expanded.
+- **Conditional content.** Its conditions become ordinary comparison operators (`<`, `<=`, `=`, `!=`, `and`, `or`, `not`, all with no inverse). Its `choice` cell is a `First` vector operator over them.
+- **Built mechanism.** Every case is expanded inside a `Case` component whose `active` cell is `choice = k`. An interface name is a component whose props are `Choose(choice, x₁ … xₙ)`; its inverse writes the active branch only.
+- **Rebuilt mechanism.** `choice` is a structural cell, registered like a repeat's count (ADR 0004), and only the active case is expanded. In both mechanisms a branch's essential cells keep their essential keys, so a branch the student leaves and returns to comes back as it was.
+
+**Q1, both use cases: supported.** Plan 6 added fixtures for each:
+
+- **`wording-N`:** N three-way choices, each with a sentence, a math and a number, both copied outside.
+- **`adventure-K`:** a chain of K four-way choices, 2,000 components per branch, each choice's conditions reading the previous choice's interface.
+- **`select-N`:** N selects of four options.
+
+Native results, built mechanism (each `*all` baseline holds every branch's content with no choices; `*flat` holds only the shown content):
+
+| fixture | load | memory | flip every choice | unrelated drag |
+|---|---|---|---|---|
+| wording-1000 | 25 ms | 3.0 MB | 0.61 ms | 0.12 ms |
+| wording-10000 | 309 ms | 30.0 MB | 5.6 ms | 1.2 ms |
+| wordingall-10000 | 236 ms | 16.6 MB | – | 0.44 ms |
+| wordingflat-10000 | 79 ms | 8.1 MB | – | 0.15 ms |
+| adventure-5 (40k components) | 40 ms | 8.3 MB | 0.001 ms | – |
+| select-10000 | 220 ms | 16.3 MB | – | – |
+| selectall-10000 | 345 ms | 19.8 MB | – | – |
+| selectflat-10000 | 72 ms | 6.3 MB | – | – |
+
+In wasm (Chromium), a flip of every choice in `wording-10000` takes 18 ms of core time, and `wording-1000` takes 1.5 ms. The React commit is a different matter: 573 ms at 10,000 choices and 46 ms at 1,000. One flip changes about 20,000 shown maths (each case's and each copy's), and each one asks the engine for its text. Keeping inactive cases mounted and hidden, so a flip would be a style change, measured no faster (480 ms), and that variant was dropped. The renderer cost scales with how many shown values change in one tick, which would hit any document that changes that many displayed values at once.
+
+**Q2, separate tags: split by timing, not by shape, and the shape split dissolves.** Once both mechanisms obey the branch interface, an author cannot tell them apart, so the question became which mechanism the core should pick. The sweep (`choicesweep-SxB`: one four-way choice with S derived points per branch, beside B background points) answers it:
+
+| | built flip | rebuild flip | built memory | rebuild memory |
+|---|---|---|---|---|
+| 10 pts/branch, 100 background | 0.001 ms | 0.34 ms | 0.05 MB | 0.05 MB |
+| 10,000 pts/branch, 100 background | 0.24 ms | 93 ms | 11.7 MB | 7.0 MB |
+| 10 pts/branch, 10,000 background | 0.001 ms | 25 ms | 2.6 MB | 3.1 MB |
+| 10,000 pts/branch, 10,000 background | 0.30 ms | 107 ms | 14.0 MB | 10.1 MB |
+| 10,000 pts/branch, 50,000 background | 0.27 ms | 256 ms | 24.5 MB | 23.1 MB |
+
+What this shows:
+
+- **Built flips.** A built flip stays under 0.3 ms at every size. Inactive branches still recompute, but even 30,000 inactive derived points add only 0.1 ms to an unrelated drag under full recompute.
+- **Rebuild flips.** A rebuild flip costs a whole-document build, which misses the 50 ms budget beside 10,000 to 50,000 other components whatever the branch size. A chain of rebuilt choices pays one build pass per link: `adventure-5` flips in 163 ms rebuilt (6 passes) against 0.001 ms built, and `adventure-3` takes 59 ms. A rebuilt choice also loads in two passes.
+- **Memory.** Rebuilding only saves memory when the branches are most of the document, and then by at most 1.7 times. With a large background it uses more, for the value store and the scope table it keeps.
+- **Curves.** Built branches carry a real ongoing cost in one case: curves, which an inactive branch keeps resampling when a value they read changes. In `choicecurves-100` (four branches of 100 curves that read a dragged point), a drag takes 1.05 ms built against 0.26 ms rebuilt. At Plan 5's 3,400 curves per branch, that would be about 72 ms a drag.
+
+So the threshold weighs elements, with a curve counting as 50, and rebuilds only above 200,000. Every fixture in this round stays built; branches heavy with curves go to rebuild.
+
+My recommendation, for you to decide: this is close to "always built". The rebuild mechanism is about 40 lines (its registration as a structural cell, and the generalization of the repeat count to `structural_prop`). It earns them only for curve-heavy or enormous branches. It could be dropped, together with the part of ADR 0009 that has the core choose, if you would rather have one mechanism.
+
+**Q3, banned flexibility.** Every ban is a build error that names the reason. In the oracle, 13 of the 66 tests use something banned, and 12 of their rewrites pass on the cells core (table below).
+
+| banned | why | oracle tests |
+|---|---|---|
+| a name whose kind depends on the branch (`$cc.x` a math in one case and a text in another) | the brief's example; one name, one type | none in these files (found in `functionTag`, `factoringOldAlgorithm`) |
+| a name not in every branch, or reached when there is no else (`$cc.c` optional, `$cc.a` in the single-case form) | it would silently become nothing | 2 |
+| a name that exists in no branch (`$cc.d`) | the current core accepts it and gives nothing | 1 |
+| `extend` of a `<conditionalContent>`, `<case>`, `<else>` or `<select>`, or a copy of a whole choice (`$cc`) | a second copy path of replacement arrays in the current core; the copy can be written out or reached through the interface | 9 |
+| `<text extend="$cc">` | a choice coerced to a type | 2 |
+| content by position (`$s[1][2]`, `$cc[1][3]`) | position is not part of the interface | 2 |
+| `numToSelect` (and weights) from a reference | a load-time choice depends only on the seed and literals | 2 |
+
+Some tests have more than one. The JavaScript core passes 12 of the 13 rewrites. The thirteenth crashes it: an empty `<text>` inside a case inside a `<p>` breaks its `textFromComponent`. That is a current-core bug the rewrite exposed, not a difference in meaning.
+
+**Q4, cost.**
+
+- **No change for documents without choices.** On ten existing fixtures, against the commit before this round (`examples/regress.rs`, run at both commits), memory is byte-identical, loads are within 2%, and ticks are within run-to-run noise. Interleaved runs of `chain-100000` gave 0.98–1.31 ms at the baseline and 1.02–1.42 ms now.
+- **Choices cost what they contain, plus a small per-choice overhead.**
+  - *Select.* A select's live state equals the shown content's: cells 0.32 MB, program 0.52 MB, components 1.85 against 1.52 MB. What it adds is the source of the unchosen options: compile time (145 against 47 ms at 10,000 selects) and the retained DAST (12.3 against 3.6 MB). It loads faster than writing every option out.
+  - *Built conditional content.* It costs what holding every branch costs (`wordingall`), plus about 11 instructions and 1.3 KB per choice: conditions, `First`, one `Eq` per case, one `Choose` per prop of each interface name used, and the `Case` components and scopes. The scope table is 2.2 MB of the 13 MB difference at 10,000 choices. Load is 31% over `wordingall`. About 45 ms of that is freeing the builder's many small per-template allocations (one name table per branch template).
+- **Ambient complexity.** The round added about 1,100 lines to `cells-core`. 670 are `build/choice.rs`, about 180 of those the condition parser. Outside it:
+  - three scalar comparison operators and `Truthy`/`Not`
+  - two vector operators (`First`, `Choose`)
+  - four component kinds (`text`, `conditionalContent`, `case`, `select`; `group` also stands in for `section` and `label`)
+  - one new `Step` in reference paths (`Iface`)
+  - the generalization of the repeat count to `structural_prop`
+
+  The tick, the scheduler, the evaluators and the inverse engine are unchanged. The rule that makes this possible is the interface: because a name means one kind in every branch, nothing downstream of a choice ever asks which branch is active.
+
+**Oracle.** Results of the 66 tests in `conditionalcontent.test.ts` and `select.test.ts`, run unmodified:
+
+- **Pass: 17.** The sign-of-number tests, blank strings between tags, `hide` on a select, and most select tests, including the weighted draw over 200 picks.
+- **Banned: 13.** 12 of the rewrites pass. The other fails on a gap: math nested in math.
+- **Gap: 36**, by cause:
+
+| cause | tests |
+|---|---|
+| `<selectFromSequence>` | 4 |
+| `<variantControl>` and variant names | 5 |
+| `<sequence>` | 3 |
+| `<asList>` | 3 |
+| `<division>` | 3 |
+| `<boolean>` | 2 |
+| copies of containers across scopes | 3 |
+| core internals (`activeChildren`, diagnostics, `isInactiveCompositeReplacement`, enumerating components) | 4 |
+| `<textInput>`, `<updateValue>`, `<shortDescription>` | 3 |
+| `<booleanInput prefill>` | 1 |
+| `<math extend>` | 1 |
+| `<text>` mixing text and references | 1 |
+| `hide` given as an expression (`hide="!$h"`) | 1 |
+| `<pointList extend>` of a non-shape | 1 |
+| a non-option child of `<select>` | 1 |
+
+None is a choice mechanism failing. The adapter changes did not move the earlier suites: line 31/69, polygon 21/49 and stickygroup 3/6 as recorded, and circle 31/46, one more than recorded.
+
+**Choices and deviations, recorded once each.**
+
+1. The renderer does not reuse a `hide` cell for inactive branches, because `hide` is a point prop in the prototype. Inactive branches sit in `Case` components with an `active` cell, and the renderer mounts only active cases.
+2. A choice inside a typed parent (Q11: `<math>`, `<function>`) is rejected as unsupported rather than built when every branch yields the same type. No fixture or oracle test here needed it.
+3. Interface kinds exclude curves, answers and containers (`Unsupported`): a `Choose` per prop does not fit a 200-cell sample block.
+4. `<text>` is literal-only (its value is the string id), or a single reference to another text. Text never meets a numeric operator because the interface keeps kinds apart.
+5. Attribute names now ignore case everywhere, as in DoenetML (`withreplacement`). Whitespace between inline items on one line is now kept as content (`The $animal $verb.`); whitespace containing a newline is still dropped.
+6. The adapter reads a `<number>`'s value as a plain number, as the current core does. It sends a non-numeric entry in an unbound `<mathInput>` to its expression cell; a number keeps the numeric path.
+7. `_mechanism="built|rebuild"` on a choice, and `CELLS_CHOICE`, force a mechanism; both are prototype-only, for tests and the sweep.
+8. Scheduling: the first build had `choice` in slot 0 reading conditions created after it, which sent every document with a reactive choice to the general sort. `choice` now aliases a hidden slot created after its conditions, so creation order stays the evaluation order.
+
+**Verdict.** Pass, with one renderer limit and one open question.
+
+- **Both use cases work** under one rule. The brief's type-changing example and five related flexibilities are build errors that name their reason, and 12 of the 13 oracle tests that relied on them pass once rewritten.
+- **Ticks and loads.** Every reactive flip meets the 50 ms core budget at 10,000 components when built (5.6 ms native, 18 ms in wasm). Load-time choices cost less than writing every option out. Documents without choices are unchanged.
+- **Renderer limit.** Flipping 10,000 shown choices in one tick is a 573 ms React commit, from the volume of changed display rather than from the core.
+- **Open question.** The open question is whether to keep the rebuild mechanism: the sweep says built wins on every tick, and rebuilding only pays for branches heavy with curves.

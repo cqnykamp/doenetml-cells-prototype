@@ -29,6 +29,15 @@ impl Core {
     /// Load with a named symbolic engine: "A" (this prototype's), or "R"
     /// (math-expressions-rs) when built with the `engine-r` feature.
     pub fn with_engine(dast: &[u8], engine: &str) -> Result<Core, JsError> {
+        Core::with_engine_seeded(dast, engine, 0.0)
+    }
+
+    /// Load with the document seed load-time choices draw from (plan 6).
+    pub fn with_seed(dast: &[u8], seed: f64) -> Result<Core, JsError> {
+        Core::with_engine_seeded(dast, "A", seed)
+    }
+
+    fn with_engine_seeded(dast: &[u8], engine: &str, seed: f64) -> Result<Core, JsError> {
         console_error_panic_hook::set_once();
         let engine: Box<dyn cells_sym::SymEngine> = match engine {
             "A" => Box::new(cells_sym::flat::Flat::new()),
@@ -36,7 +45,7 @@ impl Core {
             "R" => Box::new(cells_sym_mer::Mer::new()),
             other => return Err(JsError::new(&format!("no symbolic engine '{other}' in this build"))),
         };
-        let (doc, timings) = Document::load_timed_with(dast, engine).map_err(|e| JsError::new(&e.to_string()))?;
+        let (doc, timings) = Document::load_timed_seeded(dast, engine, seed as u64).map_err(|e| JsError::new(&e.to_string()))?;
         let evaluator: Box<dyn Evaluator> = Box::new(DirtyClosure::new(&doc.program, doc.cells.len()));
         Ok(Core { doc, evaluator, timings, last_dropped: 0, last_rebuilt: false, last_rebuild_error: None, last_rebuild_ms: 0.0 })
     }
@@ -261,6 +270,17 @@ impl Core {
 
     pub fn last_rebuild_error(&self) -> Option<String> {
         self.last_rebuild_error.clone()
+    }
+
+    /// The text a component shows (the current core's `text`), through the
+    /// active case of a reactive choice only.
+    pub fn component_text(&self, idx: u32) -> String {
+        if (idx as usize) < self.doc.n_components() { self.doc.rendered_text(idx) } else { String::new() }
+    }
+
+    /// The string a `<text>` value cell holds.
+    pub fn text_value(&self, cell: u32) -> String {
+        if (cell as usize) < self.doc.cells.len() { self.doc.text_value(cell) } else { String::new() }
     }
 
     /// Text of the expression a math cell holds, for display.

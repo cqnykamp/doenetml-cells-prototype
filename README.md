@@ -27,7 +27,11 @@ vocabulary, and `docs/adr/` for recorded decisions.
 
 Tags the core understands: `document`, `graph`, `point` (x, y, hide),
 `number`, `numberInput`, `booleanInput`, `slider` (numeric mode), `math`,
-`evaluate`, `repeatForSequence`, `collect`, and the prototype-only `op`.
+`evaluate`, `repeatForSequence`, `collect`, and the prototype-only `op`;
+plan 3 to 5 added `line`, `lineSegment`, `circle`, `polygon`, `pointList`,
+`p`, `setup`, `stickyGroup`, `mathInput`, `function`, `derivative` and
+`answer`; plan 6 added `conditionalContent` (`case`, `else`), `select`
+(`option`), `group` and literal `text` (see ADR 0009).
 See `docs/plan-2.md` for the second round's scope and decisions.
 - `scripts/parse-dast.mjs` — runs the existing TypeScript DoenetML parser from
   a sibling DoenetML checkout (`DOENETML_DIR`, default `../../ml`) and prints

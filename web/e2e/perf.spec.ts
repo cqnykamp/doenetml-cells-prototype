@@ -129,6 +129,35 @@ for (const spec of SPECS) {
         };
       }
 
+      if (spec.startsWith("wording-")) {
+        // Plan 6: flip every reactive choice by alternating `n` between 1
+        // and -1; the shown case must switch in the DOM.
+        const shown = () => page.locator(".doc").innerText();
+        expect(await shown()).toContain("Positive: ");
+        expect(await shown()).not.toContain("Negative: ");
+        const flips = await page.evaluate(async (steps) => {
+          const s = window.__cells!.store!;
+          const cell = s.comps.cell(s.comps.byName("n")!, "value");
+          s.samples.length = 0;
+          for (let i = 0; i < steps; i++) {
+            s.request([[cell, i % 2 === 0 ? -1 : 1]]);
+            await new Promise((ok) => setTimeout(ok, 0));
+            await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+          }
+          s.request([[cell, -1]]);
+          await new Promise((ok) => setTimeout(ok, 50));
+          return s.samples;
+        }, REBUILD_STEPS);
+        expect(await shown()).toContain("Negative: ");
+        expect(await shown()).not.toContain("Positive: ");
+        r.flip = {
+          core: stats(flips.map((s: any) => s.core)),
+          commit: stats(flips.map((s: any) => s.commit)),
+          frame: stats(flips.map((s: any) => s.frame)),
+          changed: stats(flips.map((s: any) => s.changed)),
+        };
+      }
+
       if (hasRepeat(spec)) {
         // Structural ticks: alternate the repeat's length between N and N-1
         // so every request rebuilds the document and remounts the renderer.
@@ -156,8 +185,9 @@ for (const spec of SPECS) {
         };
       }
       results.push(r);
+      const fl = r.flip ? ` flip core p50=${r.flip.core.p50.toFixed(2)}ms commit p50=${r.flip.commit.p50.toFixed(1)}ms frame p50=${r.flip.frame.p50.toFixed(1)}ms` : "";
       const rb = r.rebuild ? ` rebuild core p50=${r.rebuild.core.p50.toFixed(2)}ms commit p50=${r.rebuild.commit.p50.toFixed(1)}ms frame p50=${r.rebuild.frame.p50.toFixed(1)}ms` : r.toggle ? ` toggle core p50=${r.toggle.core.p50.toFixed(2)}ms commit p50=${r.toggle.commit.p50.toFixed(1)}ms frame p50=${r.toggle.frame.p50.toFixed(1)}ms changed=${r.toggle.changed.p50}` : "";
-      console.log(`${spec} [${fmt}] [${backend}] [${evaluator}] cells=${load.nCells} core p50=${r.tick.core.p50.toFixed(3)}ms rt p50=${r.tick.roundTrip.p50.toFixed(2)}ms commit p50=${r.tick.commit.p50.toFixed(2)}ms frame p50=${r.tick.frame.p50.toFixed(2)}ms first render=${load.timings?.firstRender?.toFixed(1)}ms${rb}`);
+      console.log(`${spec} [${fmt}] [${backend}] [${evaluator}] cells=${load.nCells} core p50=${r.tick.core.p50.toFixed(3)}ms rt p50=${r.tick.roundTrip.p50.toFixed(2)}ms commit p50=${r.tick.commit.p50.toFixed(2)}ms frame p50=${r.tick.frame.p50.toFixed(2)}ms first render=${load.timings?.firstRender?.toFixed(1)}ms${rb}${fl}`);
     });
   }
   }

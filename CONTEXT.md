@@ -211,6 +211,14 @@ document's names changing meaning. A branch that becomes active again returns
 with the state it was left in. Whether the core keeps every branch built or
 rebuilds on a change is the core's call, invisible to the author.
 
+**Built choice** — A reactive choice whose branches are all expanded, each
+in a case component with an `active` cell; an interface name chooses among
+the branches' cells. The core's usual mechanism.
+
+**Rebuilt choice** — A reactive choice of which only the active branch is
+expanded; a change of its choice cell rebuilds the document. Kept for
+branches whose inactive work would be large (curves).
+
 **Choice cell** — The cell holding the index of a reactive choice's active
 branch: the first branch whose condition holds. It is structural when the
 core rebuilds on a change, and an ordinary derived cell otherwise.

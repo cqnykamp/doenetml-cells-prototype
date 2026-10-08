@@ -40,6 +40,9 @@ impl<'a> Compiler<'a> {
         let d = self.c.dast;
         let reactive = self.c.templates[t].elems[e].kind == ComponentKind::ConditionalContent;
         let tag = d.str(el).to_string();
+        if d.attr(el, "extend").is_some() || d.attr(el, "copySource").is_some() {
+            return Err(Error::Banned(format!("extend on a <{tag}>: reference its interface names instead")));
+        }
         // (condition attribute, body nodes, weight) per branch.
         let mut branches: Vec<(Option<u32>, Vec<NodeId>, f64)> = Vec::new();
         let is_branch = |n: NodeId| d.kind(n) == NodeKind::Element && matches!(d.str(n), "case" | "else" | "option");
@@ -67,7 +70,7 @@ impl<'a> Compiler<'a> {
                 }
             }
         }
-        if branches.is_empty() {
+        if branches.is_empty() && reactive {
             return Err(Error::Unsupported(format!("<{tag}> with no branches")));
         }
         let (num_to_select, with_replacement) = if reactive {
@@ -129,12 +132,20 @@ impl<'a> Compiler<'a> {
     /// is a constant 1) and `choice`, the first of them that holds.
     pub(super) fn plan_choice(&mut self, t: TemplateId, e: ElemId) -> Result<()> {
         let Body::Choice(cid) = self.c.templates[t].elems[e].body else { unreachable!() };
+        let d = self.c.dast;
+        let node = self.c.templates[t].elems[e].node;
+        let scope = self.c.templates[t].elems[e].name_scope;
+        let hide = match d.attr(node, "hide") {
+            Some(a) if self.attr_text(a).is_some() => SourcePlan::Fixed(if self.attr_flag(node, "hide") { 1.0 } else { 0.0 }),
+            Some(a) => self.plan_value(t, scope, "hide", d.attr_children(a), None)?,
+            None => SourcePlan::Fixed(0.0),
+        };
         if !self.c.choices[cid].reactive {
-            self.c.templates[t].elems[e].props = Vec::new();
+            self.c.templates[t].elems[e].props = vec![hide];
             return Ok(());
         }
-        let d = self.c.dast;
-        let mut plan = ElemPlan::new(1);
+        let mut plan = ElemPlan::new(2);
+        plan.set(1, hide);
         let mut conds = Vec::new();
         for c in self.c.choices[cid].conditions.clone() {
             conds.push(match c {
@@ -179,7 +190,7 @@ impl<'a> Compiler<'a> {
             // branch, so nothing in it is reachable from outside.
             let empty_branch = def.reactive && def.conditions.last().is_some_and(|c| c.is_some());
             let mut iface = HashMap::new();
-            if !empty_branch {
+            if !empty_branch && !def.branches.is_empty() {
                 let first = &self.c.templates[def.branches[0]];
                 for ((at, name), elems) in &first.names {
                     let [e0] = elems.as_slice() else { continue };
@@ -544,6 +555,10 @@ impl<'c, 'a> Builder<'c, 'a> {
     /// iteration chain it sits in), so it draws the same way in every build.
     fn pick(&self, def: &ChoiceDef, scope: ScopeId, node: NodeId) -> Result<Vec<usize>> {
         let n = def.branches.len();
+        // A select with no options picks nothing.
+        if n == 0 {
+            return Ok(Vec::new());
+        }
         if !def.with_replacement && def.num_to_select as usize > n {
             return Err(Error::Unsupported(format!("numToSelect={} is more than the {n} options of a <select> without replacement", def.num_to_select)));
         }

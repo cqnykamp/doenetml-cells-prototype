@@ -33,6 +33,46 @@ impl Document {
         &self.comps.prop_cells[base..base + self.kind(c).prop_defs().len()]
     }
 
+    /// The text a component shows, as the current core's `text` state
+    /// variable reads it: text children and inline values, through the
+    /// active case of a reactive choice only.
+    pub fn rendered_text(&self, c: CompIdx) -> String {
+        let mut out = String::new();
+        self.push_text(c, &mut out);
+        out
+    }
+
+    fn push_text(&self, c: CompIdx, out: &mut String) {
+        let value = |prop: &str| self.prop_cells(c, prop).map(|cells| self.cells[cells[0] as usize]);
+        match self.kind(c) {
+            ComponentKind::Text => out.push_str(&self.text_value(self.comp_cells(c)[0])),
+            ComponentKind::Number | ComponentKind::NumberInput | ComponentKind::Slider => out.push_str(&format_number(value("value").unwrap_or(f64::NAN))),
+            ComponentKind::Math | ComponentKind::MathInput => {
+                let expr = self.prop_cells(c, "expr").map(|cells| cells[0]);
+                match expr {
+                    Some(e) if !self.cells[e as usize].is_nan() => out.push_str(&self.math_text(e)),
+                    _ => out.push_str(&format_number(value("value").unwrap_or(f64::NAN))),
+                }
+            }
+            ComponentKind::Case if self.cells[self.comp_cells(c)[0] as usize] != 1.0 => {}
+            ComponentKind::ConditionalContent | ComponentKind::Select if value("hide").is_some_and(|h| h != 0.0 && !h.is_nan()) => {}
+            _ => {
+                for ch in self.children(c) {
+                    match ch {
+                        Child::Text(t) => out.push_str(t),
+                        Child::Component(k) => self.push_text(k, out),
+                    }
+                }
+            }
+        }
+    }
+
+    /// The string a `<text>` value cell holds (its string id), or "".
+    pub fn text_value(&self, cell: CellIdx) -> String {
+        let v = self.cells[cell as usize];
+        if v.is_nan() || v < 0.0 || v as usize >= self.strings.len() { String::new() } else { self.strings.get(v as u32).to_string() }
+    }
+
     /// The component a path names; see `resolve_path`.
     pub fn component(&self, path: &str) -> Option<CompIdx> {
         self.resolve_path(path)
@@ -84,4 +124,20 @@ impl Document {
             dast: self.dast.heap_bytes(),
         }
     }
+}
+
+/// A number as text the way the current core shows one: integers without a
+/// decimal point, otherwise up to ten significant digits.
+fn format_number(v: f64) -> String {
+    if v.is_nan() {
+        return "NaN".into();
+    }
+    if v.is_infinite() {
+        return if v > 0.0 { "∞".into() } else { "-∞".into() };
+    }
+    if v.fract() == 0.0 && v.abs() < 1e15 {
+        return format!("{}", v as i64);
+    }
+    let s = format!("{:.*}", (9 - v.abs().log10().floor() as i32).clamp(0, 15) as usize, v);
+    s.trim_end_matches('0').trim_end_matches('.').to_string()
 }

@@ -347,3 +347,12 @@ fn group_rendered_is_a_single_case() {
         assert!(doc.resolve_path("g.k").is_some(), "{m}");
     }
 }
+
+#[test]
+fn an_option_math_copies_an_input_outside_the_select() {
+    let src = r#"<mathInput prefill="a" name="x"/><select name="s" withReplacement numToSelect="3"><option><math name="v">$x</math></option></select>"#;
+    let doc = load_seeded(src, 1);
+    let v = doc.resolve_path("s[2].v").unwrap();
+    let e = doc.prop_cells(v, "expr").unwrap()[0];
+    assert_eq!(doc.math_text(e), "a");
+}
