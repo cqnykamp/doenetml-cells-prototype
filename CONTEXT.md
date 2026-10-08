@@ -197,3 +197,34 @@ as the iteration count of a repeat. A change to a structural cell triggers a
 rebuild.
 
 **Cycle** — A dependency loop among cells. Rejected at load time.
+
+**Branch** — One alternative of a choice: a `<case>`, `<else>` or `<option>`
+and the content inside it. A branch is a naming region, like an iteration.
+
+**Load-time choice** — A choice made once, while the document is built, from
+the document seed (`<select>` and its relatives). Unchosen branches are never
+built: they have no cells and no components.
+
+**Reactive choice** — A choice that a cell decides and that can change on any
+tick (`<conditionalContent>`). Its active branch can change without the
+document's names changing meaning. A branch that becomes active again returns
+with the state it was left in. Whether the core keeps every branch built or
+rebuilds on a change is the core's call, invisible to the author.
+
+**Choice cell** — The cell holding the index of a reactive choice's active
+branch: the first branch whose condition holds. It is structural when the
+core rebuilds on a change, and an ordinary derived cell otherwise.
+
+**Branch interface** — The names a choice exposes to the rest of the
+document: those that every branch declares, each with the same component
+type in every branch. Everything else in a branch is private to it. The build
+checks the interface; `$cc.x` is legal only if `x` is in it. A choice whose
+content feeds a typed parent (a `<math>`, a `<function>`) must yield that
+same type from every branch.
+_Avoid_: mirrored branches (the interface is the rule; branches may otherwise
+differ freely)
+
+**Document seed** — The one random seed a document is loaded with. Each
+load-time choice draws from its own stream derived from the seed and the
+choice's essential key, so a choice draws the same way wherever it is
+rebuilt.
