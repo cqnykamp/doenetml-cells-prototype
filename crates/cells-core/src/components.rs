@@ -545,17 +545,6 @@ impl ComponentKind {
         matches!(self, Self::Graph | Self::P | Self::Setup | Self::StickyGroup | Self::Group)
     }
 
-    /// The prop whose value decides the document's structure, for the
-    /// kinds that have one: a repeat's iteration count, and the choice of a
-    /// reactive choice the core rebuilds on a change (plan 6).
-    pub fn structural_prop(self) -> Option<&'static str> {
-        match self {
-            Self::RepeatForSequence => Some("count"),
-            Self::ConditionalContent => Some("choice"),
-            _ => None,
-        }
-    }
-
     /// How a member of a sticky group attracts and snaps: its shape, the
     /// prop of its first coordinate, and how many points it has at most (a
     /// polygon's live count is its `numVertices` cell). None for kinds that

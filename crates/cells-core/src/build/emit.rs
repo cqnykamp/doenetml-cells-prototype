@@ -266,6 +266,7 @@ impl<'c, 'a> Builder<'c, 'a> {
     /// one; a count that reads a cell inside another repeat's iterations adds
     /// one, and is flagged (`cross`) since authors can avoid it.
     pub(super) fn structural_depths(&self) -> (Vec<u32>, Vec<bool>) {
+        let count_pi = ComponentKind::RepeatForSequence.prop_index("count").unwrap();
         let mut owner: HashMap<ScopeId, usize> = HashMap::new();
         for (ri, r) in self.repeats.iter().enumerate() {
             for &s in &r.iter_scopes {
@@ -294,8 +295,7 @@ impl<'c, 'a> Builder<'c, 'a> {
                 reads[ri].push(o);
             }
             stack.clear();
-            let kind = self.comps.kind[r.comp as usize];
-            stack.push(self.slot(r.comp, kind.prop_index(kind.structural_prop().unwrap()).unwrap()));
+            stack.push(self.slot(r.comp, count_pi));
             touched.clear();
             while let Some(sl) = stack.pop() {
                 if seen[sl as usize] {

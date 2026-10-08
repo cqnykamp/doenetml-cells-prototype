@@ -5,13 +5,6 @@ use cells_core::reference;
 use cells_core::test_utils::{dast_json, load};
 use cells_core::{Document, Error, Request};
 
-const MECHANISMS: [&str; 2] = ["built", "rebuild"];
-
-/// `src` with every `<conditionalContent` forced to one mechanism.
-fn with_mechanism(src: &str, m: &str) -> String {
-    src.replace("<conditionalContent", &format!("<conditionalContent _mechanism=\"{m}\""))
-}
-
 fn set(doc: &mut Document, name: &str, prop: &str, value: f64) -> cells_core::Tick {
     let cell = doc.cell(name, prop).unwrap_or_else(|| panic!("no {name}.{prop}"));
     doc.request(&[Request { cell, value }])
@@ -39,42 +32,38 @@ const SIGN: &str = r#"
 "#;
 
 #[test]
-fn interface_names_follow_the_active_case_under_both_mechanisms() {
-    for m in MECHANISMS {
-        let mut doc = load(&with_mechanism(SIGN, m)).unwrap();
-        assert_eq!(reference::check(&doc), None, "{m}");
-        assert_eq!(val(&doc, "cc", "choice"), 1.0, "{m}");
-        assert_eq!(num(&doc, "sx"), 1.0, "{m}");
-        assert_eq!(num(&doc, "sw"), 10.0, "{m}");
-        let tick = set(&mut doc, "n", "value", -3.0);
-        assert_eq!(tick.rebuilt, m == "rebuild", "{m}");
-        assert_eq!(val(&doc, "cc", "choice"), 2.0, "{m}");
-        assert_eq!(num(&doc, "sx"), -1.0, "{m}");
-        assert_eq!(num(&doc, "sw"), 20.0, "{m}");
-        set(&mut doc, "n", "value", 0.0);
-        assert_eq!(num(&doc, "sx"), 0.0, "{m}");
-        // NaN: no comparison holds, so the else.
-        set(&mut doc, "n", "value", f64::NAN);
-        assert_eq!(num(&doc, "sx"), 0.0, "{m}");
-        assert_eq!(reference::check(&doc), None, "{m}");
-    }
+fn interface_names_follow_the_active_case() {
+    let mut doc = load(SIGN).unwrap();
+    assert_eq!(reference::check(&doc), None);
+    assert_eq!(val(&doc, "cc", "choice"), 1.0);
+    assert_eq!(num(&doc, "sx"), 1.0);
+    assert_eq!(num(&doc, "sw"), 10.0);
+    let tick = set(&mut doc, "n", "value", -3.0);
+    assert!(!tick.rebuilt, "a flip is an ordinary tick");
+    assert_eq!(val(&doc, "cc", "choice"), 2.0);
+    assert_eq!(num(&doc, "sx"), -1.0);
+    assert_eq!(num(&doc, "sw"), 20.0);
+    set(&mut doc, "n", "value", 0.0);
+    assert_eq!(num(&doc, "sx"), 0.0);
+    // NaN: no comparison holds, so the else.
+    set(&mut doc, "n", "value", f64::NAN);
+    assert_eq!(num(&doc, "sx"), 0.0);
+    assert_eq!(reference::check(&doc), None);
 }
 
 #[test]
 fn a_request_moves_the_active_branch_and_returning_restores_state() {
-    for m in MECHANISMS {
-        let mut doc = load(&with_mechanism(SIGN, m)).unwrap();
-        // Write through the interface: only case 1's input changes.
-        set(&mut doc, "sw", "value", 11.0);
-        assert_eq!(num(&doc, "sw"), 11.0, "{m}");
-        set(&mut doc, "n", "value", -1.0);
-        assert_eq!(num(&doc, "sw"), 20.0, "{m}");
-        set(&mut doc, "sw", "value", 21.0);
-        set(&mut doc, "n", "value", 2.0);
-        assert_eq!(num(&doc, "sw"), 11.0, "{m}: case 1 kept what was typed");
-        set(&mut doc, "n", "value", -2.0);
-        assert_eq!(num(&doc, "sw"), 21.0, "{m}: case 2 kept what was typed");
-    }
+    let mut doc = load(SIGN).unwrap();
+    // Write through the interface: only case 1's input changes.
+    set(&mut doc, "sw", "value", 11.0);
+    assert_eq!(num(&doc, "sw"), 11.0);
+    set(&mut doc, "n", "value", -1.0);
+    assert_eq!(num(&doc, "sw"), 20.0);
+    set(&mut doc, "sw", "value", 21.0);
+    set(&mut doc, "n", "value", 2.0);
+    assert_eq!(num(&doc, "sw"), 11.0, "case 1 kept what was typed");
+    set(&mut doc, "n", "value", -2.0);
+    assert_eq!(num(&doc, "sw"), 21.0, "case 2 kept what was typed");
 }
 
 #[test]
@@ -87,7 +76,7 @@ fn a_request_cannot_flip_a_branch() {
 
 #[test]
 fn built_cases_report_which_is_active() {
-    let doc = load(&with_mechanism(SIGN, "built")).unwrap();
+    let doc = load(SIGN).unwrap();
     let cc = doc.component("cc").unwrap();
     let active: Vec<f64> = doc
         .children(cc)
@@ -167,21 +156,19 @@ fn conditions_parse_connectives_parentheses_and_entities() {
 </conditionalContent>
 <number name="out">$cc.r</number>
 "#;
-    for m in MECHANISMS {
-        let mut doc = load(&with_mechanism(src, m)).unwrap();
-        let at = |doc: &mut Document, n: f64, b: f64| {
-            set(doc, "n", "value", n);
-            set(doc, "b", "value", b);
-            num(doc, "out")
-        };
-        assert_eq!(at(&mut doc, 0.0, 0.0), 5.0, "{m}");
-        assert_eq!(at(&mut doc, f64::NAN, 0.0), 1.0, "{m}");
-        assert_eq!(at(&mut doc, 3.0, 0.0), 2.0, "{m}");
-        assert_eq!(at(&mut doc, 1.0, 0.0), 3.0, "{m}");
-        assert_eq!(at(&mut doc, 3.0, 1.0), 3.0, "{m}");
-        assert_eq!(at(&mut doc, -1.0, 0.0), 4.0, "{m}");
-        assert_eq!(val(&doc, "pos", "choice"), 0.0, "{m}");
-    }
+    let mut doc = load(src).unwrap();
+    let at = |doc: &mut Document, n: f64, b: f64| {
+        set(doc, "n", "value", n);
+        set(doc, "b", "value", b);
+        num(doc, "out")
+    };
+    assert_eq!(at(&mut doc, 0.0, 0.0), 5.0);
+    assert_eq!(at(&mut doc, f64::NAN, 0.0), 1.0);
+    assert_eq!(at(&mut doc, 3.0, 0.0), 2.0);
+    assert_eq!(at(&mut doc, 1.0, 0.0), 3.0);
+    assert_eq!(at(&mut doc, 3.0, 1.0), 3.0);
+    assert_eq!(at(&mut doc, -1.0, 0.0), 4.0);
+    assert_eq!(val(&doc, "pos", "choice"), 0.0);
 }
 
 #[test]
@@ -198,13 +185,11 @@ fn a_condition_may_read_another_choices_interface() {
 </conditionalContent>
 <number name="out">$cc2.v</number>
 "#;
-    for m in MECHANISMS {
-        let mut doc = load(&with_mechanism(src, m)).unwrap();
-        assert_eq!(num(&doc, "out"), 100.0, "{m}");
-        set(&mut doc, "n", "value", -1.0);
-        assert_eq!(num(&doc, "out"), 200.0, "{m}");
-        assert_eq!(reference::check(&doc), None, "{m}");
-    }
+    let mut doc = load(src).unwrap();
+    assert_eq!(num(&doc, "out"), 100.0);
+    set(&mut doc, "n", "value", -1.0);
+    assert_eq!(num(&doc, "out"), 200.0);
+    assert_eq!(reference::check(&doc), None);
 }
 
 #[test]
@@ -229,13 +214,11 @@ fn texts_choose_like_numbers() {
 </conditionalContent>
 <text name="copy">$cc.t</text>
 "#;
-    for m in MECHANISMS {
-        let mut doc = load(&with_mechanism(src, m)).unwrap();
-        let s = |doc: &Document| doc.strings.get(val(doc, "copy", "value") as u32).trim().to_string();
-        assert_eq!(s(&doc), "cat", "{m}");
-        set(&mut doc, "b", "value", 1.0);
-        assert_eq!(s(&doc), "dog", "{m}");
-    }
+    let mut doc = load(src).unwrap();
+    let s = |doc: &Document| doc.strings.get(val(doc, "copy", "value") as u32).trim().to_string();
+    assert_eq!(s(&doc), "cat");
+    set(&mut doc, "b", "value", 1.0);
+    assert_eq!(s(&doc), "dog");
 }
 
 #[test]
@@ -248,14 +231,12 @@ fn an_interface_math_can_be_symbolic() {
 </conditionalContent>
 <math name="copy" expand>2 $cc.m</math>
 "#;
-    for m in MECHANISMS {
-        let mut doc = load(&with_mechanism(src, m)).unwrap();
-        let cell = doc.cell("copy", "expr").unwrap();
-        assert_eq!(doc.math_text(cell).replace(" ", ""), "2x+2", "{m}");
-        set(&mut doc, "b", "value", 1.0);
-        let cell = doc.cell("copy", "expr").unwrap();
-        assert_eq!(doc.math_text(cell).replace(" ", ""), "2x^2", "{m}");
-    }
+    let mut doc = load(src).unwrap();
+    let cell = doc.cell("copy", "expr").unwrap();
+    assert_eq!(doc.math_text(cell).replace(" ", ""), "2x+2");
+    set(&mut doc, "b", "value", 1.0);
+    let cell = doc.cell("copy", "expr").unwrap();
+    assert_eq!(doc.math_text(cell).replace(" ", ""), "2x^2");
 }
 
 const SELECT: &str = r#"
@@ -339,13 +320,11 @@ fn group_rendered_is_a_single_case() {
 <booleanInput name="b"/>
 <group name="g" rendered="$b"><number name="k">7</number></group>
 "#;
-    for m in MECHANISMS {
-        let mut doc = load(&src.replace("<group", &format!("<group _mechanism=\"{m}\""))).unwrap();
-        assert_eq!(val(&doc, "g", "choice"), 0.0, "{m}");
-        set(&mut doc, "b", "value", 1.0);
-        assert_eq!(val(&doc, "g", "choice"), 1.0, "{m}");
-        assert!(doc.resolve_path("g.k").is_some(), "{m}");
-    }
+    let mut doc = load(src).unwrap();
+    assert_eq!(val(&doc, "g", "choice"), 0.0);
+    set(&mut doc, "b", "value", 1.0);
+    assert_eq!(val(&doc, "g", "choice"), 1.0);
+    assert!(doc.resolve_path("g.k").is_some());
 }
 
 #[test]

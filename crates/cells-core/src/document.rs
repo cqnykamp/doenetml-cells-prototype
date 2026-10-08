@@ -22,9 +22,7 @@ pub type CompIdx = u32;
 /// repeat (see `build.rs`).
 pub type ScopeId = u32;
 
-/// One expanded `<repeatForSequence>`, or one reactive choice the core
-/// rebuilds on a change (plan 6): its one iteration is the active branch,
-/// `n` the branch's 1-based position (0: none).
+/// One expanded `<repeatForSequence>`.
 #[derive(Debug, Clone)]
 pub struct Repeat {
     pub comp: CompIdx,
@@ -368,11 +366,9 @@ impl Document {
         self.structure.repeats.iter().all(|r| self.repeat_count(r) == r.n)
     }
 
-    /// The iteration count a repeat's `count` cell currently asks for (for
-    /// a rebuilt reactive choice, the branch its `choice` cell picks).
+    /// The iteration count a repeat's `count` cell currently asks for.
     pub fn repeat_count(&self, r: &Repeat) -> u32 {
-        let kind = self.kind(r.comp);
-        let pi = kind.prop_index(kind.structural_prop().expect("a structural kind")).unwrap();
+        let pi = ComponentKind::RepeatForSequence.prop_index("count").unwrap();
         let v = self.cells[self.comp_cells(r.comp)[pi] as usize];
         if v.is_nan() || v < 0.0 { 0 } else { v.min(u32::MAX as f64) as u32 }
     }

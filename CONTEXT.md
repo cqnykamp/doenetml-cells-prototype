@@ -208,20 +208,14 @@ built: they have no cells and no components.
 **Reactive choice** — A choice that a cell decides and that can change on any
 tick (`<conditionalContent>`). Its active branch can change without the
 document's names changing meaning. A branch that becomes active again returns
-with the state it was left in. Whether the core keeps every branch built or
-rebuilds on a change is the core's call, invisible to the author.
-
-**Built choice** — A reactive choice whose branches are all expanded, each
-in a case component with an `active` cell; an interface name chooses among
-the branches' cells. The core's usual mechanism.
-
-**Rebuilt choice** — A reactive choice of which only the active branch is
-expanded; a change of its choice cell rebuilds the document. Kept for
-branches whose inactive work would be large (curves).
+with the state it was left in. Every branch is built, each in a case whose
+`active` cell says whether it is shown; an interface name chooses among
+the branches' cells, so a change of branch is an ordinary tick, never a
+rebuild.
 
 **Choice cell** — The cell holding the index of a reactive choice's active
-branch: the first branch whose condition holds. It is structural when the
-core rebuilds on a change, and an ordinary derived cell otherwise.
+branch: the first branch whose condition holds. An ordinary derived cell,
+not a structural one.
 
 **Branch interface** — The names a choice exposes to the rest of the
 document: those that every branch declares, each with the same component

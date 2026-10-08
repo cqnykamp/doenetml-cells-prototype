@@ -8,30 +8,18 @@
 //!
 //! A select picks its options while the document is built, from the
 //! document seed: unchosen options are never expanded. A conditional
-//! content's `choice` cell is the first case whose condition holds. If its
-//! branches are small the core keeps every branch built, inside a `Case`
-//! component whose `active` cell says whether it is shown, and an interface
-//! name is a `Choose` over the branches' cells. If not, the choice cell is
-//! structural and a change rebuilds the document with only the active case
-//! expanded (ADR 0004). Both mechanisms mean the same thing to an author.
+//! content's `choice` cell is the first case whose condition holds. Every
+//! case is built, inside a `Case` component whose `active` cell says
+//! whether it is shown, and an interface name is a `Choose` over the
+//! branches' cells, so a flip is an ordinary tick. (Plan 6 also built the
+//! other mechanism, rebuilding with only the active case; it lost on every
+//! tick and was removed. See ADR 0009.)
 
 use super::*;
 
-/// Largest reactive choice, in template elements across its branches, that
-/// stays built rather than rebuilding on a change; a curve counts as
-/// `CURVE_WEIGHT` elements. From the plan 6 sweep: a built flip stays under
-/// 0.3 ms with 40,000 points in the branches, while a rebuild flip costs a
-/// whole-document build (21 ms beside 10,000 points, 150 ms beside
-/// 50,000), so size alone rarely argues for rebuilding. What does is the
-/// memory of every branch and the work inactive branches still do each
-/// tick, which curves dominate (200 sample cells, resampled when a value
-/// they read changes). `CELLS_CHOICE=built|rebuild` forces one mechanism.
-const BUILT_MAX_WEIGHT: usize = 200_000;
-const CURVE_WEIGHT: usize = 50;
-
 /// `Choose` reads the choice cell and one cell per branch; `First` one
 /// condition per case. Vector operators read at most `geo::MAX_VEC_IN`.
-const MAX_BUILT_BRANCHES: usize = crate::geo::MAX_VEC_IN - 1;
+const MAX_CASES: usize = crate::geo::MAX_VEC_IN - 1;
 
 impl<'a> Compiler<'a> {
     /// Give a choice element its branch templates. `<group rendered="c">`
@@ -104,7 +92,6 @@ impl<'a> Compiler<'a> {
             weights: branches.iter().map(|b| b.2).collect(),
             iface: HashMap::new(),
             used: Vec::new(),
-            built: false,
         });
         self.c.templates[t].elems[e].body = Body::Choice(id);
         Ok(())
@@ -153,8 +140,8 @@ impl<'a> Compiler<'a> {
                 None => plan.hidden(SourcePlan::Fixed(1.0)),
             });
         }
-        if conds.len() > crate::geo::MAX_VEC_IN {
-            return Err(Error::Unsupported(format!("a <conditionalContent> with more than {} cases", crate::geo::MAX_VEC_IN)));
+        if conds.len() > MAX_CASES {
+            return Err(Error::Unsupported(format!("a <conditionalContent> with more than {MAX_CASES} cases")));
         }
         // After the conditions, so creation order stays an evaluation order.
         let first = plan.hidden(SourcePlan::vector(VecOp::First { n: conds.len() as u8 }, conds));
@@ -179,11 +166,8 @@ impl<'a> Compiler<'a> {
 
     /// The branch interface of every choice, once every element is planned
     /// (a tuple-valued `<math>` only becomes a point when planned), then the
-    /// check that every interface name a reference uses is in it, and the
-    /// mechanism of each reactive choice.
+    /// check that every interface name a reference uses is in it.
     pub(super) fn finish_choices(&mut self) -> Result<()> {
-        let force = std::env::var("CELLS_CHOICE").ok();
-        let sizes = self.template_sizes();
         for cid in 0..self.c.choices.len() {
             let def = &self.c.choices[cid];
             // A conditional content without an else has an implicit empty
@@ -220,21 +204,7 @@ impl<'a> Compiler<'a> {
                     None => return Err(self.not_in_interface(cid, name, empty_branch)),
                 }
             }
-            let n_branches = def.branches.len();
-            // `CELLS_CHOICE`, else the prototype-only `_mechanism` attribute,
-            // forces a mechanism (for measuring and testing both).
-            let node = self.c.templates[def.at.0].elems[def.at.1].node;
-            let attr = self.c.dast.attr(node, "_mechanism").and_then(|a| self.attr_text(a));
-            let built = def.reactive
-                && n_branches <= MAX_BUILT_BRANCHES
-                && match force.as_deref().or(attr.as_deref().map(str::trim)) {
-                    Some("built") => true,
-                    Some("rebuild") => false,
-                    _ => def.branches.iter().map(|&b| sizes[b]).sum::<usize>() <= BUILT_MAX_WEIGHT,
-                };
-            let def = &mut self.c.choices[cid];
-            def.iface = iface;
-            def.built = built;
+            self.c.choices[cid].iface = iface;
         }
         Ok(())
     }
@@ -275,20 +245,6 @@ impl<'a> Compiler<'a> {
             reason
         };
         Error::NotInInterface { choice, name: name.to_string(), reason }
-    }
-
-    /// Weight per template (elements, a curve counting `CURVE_WEIGHT`),
-    /// nested templates included. A nested template is created after its
-    /// parent, so one backward pass sums them.
-    fn template_sizes(&self) -> Vec<usize> {
-        let weight = |e: &Elem| if matches!(e.kind, ComponentKind::Function | ComponentKind::Derivative) { CURVE_WEIGHT } else { 1 };
-        let mut sizes: Vec<usize> = self.c.templates.iter().map(|t| t.elems.iter().map(weight).sum()).collect();
-        for i in (1..self.c.templates.len()).rev() {
-            if let Some((p, _)) = self.c.templates[i].parent {
-                sizes[p] += sizes[i];
-            }
-        }
-        sizes
     }
 
     /// The step for interface name `name` of choice `cid`, and the element
@@ -501,17 +457,8 @@ impl<'c, 'a> Builder<'c, 'a> {
                 inst.branch_of.push(b);
             }
         } else {
-            let n = def.branches.len();
-            let active = if def.built {
-                (1..=n).collect()
-            } else {
-                match self.prior.counts.get(&(scope, node)).copied().unwrap_or(0) as usize {
-                    0 => Vec::new(),
-                    k => vec![k.min(n)],
-                }
-            };
             let choice = self.slot(comp, 0);
-            for &k in &active {
+            for k in 1..=def.branches.len() {
                 let s = self.scope_for(scope, node, k as u32);
                 let case = self.new_component(ComponentKind::Case, NONE, comp, NONE, scope, 1);
                 let pos = self.anon_slot(Source::Fixed(k as f64));
@@ -531,18 +478,11 @@ impl<'c, 'a> Builder<'c, 'a> {
                 inst.scopes.push(s);
                 inst.branch_of.push(k - 1);
             }
-            if def.built {
-                for name in &def.used {
-                    let kind = def.iface[name].0;
-                    // Unnamed: a test path `cc.x` finds the active case's `x`.
-                    let ic = self.new_component(kind, NONE, comp, NONE, scope, kind.prop_defs().len());
-                    inst.iface_comps.push(ic);
-                }
-            } else {
-                let k = active.first().copied().unwrap_or(0) as u32;
-                self.comp_repeat[comp as usize] = self.repeats.len() as u32;
-                self.repeats.push(Repeat { comp, node, scope, iter_scopes: inst.scopes.clone(), n: k });
-                self.counts_used.push(k);
+            for name in &def.used {
+                let kind = def.iface[name].0;
+                // Unnamed: a test path `cc.x` finds the active case's `x`.
+                let ic = self.new_component(kind, NONE, comp, NONE, scope, kind.prop_defs().len());
+                inst.iface_comps.push(ic);
             }
         }
         self.comp_choice.insert(comp, self.choice_insts.len());
@@ -649,13 +589,7 @@ impl<'c, 'a> Builder<'c, 'a> {
             }
             Resolved::Comp(c) => {
                 let inst = &self.choice_insts[self.comp_choice[&c]];
-                if def.built {
-                    (Resolved::Comp(inst.iface_comps[u as usize]), self.comps.scope[c as usize])
-                } else if inst.scopes.is_empty() {
-                    (Resolved::Missing, 0)
-                } else {
-                    in_branch(inst, 0)
-                }
+                (Resolved::Comp(inst.iface_comps[u as usize]), self.comps.scope[c as usize])
             }
             Resolved::Missing => (Resolved::Missing, 0),
         }

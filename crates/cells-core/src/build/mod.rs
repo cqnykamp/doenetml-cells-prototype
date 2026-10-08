@@ -196,9 +196,6 @@ struct ChoiceDef {
     /// Interface names that references use, in first-use order; a
     /// `Step::Iface` holds an index here.
     used: Vec<String>,
-    /// Reactive: keep every branch built (an interface name is a `Choose`
-    /// over the branches) rather than rebuild when the choice changes.
-    built: bool,
 }
 
 /// The template itself, as the parent of its top-level elements.
@@ -541,11 +538,11 @@ struct ChoiceInst {
     def: ChoiceId,
     comp: CompIdx,
     /// The scope of each built branch (a select's picks in order; every
-    /// case of a built reactive choice; the active case of a rebuilt one).
+    /// case of a reactive choice).
     scopes: Vec<ScopeId>,
     /// The branch each of `scopes` instantiates.
     branch_of: Vec<usize>,
-    /// Built reactive choice: one `Choose` component per `ChoiceDef::used`.
+    /// Reactive choice: one `Choose` component per `ChoiceDef::used`.
     iface_comps: Vec<CompIdx>,
 }
 
