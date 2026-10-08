@@ -333,6 +333,145 @@ pub fn symchain(n: usize) -> String {
 }
 
 /// Parse a CLI-style spec such as `chain-1000` or `grid-100x10`.
+/// Plan 6, use case 1: N small reactive choices that change wording, all
+/// driven by one input `n` (1, -1 or 0 flips every one of them), plus a
+/// point `p0` to drag that no choice reads. Each choice's interface is a
+/// `<math>` and a `<number>`, both copied outside it.
+pub fn wording(n: usize) -> String {
+    let mut s = String::from("<numberInput name=\"n\" value=\"1\"/>\n<graph name=\"g\"><point name=\"p0\" x=\"1\" y=\"2\"/></graph>\n");
+    for i in 0..n {
+        let a = i % 9 + 1;
+        let _ = writeln!(
+            s,
+            "<p><conditionalContent name=\"c{i}\"><case condition=\"$n > 0\">Positive: <math name=\"m\">{a}x+1</math> and <number name=\"k\">{i}</number>.</case><case condition=\"$n < 0\">Negative: <math name=\"m\">x-{a}</math> and <number name=\"k\">-{i}</number>.</case><else>Zero: <math name=\"m\">0</math> and <number name=\"k\">0</number>.</else></conditionalContent></p><p>$c{i}.m, $c{i}.k</p>"
+        );
+    }
+    s
+}
+
+/// `wording` with the first case's content written out and no choices: the
+/// same visible document, for comparison.
+pub fn wording_flat(n: usize) -> String {
+    let mut s = String::from("<numberInput name=\"n\" value=\"1\"/>\n<graph name=\"g\"><point name=\"p0\" x=\"1\" y=\"2\"/></graph>\n");
+    for i in 0..n {
+        let a = i % 9 + 1;
+        let _ = writeln!(s, "<p>Positive: <math name=\"m{i}\">{a}x+1</math> and <number name=\"k{i}\">{i}</number>.</p><p>$m{i}, $k{i}</p>");
+    }
+    s
+}
+
+/// `wording` with all three cases' content written out and no choices:
+/// the same content the built mechanism holds, without the machinery.
+pub fn wording_all(n: usize) -> String {
+    let mut s = String::from("<numberInput name=\"n\" value=\"1\"/>\n<graph name=\"g\"><point name=\"p0\" x=\"1\" y=\"2\"/></graph>\n");
+    for i in 0..n {
+        let a = i % 9 + 1;
+        let _ = writeln!(
+            s,
+            "<p>Positive: <math name=\"m{i}\">{a}x+1</math> and <number name=\"k{i}\">{i}</number>. Negative: <math name=\"mn{i}\">x-{a}</math> and <number name=\"kn{i}\">-{i}</number>. Zero: <math name=\"mz{i}\">0</math> and <number name=\"kz{i}\">0</number>.</p><p>$m{i}, $k{i}</p>"
+        );
+    }
+    s
+}
+
+/// `select` with every option's content written out and no select.
+pub fn select_all(n: usize) -> String {
+    let mut s = String::new();
+    for i in 0..n {
+        s.push_str("<p>");
+        for o in 1..=4 {
+            let _ = write!(s, "Pick {o}: <number name=\"v{i}_{o}\">{}</number> <math name=\"m{i}_{o}\">x+{o}</math>", i * 4 + o);
+        }
+        let _ = writeln!(s, " $v{i}_1</p>");
+    }
+    s
+}
+
+/// Plan 6, use case 2: a chain of K reactive choices of 4 branches, each
+/// branch a graph of `size - 2` points and a `score` in the interface;
+/// choice j's conditions read choice j-1's score, so changing `path`
+/// flips the whole chain.
+pub fn adventure(k: usize, size: usize) -> String {
+    let mut s = String::from("<numberInput name=\"path\" value=\"1\"/>\n");
+    for j in 0..k {
+        let _ = write!(s, "<conditionalContent name=\"a{j}\">");
+        for b in 1..=4 {
+            let cond = if j == 0 { format!("$path = {b}") } else { format!("$a{}.score = {b}", j - 1) };
+            let open = if b == 4 { "<else>".to_string() } else { format!("<case condition=\"{cond}\">") };
+            let _ = write!(s, "{open}<number name=\"score\">{b}</number><graph>");
+            for i in 0..size.saturating_sub(2) {
+                let _ = write!(s, "<point x=\"{}\" y=\"{}\"/>", (i * b) % 17, (i * 7 + j) % 17);
+            }
+            let _ = write!(s, "</graph>{}", if b == 4 { "</else>" } else { "</case>" });
+        }
+        s.push_str("</conditionalContent>\n");
+    }
+    let _ = writeln!(s, "<number name=\"end\">$a{}.score</number>", k.saturating_sub(1));
+    s
+}
+
+/// Plan 6, load-time choices: N selects of 4 options, each option a
+/// sentence with a `<number>` and a `<math>`, the number copied outside.
+pub fn select(n: usize) -> String {
+    let mut s = String::new();
+    for i in 0..n {
+        let _ = write!(s, "<p><select name=\"s{i}\">");
+        for o in 1..=4 {
+            let _ = write!(s, "<option>Pick {o}: <number name=\"v\">{}</number> <math name=\"m\">x+{o}</math></option>", i * 4 + o);
+        }
+        let _ = writeln!(s, "</select> $s{i}.v</p>");
+    }
+    s
+}
+
+/// `select` with only one option's content written out.
+pub fn select_flat(n: usize) -> String {
+    let mut s = String::new();
+    for i in 0..n {
+        let _ = writeln!(s, "<p>Pick 1: <number name=\"v{i}\">{}</number> <math name=\"m{i}\">x+1</math> $v{i}</p>", i * 4 + 1);
+    }
+    s
+}
+
+/// The mechanism threshold sweep: one reactive choice of 4 branches of
+/// `size` points each (flipped by `n`, and each reading it), next to
+/// `background` free points in their own graph.
+pub fn choice_sweep(size: usize, background: usize) -> String {
+    let mut s = String::from("<numberInput name=\"n\" value=\"1\"/>\n<graph name=\"g\">");
+    for i in 0..background.max(1) {
+        let _ = write!(s, "<point name=\"p{i}\" x=\"{}\" y=\"{}\"/>", i % 20, (i * 7) % 20);
+    }
+    s.push_str("</graph>\n<conditionalContent name=\"cc\">");
+    for b in 1..=4 {
+        let open = if b == 4 { "<else>".to_string() } else { format!("<case condition=\"$n = {b}\">") };
+        let _ = write!(s, "{open}<graph>");
+        // Derived, so an inactive built branch costs work on every tick.
+        for i in 0..size {
+            let _ = write!(s, "<point x=\"$n + {}\" y=\"{}\"/>", (i * b) % 17, i % 13);
+        }
+        let _ = write!(s, "</graph>{}", if b == 4 { "</else>" } else { "</case>" });
+    }
+    s.push_str("</conditionalContent>\n");
+    s
+}
+
+/// The worst case for keeping branches built: one reactive choice of 4
+/// branches, each a graph of `n` curves that read `a`, so dragging `a`
+/// resamples the inactive branches' curves too.
+pub fn choice_curves(n: usize) -> String {
+    let mut s = String::from("<numberInput name=\"n\" value=\"1\"/>\n<graph name=\"g\"><point name=\"p0\" x=\"1\" y=\"1\"/></graph>\n<conditionalContent name=\"cc\">");
+    for b in 1..=4 {
+        let open = if b == 4 { "<else>".to_string() } else { format!("<case condition=\"$n = {b}\">") };
+        let _ = write!(s, "{open}<graph>");
+        for i in 0..n {
+            let _ = write!(s, "<function>$p0.x x^2 + {}</function>", (i * b) % 7);
+        }
+        let _ = write!(s, "</graph>{}", if b == 4 { "</else>" } else { "</case>" });
+    }
+    s.push_str("</conditionalContent>\n");
+    s
+}
+
 pub fn from_spec(spec: &str) -> Option<String> {
     let (shape, size) = spec.split_once('-')?;
     Some(match shape {
@@ -357,6 +496,18 @@ pub fn from_spec(spec: &str) -> Option<String> {
             let (n, l) = size.split_once('x')?;
             grid(n.parse().ok()?, l.parse().ok()?)
         }
+        "wording" => wording(size.parse().ok()?),
+        "wordingflat" => wording_flat(size.parse().ok()?),
+        "adventure" => adventure(size.parse().ok()?, 2000),
+        "wordingall" => wording_all(size.parse().ok()?),
+        "choicecurves" => choice_curves(size.parse().ok()?),
+        "select" => select(size.parse().ok()?),
+        "selectall" => select_all(size.parse().ok()?),
+        "selectflat" => select_flat(size.parse().ok()?),
+        "choicesweep" => {
+            let (n, d) = size.split_once('x')?;
+            choice_sweep(n.parse().ok()?, d.parse().ok()?)
+        }
         _ => return None,
     })
 }
@@ -380,6 +531,21 @@ pub const DEFAULT_SWEEP: &[&str] = &[
     "answers-10", "answers-100", "answers-1000", "answers-10000",
     "curves-10", "curves-100", "curves-1000",
     "symchain-10", "symchain-100", "symchain-1000", "symchain-10000",
+    "wording-100", "wording-1000", "wording-10000",
+    "wordingflat-100", "wordingflat-1000", "wordingflat-10000",
+    "adventure-1", "adventure-3", "adventure-5",
+    "select-100", "select-1000", "select-10000",
+    "selectflat-100", "selectflat-1000", "selectflat-10000",
+    "wordingall-100", "wordingall-1000", "wordingall-10000",
+    "selectall-100", "selectall-1000", "selectall-10000",
+];
+
+/// The plan 6 mechanism sweep: branch size (points per branch) by
+/// background size (free points elsewhere).
+pub const CHOICE_SWEEP: &[&str] = &[
+    "choicesweep-10x100", "choicesweep-100x100", "choicesweep-1000x100", "choicesweep-10000x100",
+    "choicesweep-10x10000", "choicesweep-100x10000", "choicesweep-1000x10000", "choicesweep-10000x10000",
+    "choicesweep-10x50000", "choicesweep-100x50000", "choicesweep-1000x50000", "choicesweep-10000x50000",
 ];
 
 /// The current-core counterpart of a spec, for the baseline measurement.

@@ -18,9 +18,16 @@
 use super::*;
 
 /// Largest reactive choice, in template elements across its branches, that
-/// stays built rather than rebuilding on a change. Set from the plan 6
-/// threshold sweep; `CELLS_CHOICE=built|rebuild` forces one mechanism.
-const BUILT_MAX_ELEMS: usize = 2000;
+/// stays built rather than rebuilding on a change; a curve counts as
+/// `CURVE_WEIGHT` elements. From the plan 6 sweep: a built flip stays under
+/// 0.3 ms with 40,000 points in the branches, while a rebuild flip costs a
+/// whole-document build (21 ms beside 10,000 points, 150 ms beside
+/// 50,000), so size alone rarely argues for rebuilding. What does is the
+/// memory of every branch and the work inactive branches still do each
+/// tick, which curves dominate (200 sample cells, resampled when a value
+/// they read changes). `CELLS_CHOICE=built|rebuild` forces one mechanism.
+const BUILT_MAX_WEIGHT: usize = 200_000;
+const CURVE_WEIGHT: usize = 50;
 
 /// `Choose` reads the choice cell and one cell per branch; `First` one
 /// condition per case. Vector operators read at most `geo::MAX_VEC_IN`.
@@ -138,7 +145,9 @@ impl<'a> Compiler<'a> {
         if conds.len() > crate::geo::MAX_VEC_IN {
             return Err(Error::Unsupported(format!("a <conditionalContent> with more than {} cases", crate::geo::MAX_VEC_IN)));
         }
-        plan.set(0, SourcePlan::vector(VecOp::First { n: conds.len() as u8 }, conds));
+        // After the conditions, so creation order stays an evaluation order.
+        let first = plan.hidden(SourcePlan::vector(VecOp::First { n: conds.len() as u8 }, conds));
+        plan.set(0, SourcePlan::own(first));
         self.c.templates[t].elems[e].props = plan.finish();
         Ok(())
     }
@@ -163,6 +172,7 @@ impl<'a> Compiler<'a> {
     /// mechanism of each reactive choice.
     pub(super) fn finish_choices(&mut self) -> Result<()> {
         let force = std::env::var("CELLS_CHOICE").ok();
+        let sizes = self.template_sizes();
         for cid in 0..self.c.choices.len() {
             let def = &self.c.choices[cid];
             // A conditional content without an else has an implicit empty
@@ -209,7 +219,7 @@ impl<'a> Compiler<'a> {
                 && match force.as_deref().or(attr.as_deref().map(str::trim)) {
                     Some("built") => true,
                     Some("rebuild") => false,
-                    _ => self.branch_size(cid) <= BUILT_MAX_ELEMS,
+                    _ => def.branches.iter().map(|&b| sizes[b]).sum::<usize>() <= BUILT_MAX_WEIGHT,
                 };
             let def = &mut self.c.choices[cid];
             def.iface = iface;
@@ -256,21 +266,18 @@ impl<'a> Compiler<'a> {
         Error::NotInInterface { choice, name: name.to_string(), reason }
     }
 
-    /// Template elements across a choice's branches, nested templates included.
-    fn branch_size(&self, cid: ChoiceId) -> usize {
-        let branches = &self.c.choices[cid].branches;
-        let mut size = 0;
-        for (i, tpl) in self.c.templates.iter().enumerate() {
-            let mut cur = Some(i);
-            while let Some(c) = cur {
-                if branches.contains(&c) {
-                    size += tpl.elems.len();
-                    break;
-                }
-                cur = self.c.templates[c].parent.map(|p| p.0);
+    /// Weight per template (elements, a curve counting `CURVE_WEIGHT`),
+    /// nested templates included. A nested template is created after its
+    /// parent, so one backward pass sums them.
+    fn template_sizes(&self) -> Vec<usize> {
+        let weight = |e: &Elem| if matches!(e.kind, ComponentKind::Function | ComponentKind::Derivative) { CURVE_WEIGHT } else { 1 };
+        let mut sizes: Vec<usize> = self.c.templates.iter().map(|t| t.elems.iter().map(weight).sum()).collect();
+        for i in (1..self.c.templates.len()).rev() {
+            if let Some((p, _)) = self.c.templates[i].parent {
+                sizes[p] += sizes[i];
             }
         }
-        size
+        sizes
     }
 
     /// The step for interface name `name` of choice `cid`, and the element
