@@ -77,6 +77,23 @@ pub enum ComponentKind {
     /// essential math cell that a submit request sets to the response;
     /// `credit` compares it with `correct` (`symbolicEquality`: as written).
     Answer = 24,
+    /// `<text>` with literal content: `value` is a fixed cell holding the
+    /// string id of its text (plan 6). A cell's meaning is a property of
+    /// the operators around it, so a text value never reaches a numeric one.
+    Text = 25,
+    /// `<conditionalContent>`, a reactive choice (plan 6, ADR 0009). Its
+    /// `choice` cell is the 1-based position of the first case whose
+    /// condition holds, or 0. Its children are `Case` components.
+    ConditionalContent = 26,
+    /// One built branch of a reactive choice: `active` is 1 while it is the
+    /// chosen one. Its children are the branch's content. A renderer shows
+    /// the children of an active case only.
+    Case = 27,
+    /// `<select>`, a load-time choice: its children are the content of the
+    /// options it picked, flattened like a repeat's iterations.
+    Select = 28,
+    /// `<group>`: a rendered container with no props of its own.
+    Group = 29,
 }
 
 /// Largest polygon the fixed prop layout holds.
@@ -267,7 +284,7 @@ const SEQUENCE_VALUE_PROPS: &[PropDef] = &[
 ];
 
 impl ComponentKind {
-    pub const ALL: [ComponentKind; 25] = [
+    pub const ALL: [ComponentKind; 30] = [
         Self::Document,
         Self::Graph,
         Self::Point,
@@ -293,6 +310,11 @@ impl ComponentKind {
         Self::Function,
         Self::Derivative,
         Self::Answer,
+        Self::Text,
+        Self::ConditionalContent,
+        Self::Case,
+        Self::Select,
+        Self::Group,
     ];
 
     pub fn from_tag(tag: &str) -> Option<Self> {
@@ -321,6 +343,11 @@ impl ComponentKind {
             "function" => Self::Function,
             "derivative" => Self::Derivative,
             "answer" => Self::Answer,
+            "text" => Self::Text,
+            "conditionalContent" => Self::ConditionalContent,
+            "case" => Self::Case,
+            "select" => Self::Select,
+            "group" => Self::Group,
             _ => return None,
         })
     }
@@ -352,6 +379,11 @@ impl ComponentKind {
             Self::Function => "function",
             Self::Derivative => "derivative",
             Self::Answer => "answer",
+            Self::Text => "text",
+            Self::ConditionalContent => "conditionalContent",
+            Self::Case => "case",
+            Self::Select => "select",
+            Self::Group => "group",
         }
     }
 
@@ -419,7 +451,10 @@ impl ComponentKind {
             Self::StickyGroup => STICKY_GROUP,
             Self::Function | Self::Derivative => CURVE,
             Self::Answer => ANSWER,
-            Self::PointList | Self::P | Self::Setup => &[],
+            Self::Text => const { &[PropDef { name: "value", default: f64::NAN, from: PropFrom::Children, attr: None, bind: None, ref_prop: None }] },
+            Self::ConditionalContent => const { &[planned("choice")] },
+            Self::Case => const { &[planned("active")] },
+            Self::PointList | Self::P | Self::Setup | Self::Select | Self::Group => &[],
         }
     }
 
@@ -489,21 +524,33 @@ impl ComponentKind {
     pub fn default_prop(self) -> Option<&'static str> {
         match self {
             Self::Point => Some("coords"),
-            Self::Number | Self::NumberInput | Self::Op | Self::Slider | Self::SequenceValue | Self::BooleanInput | Self::Math | Self::Evaluate | Self::MathInput => Some("value"),
+            Self::Number | Self::NumberInput | Self::Op | Self::Slider | Self::SequenceValue | Self::BooleanInput | Self::Math | Self::Evaluate | Self::MathInput | Self::Text => Some("value"),
             Self::Function | Self::Derivative => Some("expr"),
             Self::Answer => Some("credit"),
             Self::Document | Self::Graph | Self::RepeatForSequence | Self::Collect | Self::Circle | Self::Line | Self::LineSegment | Self::Polygon | Self::PointList | Self::P | Self::Setup | Self::StickyGroup => None,
+            Self::ConditionalContent | Self::Case | Self::Select | Self::Group => None,
         }
     }
 
     /// Whether `$name` as a child may produce a copy of this component.
     pub fn copyable(self) -> bool {
-        !matches!(self, Self::Document | Self::Graph | Self::RepeatForSequence | Self::Collect | Self::PointList | Self::P | Self::Setup | Self::StickyGroup)
+        !matches!(self, Self::Document | Self::Graph | Self::RepeatForSequence | Self::Collect | Self::PointList | Self::P | Self::Setup | Self::StickyGroup | Self::ConditionalContent | Self::Case | Self::Select | Self::Group)
     }
 
     /// Containers whose children are rendered; `extend` copies them deeply.
     pub fn container(self) -> bool {
-        matches!(self, Self::Graph | Self::P | Self::Setup | Self::StickyGroup)
+        matches!(self, Self::Graph | Self::P | Self::Setup | Self::StickyGroup | Self::Group)
+    }
+
+    /// The prop whose value decides the document's structure, for the
+    /// kinds that have one: a repeat's iteration count, and the choice of a
+    /// reactive choice the core rebuilds on a change (plan 6).
+    pub fn structural_prop(self) -> Option<&'static str> {
+        match self {
+            Self::RepeatForSequence => Some("count"),
+            Self::ConditionalContent => Some("choice"),
+            _ => None,
+        }
     }
 
     /// How a member of a sticky group attracts and snaps: its shape, the

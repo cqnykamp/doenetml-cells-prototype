@@ -330,7 +330,7 @@ impl<'a> Compiler<'a> {
         for step in &plan.steps {
             match step {
                 Step::Elem(x) => e = Some(*x),
-                Step::Index(_) => return Ok(None),
+                Step::Index(_) | Step::Iface(..) => return Ok(None),
             }
         }
         let Some(e) = e else { return Ok(None) };

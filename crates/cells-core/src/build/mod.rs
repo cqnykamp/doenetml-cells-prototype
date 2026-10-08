@@ -46,6 +46,7 @@ use crate::geo::{Pivot, RigidOpts, VecOp};
 use crate::ops::{Instr, OpSpec, Post, SymKind};
 use crate::program::{Program, Sym};
 
+mod choice;
 mod copies;
 mod emit;
 mod expand;
@@ -56,6 +57,7 @@ type SlotId = u32;
 type TemplateId = usize;
 type ElemId = usize;
 type PlanId = usize;
+type ChoiceId = usize;
 
 // ---------------------------------------------------------------------------
 // Compiled templates
@@ -168,6 +170,35 @@ enum Body {
     PointList {
         from: PlanId,
     },
+    /// A `<conditionalContent>` or `<select>` (plan 6): `Compiled::choices`.
+    Choice(ChoiceId),
+}
+
+/// A choice as compiled (plan 6, ADR 0009): one template per branch, its
+/// branch interface, and how it chooses.
+#[derive(Debug, Clone)]
+struct ChoiceDef {
+    /// The choice element: (template, element).
+    at: (TemplateId, ElemId),
+    /// `<conditionalContent>` (reactive) or `<select>` (load-time).
+    reactive: bool,
+    /// One template per case or option, in document order.
+    branches: Vec<TemplateId>,
+    /// Reactive: each case's `condition` attribute (None: an else).
+    conditions: Vec<Option<u32>>,
+    /// Load-time: picks, with replacement or not, and a weight per option.
+    num_to_select: u32,
+    with_replacement: bool,
+    weights: Vec<f64>,
+    /// The branch interface (`CONTEXT.md`): name -> kind and the element
+    /// carrying it in each branch. Filled once every element is planned.
+    iface: HashMap<String, (ComponentKind, Vec<ElemId>)>,
+    /// Interface names that references use, in first-use order; a
+    /// `Step::Iface` holds an index here.
+    used: Vec<String>,
+    /// Reactive: keep every branch built (an interface name is a `Choose`
+    /// over the branches) rather than rebuild when the choice changes.
+    built: bool,
 }
 
 /// The template itself, as the parent of its top-level elements.
@@ -220,6 +251,9 @@ enum Step {
     Elem(ElemId),
     /// `[k]` on the repeat or collect just selected.
     Index(IndexPlan),
+    /// Interface name `used[k]` of a choice: `$cc.x`, or `$s[1].x` after
+    /// an index into a select's picks.
+    Iface(ChoiceId, u32),
 }
 
 #[derive(Debug, Clone)]
@@ -344,6 +378,7 @@ struct Compiled<'a> {
     /// The math text of templates that may be symbolic, with each `$ref`
     /// written `#plan` (see `cells_sym::parse`).
     sym_text: HashMap<ExprId, String>,
+    choices: Vec<ChoiceDef>,
 }
 
 struct Compiler<'a> {
@@ -369,6 +404,8 @@ pub struct Prior {
     scopes: Vec<(ScopeId, NodeId, u32)>,
     scope_index: HashMap<(ScopeId, NodeId, u32), ScopeId>,
     counts: HashMap<(ScopeId, NodeId), u32>,
+    /// The document seed load-time choices draw from (plan 6).
+    pub seed: u64,
     /// `values[scope][template slot]`
     values: Vec<Vec<Option<f64>>>,
 }
@@ -387,7 +424,7 @@ impl Prior {
             }
             row[slot as usize] = Some(v);
         }
-        Prior { scopes: doc.structure.scopes.clone(), scope_index: doc.structure.scope_index.clone(), counts, values }
+        Prior { scopes: doc.structure.scopes.clone(), scope_index: doc.structure.scope_index.clone(), counts, values, seed: doc.structure.seed }
     }
 
     /// Non-destructive variant for callers that keep the document.
@@ -498,6 +535,20 @@ enum Resolved {
     Missing,
 }
 
+/// One expanded choice.
+#[derive(Debug, Clone)]
+struct ChoiceInst {
+    def: ChoiceId,
+    comp: CompIdx,
+    /// The scope of each built branch (a select's picks in order; every
+    /// case of a built reactive choice; the active case of a rebuilt one).
+    scopes: Vec<ScopeId>,
+    /// The branch each of `scopes` instantiates.
+    branch_of: Vec<usize>,
+    /// Built reactive choice: one `Choose` component per `ChoiceDef::used`.
+    iface_comps: Vec<CompIdx>,
+}
+
 /// One instantiated template element.
 #[derive(Debug, Clone, Copy)]
 struct Instance {
@@ -544,6 +595,9 @@ struct Builder<'c, 'a> {
     /// Point lists awaiting their synthesized children.
     pointlists: Vec<CompIdx>,
     collected: HashMap<CompIdx, Vec<CompIdx>>,
+    /// Expanded choices, and the instance each choice component owns.
+    choice_insts: Vec<ChoiceInst>,
+    comp_choice: HashMap<CompIdx, usize>,
     missing: Option<SlotId>,
     arena: Arena,
     root: CompIdx,

@@ -100,6 +100,25 @@ pub enum VecOp {
     ProjectCircle,
     /// Inputs (x, y, x1, y1, x2, y2); outputs (x', y').
     ProjectLine,
+    /// A reactive choice's choice cell (plan 6): inputs are its `n`
+    /// condition cells; the output is the 1-based position of the first
+    /// that holds (nonzero, not NaN), or 0. No inverse: a request cannot
+    /// flip a branch.
+    First { n: u8 },
+    /// An interface name of a choice whose branches are all built: inputs
+    /// are the choice cell and the name's cell in each of the `n` branches;
+    /// the output is the active branch's cell (NaN when none is active).
+    /// The inverse writes the active branch only.
+    Choose { n: u8 },
+}
+
+/// Most inputs a vector operator reads.
+pub const MAX_VEC_IN: usize = 64;
+
+/// The input position of the active branch of a `Choose` over `n`
+/// branches, from its choice cell's value.
+fn active_branch(choice: f64, n: u8) -> Option<usize> {
+    (choice >= 1.0 && choice <= n as f64).then_some(choice as usize)
 }
 
 impl VecOp {
@@ -114,6 +133,8 @@ impl VecOp {
             VecOp::LinePointsFromCoeffs => 3,
             VecOp::ProjectCircle => 5,
             VecOp::ProjectLine => 6,
+            VecOp::First { n } => n as usize,
+            VecOp::Choose { n } => n as usize + 1,
         }
     }
 
@@ -125,6 +146,7 @@ impl VecOp {
             VecOp::PolarSlope | VecOp::PolarDirection { .. } => 2,
             VecOp::LinePointsFromCoeffs => 4,
             VecOp::ProjectCircle | VecOp::ProjectLine => 2,
+            VecOp::First { .. } | VecOp::Choose { .. } => 1,
         }
     }
 
@@ -139,6 +161,8 @@ impl VecOp {
             VecOp::LinePointsFromCoeffs => "linePointsFromCoeffs",
             VecOp::ProjectCircle => "projectCircle",
             VecOp::ProjectLine => "projectLine",
+            VecOp::First { .. } => "first",
+            VecOp::Choose { .. } => "choose",
         }
     }
 
@@ -192,6 +216,12 @@ impl VecOp {
                 let (x, y) = project_line(inp[0], inp[1], inp[2], inp[3], inp[4], inp[5]);
                 out[0] = x;
                 out[1] = y;
+            }
+            VecOp::First { n } => {
+                out[0] = inp[..n as usize].iter().position(|&c| c != 0.0 && !c.is_nan()).map_or(0.0, |k| (k + 1) as f64);
+            }
+            VecOp::Choose { n } => {
+                out[0] = active_branch(inp[0], n).map_or(f64::NAN, |k| inp[k]);
             }
         }
     }
@@ -294,6 +324,14 @@ impl VecOp {
                 out.write(inputs[1], y);
                 true
             }
+            VecOp::First { .. } => false,
+            VecOp::Choose { n } => match (active_branch(inp[0], n), desired[0]) {
+                (Some(k), Some(d)) => {
+                    out.write(inputs[k], d);
+                    true
+                }
+                _ => false,
+            },
         }
     }
 }

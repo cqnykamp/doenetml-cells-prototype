@@ -159,7 +159,7 @@ fn error_cases() {
     assert!(matches!(load(r#"<point name="p"/><op kind="scale" args="$p.x"/>"#).unwrap_err(), Error::MissingParam { .. }));
     assert!(matches!(load(r#"<point name="p"/>$p.x.y"#).unwrap_err(), Error::PathTooDeep(_)));
     assert!(matches!(load(r#"<graph name="g"/>$g"#).unwrap_err(), Error::UncopyableKind(_)));
-    assert!(matches!(load(r#"<text>hi</text>"#).unwrap_err(), Error::UnsupportedTag(_)));
+    assert!(matches!(load(r#"<textInput/>"#).unwrap_err(), Error::UnsupportedTag(_)));
 }
 
 #[test]

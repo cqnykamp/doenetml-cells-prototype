@@ -58,6 +58,10 @@ pub enum Error {
     BadMath { text: String, reason: String },
     #[error("unsupported: {0}")]
     Unsupported(String),
+    #[error("not allowed (ADR 0009): {0}")]
+    Banned(String),
+    #[error("'{name}' is not in the branch interface of '{choice}': {reason}")]
+    NotInInterface { choice: String, name: String, reason: String },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

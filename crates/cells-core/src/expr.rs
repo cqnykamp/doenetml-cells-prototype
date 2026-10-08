@@ -213,6 +213,8 @@ pub fn tokenize(text: &str, out: &mut Vec<Token>) -> Result<(), String> {
         } else {
             out.push(match c {
                 '+' | '-' | '*' | '/' | '^' => Token::Op(c),
+                // Only conditions use these; the math parser rejects them.
+                '<' | '>' | '!' | '&' | '|' => Token::Op(c),
                 '(' => Token::LParen,
                 ')' => Token::RParen,
                 ',' => Token::Comma,

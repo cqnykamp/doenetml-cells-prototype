@@ -43,6 +43,8 @@ impl<'c, 'a> Builder<'c, 'a> {
             collects: Vec::new(),
             pointlists: Vec::new(),
             collected: HashMap::new(),
+            choice_insts: Vec::new(),
+            comp_choice: HashMap::new(),
             missing: None,
             arena: Arena::default(),
             root: 0,
@@ -190,6 +192,10 @@ impl<'c, 'a> Builder<'c, 'a> {
                     self.collects.push(comp);
                     Vec::new()
                 }
+                Body::Choice(cid) => {
+                    let node = self.c.templates[t].elems[e].node;
+                    self.expand_choice(cid, node, scope, comp)?
+                }
                 Body::PointList { .. } => {
                     self.pointlists.push(comp);
                     Vec::new()
@@ -262,6 +268,7 @@ impl<'c, 'a> Builder<'c, 'a> {
         for &(idx, plan, scope, _) in pending.iter().filter(|p| p.3) {
             self.place(idx, plan, scope)?;
         }
+        self.choice_sources();
         for i in 0..self.instances.len() {
             let inst = self.instances[i];
             self.instance_sources(inst)?;
@@ -818,6 +825,11 @@ impl<'c, 'a> Builder<'c, 'a> {
                         Resolved::Comp(_) => Resolved::Comp(self.scope_comps[sc as usize][*e]),
                     };
                 }
+                Step::Iface(cid, u) => {
+                    let (next, s) = self.resolve_iface(*cid, *u, cur);
+                    cur = next;
+                    sc = s;
+                }
                 Step::Index(ip) => {
                     let k = self.index_value(ip, scope);
                     cur = match cur {
@@ -836,6 +848,10 @@ impl<'c, 'a> Builder<'c, 'a> {
                             ComponentKind::PointList => {
                                 let (s, n) = (self.comps.child_start[c as usize] as usize, self.comps.child_count[c as usize] as usize);
                                 if k >= 1 && (k as usize) <= n { Resolved::Comp(self.comps.child_list[s + k as usize - 1]) } else { Resolved::Missing }
+                            }
+                            ComponentKind::Select => {
+                                let inst = &self.choice_insts[self.comp_choice[&c]];
+                                if k < 1 || k as usize > inst.scopes.len() { Resolved::Missing } else { Resolved::Iter(c, inst.scopes[(k - 1) as usize]) }
                             }
                             _ => return Err(Error::NotIndexable(p.display.clone())),
                         },

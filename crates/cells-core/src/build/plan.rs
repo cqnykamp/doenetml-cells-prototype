@@ -15,12 +15,15 @@ enum ElemShape {
     /// `<function>`, `<derivative>`, `<answer>` (`plan_symbolic`).
     Symbolic,
     Collect,
+    /// `<conditionalContent>`, `<select>` (`choice.rs`).
+    Choice,
+    Text,
     Generic(Option<PlanId>),
 }
 
 impl<'a> Compiler<'a> {
     pub(super) fn compile(dast: &'a Dast) -> Result<Compiled<'a>> {
-        let mut cp = Compiler { c: Compiled { dast, templates: vec![Template::default()], plans: Vec::new(), arena: Arena::default(), sym_text: HashMap::new() }, pending_elems: Vec::new(), pending_macros: Vec::new() };
+        let mut cp = Compiler { c: Compiled { dast, templates: vec![Template::default()], plans: Vec::new(), arena: Arena::default(), sym_text: HashMap::new(), choices: Vec::new() }, pending_elems: Vec::new(), pending_macros: Vec::new() };
         // Template 0 is the document: its one child is the root component.
         let doc_el = dast.children(Dast::ROOT).iter().copied().find(|&n| dast.kind(n) == NodeKind::Element && dast.str(n) == "document");
         let children = match doc_el {
@@ -53,6 +56,7 @@ impl<'a> Compiler<'a> {
                 }
             }
         }
+        cp.finish_choices()?;
         // Slot offsets, now that planned kinds know their hidden slot count.
         for tpl in &mut cp.c.templates {
             let mut off = 0;
@@ -118,6 +122,11 @@ impl<'a> Compiler<'a> {
         let d = self.c.dast;
         let tag = d.str(el);
         let kind = ComponentKind::from_tag(tag).ok_or_else(|| Error::UnsupportedTag(tag.to_string()))?;
+        // `<group rendered="c">` is a conditional content with one case.
+        let kind = if kind == ComponentKind::Group && d.attr(el, "rendered").is_some() { ComponentKind::ConditionalContent } else { kind };
+        if kind == ComponentKind::Case {
+            return Err(Error::Unsupported("<case> outside a <conditionalContent>".into()));
+        }
         let name = self.attr_name_str(el, "name").unwrap_or(NONE);
         let e = self.push_elem(t, el, kind, name, name_scope)?;
         self.pending_elems.push((t, e));
@@ -151,6 +160,7 @@ impl<'a> Compiler<'a> {
                 self.c.templates[t].elems[e].body = Body::Repeat { template: sub };
             }
             ComponentKind::Collect | ComponentKind::PointList => {}
+            ComponentKind::ConditionalContent | ComponentKind::Select => self.add_choice(t, e, el)?,
             // A number's children are its value, not rendered children; the
             // planned kinds read their children themselves (a line's equation,
             // a point's constraints).
@@ -243,6 +253,8 @@ impl<'a> Compiler<'a> {
                 Ok(())
             }
             ElemShape::Symbolic => self.plan_symbolic(t, e),
+            ElemShape::Choice => self.plan_choice(t, e),
+            ElemShape::Text => self.plan_text(t, e),
             ElemShape::Collect => {
                 let from = d.attr(el, "from").and_then(|a| self.single_macro(a)).ok_or(Error::BadCollect)?;
                 let type_text = d.attr(el, "componentType").and_then(|a| self.attr_text(a)).ok_or(Error::BadCollect)?;
@@ -290,6 +302,12 @@ impl<'a> Compiler<'a> {
             None => None,
         };
         self.c.templates[t].elems[e].extend = extend;
+        if matches!(kind, ComponentKind::ConditionalContent | ComponentKind::Select) {
+            if extend.is_some() {
+                return Err(Error::Banned(format!("extend on a <{}>: reference its interface names instead", kind.tag())));
+            }
+            return Ok(ElemShape::Choice);
+        }
         Ok(match (kind, extend) {
             (k, Some(p)) if k.container() => ElemShape::ContainerCopy(p),
             (ComponentKind::PointList, _) => return Err(Error::BadValue { attr: "extend".into(), text: "<pointList> needs extend=\"$shape.points\"".into() }),
@@ -297,6 +315,7 @@ impl<'a> Compiler<'a> {
             (ComponentKind::Math, _) => ElemShape::Math,
             (ComponentKind::Function | ComponentKind::Derivative | ComponentKind::Answer, _) => ElemShape::Symbolic,
             (ComponentKind::Collect, _) => ElemShape::Collect,
+            (ComponentKind::Text, None) => ElemShape::Text,
             _ => ElemShape::Generic(extend),
         })
     }
@@ -449,6 +468,25 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
+    /// `<text>`: literal text is a fixed cell holding its string id; a lone
+    /// reference aliases another text's value.
+    fn plan_text(&mut self, t: TemplateId, e: ElemId) -> Result<()> {
+        let d = self.c.dast;
+        let (el, scope) = {
+            let x = &self.c.templates[t].elems[e];
+            (x.node, x.name_scope)
+        };
+        let nodes: Vec<NodeId> = d.children(el).iter().copied().filter(|&n| !self.is_blank(n)).collect();
+        let plan = match nodes.as_slice() {
+            [] => SourcePlan::Fixed(f64::NAN),
+            [n] if d.kind(*n) == NodeKind::Text => SourcePlan::Fixed(d.str_id(*n) as f64),
+            [n] if d.kind(*n) == NodeKind::Macro => SourcePlan::reference(self.plan_ref(t, scope, *n)?),
+            _ => return Err(Error::Unsupported("<text> whose content mixes text, references or elements".into())),
+        };
+        self.c.templates[t].elems[e].props = vec![plan];
+        Ok(())
+    }
+
     /// An on/off attribute that may also take a value: present and not
     /// `false` or `none` (`simplify`, `simplify="full"`).
     fn attr_on(&self, el: NodeId, name: &str) -> bool {
@@ -563,6 +601,9 @@ impl<'a> Compiler<'a> {
                     sym.push_str(d.str(n));
                     crate::expr::tokenize(d.str(n), &mut toks).map_err(|reason| Error::BadMath { text: text.clone(), reason })?;
                 }
+                NodeKind::Element if matches!(d.str(n), "conditionalContent" | "select") => {
+                    return Err(Error::Unsupported(format!("a <{}> inside math: each branch would have to yield the same type", d.str(n))));
+                }
                 NodeKind::Macro => {
                     text.push('$');
                     text.push_str(&d.macro_display(n));
@@ -603,7 +644,7 @@ impl<'a> Compiler<'a> {
         for step in &plan.steps {
             match step {
                 Step::Elem(e) => last = Some(*e),
-                Step::Index(_) => return None,
+                Step::Index(_) | Step::Iface(..) => return None,
             }
         }
         last
@@ -746,9 +787,38 @@ impl<'a> Compiler<'a> {
         // into a repeat (inside an iteration, before a name picks an element).
         let mut cur_elem = Some(e0);
         let mut prop = None;
+        // Right after `$s[k]` on a select: the next name is an interface name.
+        let mut in_select: Option<ChoiceId> = None;
+        // Past an interface name only props may follow.
+        let mut after_iface = false;
         for (i, &part) in parts.iter().enumerate() {
             if i > 0 {
                 let name = d.strings.get(names[i]);
+                let choice_here = match cur_elem {
+                    Some(e) if !after_iface => match self.c.templates[cur_t].elems[e].body {
+                        Body::Choice(cid) if self.c.templates[cur_t].elems[e].kind.prop_index(name).is_none() => Some(cid),
+                        _ => None,
+                    },
+                    _ => in_select.take(),
+                };
+                if let Some(cid) = choice_here {
+                    if cur_elem.is_some() && !self.c.choices[cid].reactive {
+                        // `$s.x` is `$s[1].x` when the select picks one option.
+                        if self.c.choices[cid].num_to_select != 1 {
+                            return Err(Error::Banned(format!("'${display}' needs an index: the select picks {} options", self.c.choices[cid].num_to_select)));
+                        }
+                        steps.push(Step::Index(IndexPlan { terms: vec![IndexTerm::Const(1)] }));
+                    }
+                    let (step, tpl, x) = self.iface_step(cid, name, &display)?;
+                    steps.push(step);
+                    cur_t = tpl;
+                    cur_elem = Some(x);
+                    after_iface = true;
+                    if d.part_indices(part).next().is_some() {
+                        return Err(Error::Banned(format!("'${display}': an index after an interface name")));
+                    }
+                    continue;
+                }
                 match cur_elem {
                     None => {
                         let e = self.child_named(cur_t, ROOT_SCOPE, name)?.ok_or_else(|| Error::UnknownName(display.clone()))?;
@@ -756,7 +826,7 @@ impl<'a> Compiler<'a> {
                         cur_elem = Some(e);
                     }
                     // A descendant of the component: `$g.p`.
-                    Some(e) if self.child_named(cur_t, e, name)?.is_some() => {
+                    Some(e) if !after_iface && self.child_named(cur_t, e, name)?.is_some() => {
                         let child = self.child_named(cur_t, e, name)?.unwrap();
                         steps.push(Step::Elem(child));
                         cur_elem = Some(child);
@@ -840,6 +910,9 @@ impl<'a> Compiler<'a> {
             }
             for expr in d.part_indices(part) {
                 let Some(e) = cur_elem else {
+                    if in_select.is_some() {
+                        return Err(Error::Banned(format!("'${display}' reaches into a select's option by position; name the content and use $s[k].name")));
+                    }
                     return Err(Error::NotIndexable(display));
                 };
                 // `$p[2]`: a coordinate of a point.
@@ -867,6 +940,12 @@ impl<'a> Compiler<'a> {
                         steps.push(Step::Index(ip));
                         cur_elem = Some(e);
                     }
+                    Body::Choice(cid) if !self.c.choices[cid].reactive && !after_iface => {
+                        let ip = self.plan_index(t, expr, &display)?;
+                        steps.push(Step::Index(ip));
+                        cur_elem = None;
+                        in_select = Some(cid);
+                    }
                     _ if self.c.templates[cur_t].elems[e].kind == ComponentKind::PointList => {
                         let ip = self.plan_index(t, expr, &display)?;
                         steps.push(Step::Index(ip));
@@ -875,6 +954,16 @@ impl<'a> Compiler<'a> {
                     _ => return Err(Error::NotIndexable(display)),
                 }
             }
+        }
+        // A bare `$s` names the one option a select picks.
+        if let (Some(e), None, false) = (cur_elem, &prop, after_iface)
+            && let Body::Choice(cid) = self.c.templates[cur_t].elems[e].body
+            && !self.c.choices[cid].reactive
+        {
+            if self.c.choices[cid].num_to_select != 1 {
+                return Err(Error::Banned(format!("'${display}' needs an index: the select picks {} options", self.c.choices[cid].num_to_select)));
+            }
+            steps.push(Step::Index(IndexPlan { terms: vec![IndexTerm::Const(1)] }));
         }
         self.c.plans.push(RefPlan { hops, steps, prop, display });
         Ok(self.c.plans.len() - 1)

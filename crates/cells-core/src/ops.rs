@@ -101,6 +101,15 @@ pub enum Op {
     /// `fixAxes`. The flag is still an input, so the gate is an edge in the
     /// graph, like `Shape`'s pivot.
     Gate(CellIdx, CellIdx),
+    /// Comparisons for conditions (plan 6): 1 or 0, and 0 when either side
+    /// is NaN. `Eq` allows a relative error of `EQ_TOL`. No inverses.
+    Lt(CellIdx, CellIdx),
+    Le(CellIdx, CellIdx),
+    Eq(CellIdx, CellIdx),
+    /// 1 when `a` holds (nonzero, not NaN), else 0.
+    Truthy(CellIdx),
+    /// 1 when `a` does not hold.
+    Not(CellIdx),
     /// A symbolic instruction: inputs are `extra[start..start + n]`; the
     /// `n_out` entries after them hold its memo (see `Program::step`).
     Sym(SymKind, u32, u8),
@@ -121,6 +130,19 @@ pub struct Instr {
 #[inline(always)]
 pub fn js_round(x: f64) -> f64 {
     (x + 0.5).floor()
+}
+
+/// Relative tolerance of `Eq`, so `0.1 + 0.2 = 0.3` holds in a condition.
+pub const EQ_TOL: f64 = 1e-12;
+
+#[inline(always)]
+fn holds(x: f64) -> bool {
+    x != 0.0 && !x.is_nan()
+}
+
+#[inline(always)]
+fn bit(b: bool) -> f64 {
+    if b { 1.0 } else { 0.0 }
 }
 
 #[inline(always)]
@@ -163,6 +185,14 @@ impl Op {
             }
             Op::Pow(a, b) => cells[a as usize].powf(cells[b as usize]),
             Op::Gate(a, _) => cells[a as usize],
+            Op::Lt(a, b) => bit(cells[a as usize] < cells[b as usize]),
+            Op::Le(a, b) => bit(cells[a as usize] <= cells[b as usize]),
+            Op::Eq(a, b) => {
+                let (x, y) = (cells[a as usize], cells[b as usize]);
+                bit(x == y || (x - y).abs() <= EQ_TOL * x.abs().max(y.abs()))
+            }
+            Op::Truthy(a) => bit(holds(cells[a as usize])),
+            Op::Not(a) => bit(!holds(cells[a as usize])),
             Op::Vec(..) => unreachable!("vector operators are evaluated with eval_vec"),
             Op::Sym(..) => unreachable!("symbolic instructions are evaluated by the program"),
         }
@@ -249,6 +279,8 @@ impl Op {
             // constant-expression inverse needs the engine, so the request
             // engine handles it (`invert.rs`).
             Op::Pow(..) | Op::Sym(..) => return None,
+            // A request cannot change a condition (plan 6).
+            Op::Lt(..) | Op::Le(..) | Op::Eq(..) | Op::Truthy(..) | Op::Not(..) => return None,
             Op::Vec(..) => unreachable!("vector operators are inverted jointly by the program"),
         })
     }
@@ -257,8 +289,8 @@ impl Op {
     #[inline(always)]
     pub fn input_pair(&self) -> (CellIdx, Option<CellIdx>) {
         match *self {
-            Op::Add(a, b) | Op::Sub(a, b) | Op::Mul(a, b) | Op::Div(a, b) | Op::Min(a, b) | Op::Max(a, b) | Op::Default(a, b) | Op::Lerp(a, b, _) | Op::Pow(a, b) | Op::Gate(a, b) => (a, Some(b)),
-            Op::Negate(a) | Op::Round(a) | Op::Floor(a) | Op::Scale(a, _) | Op::Offset(a, _) | Op::Clamp(a, _, _) | Op::NanTo(a, _) => (a, None),
+            Op::Add(a, b) | Op::Sub(a, b) | Op::Mul(a, b) | Op::Div(a, b) | Op::Min(a, b) | Op::Max(a, b) | Op::Default(a, b) | Op::Lerp(a, b, _) | Op::Pow(a, b) | Op::Gate(a, b) | Op::Lt(a, b) | Op::Le(a, b) | Op::Eq(a, b) => (a, Some(b)),
+            Op::Negate(a) | Op::Round(a) | Op::Floor(a) | Op::Scale(a, _) | Op::Offset(a, _) | Op::Clamp(a, _, _) | Op::NanTo(a, _) | Op::Truthy(a) | Op::Not(a) => (a, None),
             Op::Vec(..) | Op::Sym(..) => unreachable!("vector and symbolic operators keep every input in extra"),
         }
     }
@@ -277,7 +309,7 @@ impl Op {
     #[inline]
     pub fn eval_vec(&self, cells: &[f64], extra: &[CellIdx], out: &mut [f64]) {
         let Op::Vec(v, start, n_in, _) = *self else { unreachable!() };
-        let mut inp = [0.0f64; 16];
+        let mut inp = [0.0f64; crate::geo::MAX_VEC_IN];
         let n_in = n_in as usize;
         for (k, &c) in extra[start as usize..start as usize + n_in].iter().enumerate() {
             inp[k] = cells[c as usize];
@@ -326,6 +358,11 @@ impl Op {
             Op::Lerp(..) => "lerp",
             Op::Pow(..) => "pow",
             Op::Gate(..) => "gate",
+            Op::Lt(..) => "lt",
+            Op::Le(..) => "le",
+            Op::Eq(..) => "eq",
+            Op::Truthy(..) => "truthy",
+            Op::Not(..) => "not",
             Op::Vec(v, ..) => v.name(),
             Op::Sym(k, ..) => match k {
                 SymKind::Instantiate { .. } => "instantiate",
@@ -361,6 +398,11 @@ pub enum OpSpec {
     Lerp { t: f64 },
     Pow,
     Gate,
+    Lt,
+    Le,
+    Eq,
+    Truthy,
+    Not,
     Vec(VecOp),
     /// Any number of inputs (a template's leaves); see `SymKind`.
     Sym(SymKind),
@@ -369,8 +411,8 @@ pub enum OpSpec {
 impl OpSpec {
     pub fn arity(&self) -> usize {
         match self {
-            OpSpec::Add | OpSpec::Sub | OpSpec::Mul | OpSpec::Div | OpSpec::Min | OpSpec::Max | OpSpec::Default | OpSpec::Lerp { .. } | OpSpec::Pow | OpSpec::Gate => 2,
-            OpSpec::Negate | OpSpec::Round | OpSpec::Floor | OpSpec::Scale { .. } | OpSpec::Offset { .. } | OpSpec::Clamp { .. } | OpSpec::NanTo { .. } => 1,
+            OpSpec::Add | OpSpec::Sub | OpSpec::Mul | OpSpec::Div | OpSpec::Min | OpSpec::Max | OpSpec::Default | OpSpec::Lerp { .. } | OpSpec::Pow | OpSpec::Gate | OpSpec::Lt | OpSpec::Le | OpSpec::Eq => 2,
+            OpSpec::Negate | OpSpec::Round | OpSpec::Floor | OpSpec::Scale { .. } | OpSpec::Offset { .. } | OpSpec::Clamp { .. } | OpSpec::NanTo { .. } | OpSpec::Truthy | OpSpec::Not => 1,
             OpSpec::Vec(v) => v.n_in(),
             OpSpec::Sym(SymKind::Instantiate { .. } | SymKind::SampleTape { .. }) => usize::MAX,
             OpSpec::Sym(SymKind::Evaluate | SymKind::Derivative) => 1,
@@ -415,6 +457,11 @@ impl OpSpec {
             OpSpec::Lerp { t } => Op::Lerp(inputs[0], inputs[1], t),
             OpSpec::Pow => Op::Pow(inputs[0], inputs[1]),
             OpSpec::Gate => Op::Gate(inputs[0], inputs[1]),
+            OpSpec::Lt => Op::Lt(inputs[0], inputs[1]),
+            OpSpec::Le => Op::Le(inputs[0], inputs[1]),
+            OpSpec::Eq => Op::Eq(inputs[0], inputs[1]),
+            OpSpec::Truthy => Op::Truthy(inputs[0]),
+            OpSpec::Not => Op::Not(inputs[0]),
             OpSpec::Sym(k) => {
                 let (start, n) = park(extra, inputs);
                 extra.extend(std::iter::repeat_n(crate::document::NONE, k.n_out()));
