@@ -98,9 +98,9 @@ pub enum Op {
     Pow(CellIdx, CellIdx),
     /// `a`, whatever the flag. The flag is read only by the inverse, which
     /// drops a request unless the flag is 0: a dynamic `fixed` or
-    /// `fixAxes`. The flag is still an input, so the gate is an edge in the
+    /// `fixAxes`. The flag is still an input, so the hold is an edge in the
     /// graph, like `Shape`'s pivot.
-    Gate(CellIdx, CellIdx),
+    Hold(CellIdx, CellIdx),
     /// Comparisons for conditions (plan 6): 1 or 0, and 0 when either side
     /// is NaN. `Eq` allows a relative error of `EQ_TOL`. No inverses.
     Lt(CellIdx, CellIdx),
@@ -184,7 +184,7 @@ impl Op {
                 x + t * (y - x)
             }
             Op::Pow(a, b) => cells[a as usize].powf(cells[b as usize]),
-            Op::Gate(a, _) => cells[a as usize],
+            Op::Hold(a, _) => cells[a as usize],
             Op::Lt(a, b) => bit(cells[a as usize] < cells[b as usize]),
             Op::Le(a, b) => bit(cells[a as usize] <= cells[b as usize]),
             Op::Eq(a, b) => {
@@ -269,7 +269,7 @@ impl Op {
                 (a, (desired - t * v(b)) / (1.0 - t))
             }
             // Open only at exactly 0: a NaN flag (a missing referent) holds.
-            Op::Gate(a, flag) => {
+            Op::Hold(a, flag) => {
                 if v(flag) != 0.0 {
                     return None;
                 }
@@ -289,7 +289,7 @@ impl Op {
     #[inline(always)]
     pub fn input_pair(&self) -> (CellIdx, Option<CellIdx>) {
         match *self {
-            Op::Add(a, b) | Op::Sub(a, b) | Op::Mul(a, b) | Op::Div(a, b) | Op::Min(a, b) | Op::Max(a, b) | Op::Default(a, b) | Op::Lerp(a, b, _) | Op::Pow(a, b) | Op::Gate(a, b) | Op::Lt(a, b) | Op::Le(a, b) | Op::Eq(a, b) => (a, Some(b)),
+            Op::Add(a, b) | Op::Sub(a, b) | Op::Mul(a, b) | Op::Div(a, b) | Op::Min(a, b) | Op::Max(a, b) | Op::Default(a, b) | Op::Lerp(a, b, _) | Op::Pow(a, b) | Op::Hold(a, b) | Op::Lt(a, b) | Op::Le(a, b) | Op::Eq(a, b) => (a, Some(b)),
             Op::Negate(a) | Op::Round(a) | Op::Floor(a) | Op::Scale(a, _) | Op::Offset(a, _) | Op::Clamp(a, _, _) | Op::NanTo(a, _) | Op::Truthy(a) | Op::Not(a) => (a, None),
             Op::Vec(..) | Op::Sym(..) => unreachable!("vector and symbolic operators keep every input in extra"),
         }
@@ -359,7 +359,7 @@ pub enum OpSpec {
     NanTo { k: f64 },
     Lerp { t: f64 },
     Pow,
-    Gate,
+    Hold,
     Lt,
     Le,
     Eq,
@@ -373,7 +373,7 @@ pub enum OpSpec {
 impl OpSpec {
     pub fn arity(&self) -> usize {
         match self {
-            OpSpec::Add | OpSpec::Sub | OpSpec::Mul | OpSpec::Div | OpSpec::Min | OpSpec::Max | OpSpec::Default | OpSpec::Lerp { .. } | OpSpec::Pow | OpSpec::Gate | OpSpec::Lt | OpSpec::Le | OpSpec::Eq => 2,
+            OpSpec::Add | OpSpec::Sub | OpSpec::Mul | OpSpec::Div | OpSpec::Min | OpSpec::Max | OpSpec::Default | OpSpec::Lerp { .. } | OpSpec::Pow | OpSpec::Hold | OpSpec::Lt | OpSpec::Le | OpSpec::Eq => 2,
             OpSpec::Negate | OpSpec::Round | OpSpec::Floor | OpSpec::Scale { .. } | OpSpec::Offset { .. } | OpSpec::Clamp { .. } | OpSpec::NanTo { .. } | OpSpec::Truthy | OpSpec::Not => 1,
             OpSpec::Vec(v) => v.n_in(),
             OpSpec::Sym(SymKind::Instantiate { .. } | SymKind::SampleTape { .. }) => usize::MAX,
@@ -418,7 +418,7 @@ impl OpSpec {
             OpSpec::NanTo { k } => Op::NanTo(inputs[0], k),
             OpSpec::Lerp { t } => Op::Lerp(inputs[0], inputs[1], t),
             OpSpec::Pow => Op::Pow(inputs[0], inputs[1]),
-            OpSpec::Gate => Op::Gate(inputs[0], inputs[1]),
+            OpSpec::Hold => Op::Hold(inputs[0], inputs[1]),
             OpSpec::Lt => Op::Lt(inputs[0], inputs[1]),
             OpSpec::Le => Op::Le(inputs[0], inputs[1]),
             OpSpec::Eq => Op::Eq(inputs[0], inputs[1]),

@@ -67,7 +67,7 @@ fn wrap_read_from_a_sibling_is_a_forward_modulus() {
 
 /// `Graph.xMin` refuses a request when `stateValues.fixAxes`, and
 /// `Number.value` when `stateValues.canBeModified` is false: a gate the
-/// forward ignores. `Gate` takes the flag as a declared input that only its
+/// forward ignores. `Hold` takes the flag as a declared input that only its
 /// inverse reads, the way `Shape` takes its pivot.
 #[test]
 fn a_gate_drops_requests_while_its_flag_is_set() {

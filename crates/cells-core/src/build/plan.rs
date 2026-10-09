@@ -9,9 +9,9 @@ use crate::components::prop::{math_input, section};
 enum ElemShape {
     Cloned,
     Synthetic,
-    ExtendProp(PlanId),
-    ContainerCopy(PlanId),
-    Planned(Option<PlanId>),
+    ExtendProp(RefId),
+    ContainerCopy(RefId),
+    Planned(Option<RefId>),
     Math,
     /// `<function>`, `<derivative>`, `<answer>` (`plan_symbolic`).
     Symbolic,
@@ -19,12 +19,12 @@ enum ElemShape {
     /// `<conditionalContent>`, `<select>` (`choice.rs`).
     Choice,
     Text,
-    Generic(Option<PlanId>),
+    Generic(Option<RefId>),
 }
 
 impl<'a> Compiler<'a> {
     pub(super) fn compile(dast: &'a Dast) -> Result<Compiled<'a>> {
-        let mut cp = Compiler { c: Compiled { dast, templates: vec![Template::default()], plans: Vec::new(), arena: Arena::default(), sym_text: HashMap::new(), choices: Vec::new() }, pending_elems: Vec::new(), pending_macros: Vec::new() };
+        let mut cp = Compiler { c: Compiled { dast, templates: vec![Template::default()], refs: Vec::new(), arena: Arena::default(), sym_text: HashMap::new(), choices: Vec::new() }, pending_elems: Vec::new(), pending_macros: Vec::new() };
         // Template 0 is the document: its one child is the root component.
         let doc_el = dast.children(Dast::ROOT).iter().copied().find(|&n| dast.kind(n) == NodeKind::Element && dast.str(n) == "document");
         let children = match doc_el {
@@ -177,9 +177,9 @@ impl<'a> Compiler<'a> {
 
     /// A plan naming prop `prop` of element `e` in the parent template, as
     /// seen from the repeat's own template (one hop up).
-    pub(super) fn own_prop_plan(&mut self, e: ElemId, prop: &str) -> PlanId {
-        self.c.plans.push(RefPlan { hops: 1, steps: vec![Step::Elem(e)], prop: Some(prop.to_string()), display: format!("(repeat).{prop}") });
-        self.c.plans.len() - 1
+    pub(super) fn own_prop_plan(&mut self, e: ElemId, prop: &str) -> RefId {
+        self.c.refs.push(RefPlan { hops: 1, steps: vec![Step::Elem(e)], prop: Some(prop.to_string()), display: format!("(repeat).{prop}") });
+        self.c.refs.len() - 1
     }
 
     pub(super) fn add_children(&mut self, t: TemplateId, owner: Option<ElemId>, name_scope: ElemId, nodes: &[NodeId]) -> Result<Vec<Child>> {
@@ -261,7 +261,7 @@ impl<'a> Compiler<'a> {
                 let type_text = d.attr(el, "componentType").and_then(|a| self.attr_text(a)).ok_or(Error::BadCollect)?;
                 let ck = ComponentKind::from_tag(type_text.trim()).filter(|k| k.copyable()).ok_or_else(|| Error::BadCollectType(type_text.trim().into()))?;
                 let p = self.plan_ref(t, scope, from)?;
-                if self.c.plans[p].prop.is_some() {
+                if self.c.refs[p].prop.is_some() {
                     return Err(Error::BadCollect);
                 }
                 self.c.templates[t].elems[e].body = Body::Collect { from: p, kind: ck };
@@ -292,7 +292,7 @@ impl<'a> Compiler<'a> {
                 // `<point extend="$c.center"/>`, `<math extend="$c.radius"/>`,
                 // `<pointList extend="$l.points"/>`: the element's value
                 // props alias the named prop.
-                if self.c.plans[p].prop.is_some() {
+                if self.c.refs[p].prop.is_some() {
                     return Ok(ElemShape::ExtendProp(p));
                 }
                 Some(p)
@@ -320,7 +320,7 @@ impl<'a> Compiler<'a> {
 
     /// Plans for a kind described by `PropFrom`: attributes, bindings,
     /// computed chains, children.
-    pub(super) fn plan_attrs(&mut self, t: TemplateId, e: ElemId, extend: Option<PlanId>) -> Result<()> {
+    pub(super) fn plan_attrs(&mut self, t: TemplateId, e: ElemId, extend: Option<RefId>) -> Result<()> {
         let d = self.c.dast;
         let Elem { node: el, kind, name_scope: scope, .. } = self.c.templates[t].elems[e];
         // Without an attribute a prop is the kind's default, or under
@@ -527,8 +527,8 @@ impl<'a> Compiler<'a> {
         match (macros.len(), text.is_empty()) {
             (1, true) => {
                 let p = self.plan_ref(t, scope, macros[0])?;
-                if let (None, Some(rp)) = (&self.c.plans[p].prop, ref_prop) {
-                    self.c.plans[p].prop = Some(rp.to_string());
+                if let (None, Some(rp)) = (&self.c.refs[p].prop, ref_prop) {
+                    self.c.refs[p].prop = Some(rp.to_string());
                 }
                 Ok(SourcePlan::reference(p))
             }
@@ -560,7 +560,8 @@ impl<'a> Compiler<'a> {
             "negate" => OpSpec::Negate,
             "round" => OpSpec::Round,
             "floor" => OpSpec::Floor,
-            "gate" => OpSpec::Gate,
+            // `kind="gate"` predates the op's name.
+            "gate" => OpSpec::Hold,
             "scale" => OpSpec::Scale { k: param("k")? },
             "offset" => OpSpec::Offset { k: param("k")? },
             "clamp" => OpSpec::Clamp { lo: param("lo")?, hi: param("hi")? },
@@ -649,18 +650,18 @@ impl<'a> Compiler<'a> {
     // That is where the current core's build-time variety goes (plan 3).
 
     /// A copy of plan `p` naming `prop` instead of its own (`$l` -> `$l.x2`).
-    pub(super) fn plan_with_prop(&mut self, p: PlanId, prop: &str) -> PlanId {
-        let mut plan = self.c.plans[p].clone();
+    pub(super) fn plan_with_prop(&mut self, p: RefId, prop: &str) -> RefId {
+        let mut plan = self.c.refs[p].clone();
         plan.prop = Some(prop.to_string());
         plan.display = format!("{}.{prop}", plan.display);
-        self.c.plans.push(plan);
-        self.c.plans.len() - 1
+        self.c.refs.push(plan);
+        self.c.refs.len() - 1
     }
 
     /// The element a plan names, if it is in template `t` itself (a path of
     /// names without indices, no prop).
-    pub(super) fn plan_elem_target(&self, _t: TemplateId, p: PlanId) -> Option<ElemId> {
-        let plan = &self.c.plans[p];
+    pub(super) fn plan_elem_target(&self, _t: TemplateId, p: RefId) -> Option<ElemId> {
+        let plan = &self.c.refs[p];
         if plan.hops != 0 || plan.prop.is_some() {
             return None;
         }
@@ -722,7 +723,7 @@ impl<'a> Compiler<'a> {
     pub(super) fn plan_from_expr(&mut self, id: ExprId) -> SourcePlan {
         match self.c.arena.get(id) {
             Expr::Num(v) => SourcePlan::Literal(*v),
-            Expr::Cell(p) => SourcePlan::reference(*p as PlanId),
+            Expr::Cell(p) => SourcePlan::reference(*p as RefId),
             _ => SourcePlan::Math(id),
         }
     }
@@ -803,7 +804,7 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    pub(super) fn plan_ref(&mut self, t: TemplateId, scope: ElemId, m: NodeId) -> Result<PlanId> {
+    pub(super) fn plan_ref(&mut self, t: TemplateId, scope: ElemId, m: NodeId) -> Result<RefId> {
         let d = self.c.dast;
         let display = d.macro_display(m);
         let names = d.macro_path(m);
@@ -993,8 +994,8 @@ impl<'a> Compiler<'a> {
             }
             steps.push(Step::Index(IndexPlan { terms: vec![IndexTerm::Const(1)] }));
         }
-        self.c.plans.push(RefPlan { hops, steps, prop, display });
-        Ok(self.c.plans.len() - 1)
+        self.c.refs.push(RefPlan { hops, steps, prop, display });
+        Ok(self.c.refs.len() - 1)
     }
 
     /// A literal integer index (array props are static, so `[$n]` is not

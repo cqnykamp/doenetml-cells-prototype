@@ -39,7 +39,7 @@ use cells_sym::{SymEngine, Tree};
 
 use crate::components::{ComponentKind, PropFrom, prop};
 use crate::dast::{Dast, NodeId, NodeKind, StrId, StringTable};
-use crate::document::{CellIdx, CompIdx, Components, Document, NONE, Repeat, ScopeId, Structure, TEXT_BIT};
+use crate::document::{CellIdx, CompIdx, ComponentTable, Document, NONE, Repeat, ScopeId, Structure, TEXT_BIT};
 use crate::error::{Error, Result};
 use crate::expr::{Arena, Expr, ExprId, Parser, Token};
 use crate::geo::{Pivot, RigidOpts, VecOp};
@@ -57,7 +57,7 @@ mod scoring;
 type SlotId = u32;
 type TemplateId = usize;
 type ElemId = usize;
-type PlanId = usize;
+type RefId = usize;
 type ChoiceId = usize;
 
 // ---------------------------------------------------------------------------
@@ -69,7 +69,7 @@ type ChoiceId = usize;
 /// element's own slots, or a slot of another element in the same template.
 #[derive(Debug, Clone, Copy)]
 enum Arg {
-    Ref(PlanId, Sel),
+    Ref(RefId, Sel),
     Own(u8),
     /// A copy with overridden attributes shares the rest of the original's
     /// essential state through this.
@@ -125,13 +125,13 @@ enum SourcePlan {
 }
 
 impl SourcePlan {
-    fn reference(p: PlanId) -> Self {
+    fn reference(p: RefId) -> Self {
         SourcePlan::Alias(Arg::Ref(p, Sel::Whole))
     }
-    fn coord(p: PlanId, j: usize) -> Self {
+    fn coord(p: RefId, j: usize) -> Self {
         SourcePlan::Alias(Arg::Ref(p, Sel::Coord(j as u8)))
     }
-    fn item(p: PlanId, i: usize, j: usize) -> Self {
+    fn item(p: RefId, i: usize, j: usize) -> Self {
         SourcePlan::Alias(Arg::Ref(p, Sel::Item(i as u8, j as u8)))
     }
     fn own(slot: usize) -> Self {
@@ -158,7 +158,7 @@ enum Child {
     Text(StrId),
     /// A `$ref` child: a copy or a number, decided when it resolves. The
     /// flag says whether the path carries an index.
-    Macro(PlanId, bool),
+    Macro(RefId, bool),
 }
 
 #[derive(Debug, Clone)]
@@ -168,12 +168,12 @@ enum Body {
         template: TemplateId,
     },
     Collect {
-        from: PlanId,
+        from: RefId,
         kind: ComponentKind,
     },
     /// `<pointList extend="$l.points">`: children are synthesized points.
     PointList {
-        from: PlanId,
+        from: RefId,
     },
     /// A `<conditionalContent>` or `<select>` (plan 6): `Compiled::choices`.
     Choice(ChoiceId),
@@ -222,7 +222,7 @@ struct Elem {
     slot_off: u32,
     props: Vec<SourcePlan>,
     children: Vec<Child>,
-    extend: Option<PlanId>,
+    extend: Option<RefId>,
     /// A child of a container copy (`<graph extend="$g"/>`): every prop
     /// aliases the original's, and the children are clones too.
     cloned: bool,
@@ -374,11 +374,11 @@ const POINT_ROLES: [[&str; 2]; 16] = [
 #[derive(Debug, Clone)]
 enum PointPlan {
     /// `$p`: a point-valued reference (two cells).
-    Ref(PlanId),
+    Ref(RefId),
     /// `(a, b)`: two scalar plans.
     Tuple([SourcePlan; 2]),
     /// Item `i` of an array prop: `$l.points` contributes one per item.
-    Item(PlanId, usize),
+    Item(RefId, usize),
 }
 
 impl PointPlan {
@@ -394,7 +394,7 @@ impl PointPlan {
 struct Compiled<'a> {
     dast: &'a Dast,
     templates: Vec<Template>,
-    plans: Vec<RefPlan>,
+    refs: Vec<RefPlan>,
     /// Expression templates: cell leaves hold plan ids.
     arena: Arena,
     /// The math text of templates that may be symbolic, with each `$ref`
@@ -482,7 +482,7 @@ pub struct Unscheduled {
     n_essential: usize,
     n_fixed: usize,
     instrs: Vec<Instr>,
-    comps: Components,
+    comps: ComponentTable,
     strings: StringTable,
     root: CompIdx,
     structure: Structure,
@@ -586,8 +586,8 @@ struct Builder<'c, 'a> {
     /// output (essential and fixed math cells).
     math_slots: Vec<SlotId>,
     /// Per component, whether its `expr` is a math cell (`is_symbolic`).
-    symbolic: Vec<MathMode>,
-    comps: Components,
+    math_mode: Vec<MathMode>,
+    comps: ComponentTable,
     slot_base: Vec<u32>,
     sources: Vec<Source>,
     /// Owning component of each slot (prop index = slot - slot_base[comp]).
@@ -606,7 +606,7 @@ struct Builder<'c, 'a> {
     repeats: Vec<Repeat>,
     counts_used: Vec<u32>,
     /// `$ref` children awaiting a kind: (component, plan, scope, has index).
-    pending: Vec<(CompIdx, PlanId, ScopeId, bool)>,
+    pending: Vec<(CompIdx, RefId, ScopeId, bool)>,
     /// Collect components awaiting expansion.
     collects: Vec<CompIdx>,
     /// Point lists awaiting their synthesized children.
@@ -641,7 +641,7 @@ impl Fix {
     }
 }
 
-/// Put a `Gate` on every slot a request could write through: its essential
+/// Put a `Hold` on every slot a request could write through: its essential
 /// literals, its references and its operators and math over other cells.
 /// Each such plan moves to a new hidden slot and its old slot becomes
 /// `Gate(moved, flag)`, so everything that reads the slot, inside the
@@ -668,7 +668,7 @@ fn gate_slots(props: &mut Vec<Option<SourcePlan>>, flags: Vec<SourcePlan>) {
             _ => continue,
         };
         let h = push(props, moved);
-        props[i] = Some(SourcePlan::Op(OpSpec::Gate, vec![Arg::Own(h), Arg::Own(flag)]));
+        props[i] = Some(SourcePlan::Op(OpSpec::Hold, vec![Arg::Own(h), Arg::Own(flag)]));
     }
 }
 

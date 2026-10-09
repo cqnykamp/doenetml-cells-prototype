@@ -70,7 +70,7 @@ impl Program {
     /// groups an inverse produces.
     pub fn invert_requests(&self, cells: &[f64], n_essential: usize, requests: &[Request], groups: &[Vec<PointRequest>]) -> Inversion {
         let mut engine =
-            Engine { program: self, cells, n_essential, pending: HashMap::default(), heap: BinaryHeap::new(), queued: HashSet::default(), write_index: HashMap::default(), inversion: Inversion::default(), origin: HashMap::default() };
+            RequestEngine { program: self, cells, n_essential, pending: HashMap::default(), heap: BinaryHeap::new(), queued: HashSet::default(), write_index: HashMap::default(), inversion: Inversion::default(), origin: HashMap::default() };
         if let ([r], []) = (requests, groups) {
             engine.walk(r.cell, r.value, *r);
         } else {
@@ -111,7 +111,7 @@ impl Program {
 }
 
 /// One run of the inversion engine.
-struct Engine<'a> {
+struct RequestEngine<'a> {
     program: &'a Program,
     cells: &'a [f64],
     n_essential: usize,
@@ -128,7 +128,7 @@ struct Engine<'a> {
     origin: HashMap<CellIdx, Request>,
 }
 
-impl Engine<'_> {
+impl RequestEngine<'_> {
     fn push(&mut self, cell: CellIdx, value: f64, origin: Request) {
         let p = self.program.producer[cell as usize];
         if p == u32::MAX {

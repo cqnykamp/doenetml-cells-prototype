@@ -1,5 +1,5 @@
 //! `fixed` (and a graph's `fixAxes`) given by a reference: the element's
-//! cells sit behind `Gate` instructions on the flag, so requests through the
+//! cells sit behind `Hold` instructions on the flag, so requests through the
 //! element are dropped while the flag is set, and the element follows its
 //! sources either way. A literal `fixed` still makes fixed cells.
 

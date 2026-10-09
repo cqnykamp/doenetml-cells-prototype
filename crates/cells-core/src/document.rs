@@ -77,11 +77,11 @@ pub const NONE: u32 = u32::MAX;
 /// Set on a `child_list` entry whose low bits are a string id, not a component.
 pub const TEXT_BIT: u32 = 1 << 31;
 
-/// Components as parallel arrays indexed by `CompIdx`. Props are implicit:
+/// The component table as parallel arrays indexed by `CompIdx`. Props are implicit:
 /// component `c` of kind `k` owns `prop_cells[prop_base[c] + i]` for each
 /// `i` in `k.prop_defs()`.
 #[derive(Debug, Clone, Default)]
-pub struct Components {
+pub struct ComponentTable {
     pub kind: Vec<ComponentKind>,
     /// String id of the name, or `NONE`.
     pub name: Vec<StrId>,
@@ -99,7 +99,7 @@ pub struct Components {
     pub scope: Vec<ScopeId>,
 }
 
-impl Components {
+impl ComponentTable {
     pub fn len(&self) -> usize {
         self.kind.len()
     }
@@ -166,7 +166,7 @@ pub struct Document {
     /// (iteration indices, collect counts, the missing-referent NaN).
     pub n_fixed: usize,
     pub program: Program,
-    pub comps: Components,
+    pub comps: ComponentTable,
     /// Names and text, shared with the DAST they came from.
     pub strings: StringTable,
     /// Index of the root `<document>` component.
@@ -228,7 +228,7 @@ pub struct LoadTimings {
 
 impl Document {
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn new(cells: Vec<f64>, n_essential: usize, n_fixed: usize, program: Program, comps: Components, strings: StringTable, root: CompIdx, structure: Structure, dast: Arc<Dast>) -> Self {
+    pub(crate) fn new(cells: Vec<f64>, n_essential: usize, n_fixed: usize, program: Program, comps: ComponentTable, strings: StringTable, root: CompIdx, structure: Structure, dast: Arc<Dast>) -> Self {
         let mut doc = Document {
             cells,
             n_essential,

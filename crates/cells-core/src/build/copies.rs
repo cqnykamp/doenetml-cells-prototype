@@ -6,9 +6,9 @@ use super::*;
 
 impl<'a> Compiler<'a> {
     /// `extend="$c.prop"`: the element's value props alias the named prop.
-    pub(super) fn plan_extend_prop(&mut self, t: TemplateId, e: ElemId, p: PlanId) -> Result<()> {
+    pub(super) fn plan_extend_prop(&mut self, t: TemplateId, e: ElemId, p: RefId) -> Result<()> {
         let kind = self.c.templates[t].elems[e].kind;
-        let display = self.c.plans[p].display.clone();
+        let display = self.c.refs[p].display.clone();
         let props = match kind {
             ComponentKind::Point => {
                 let hide = ComponentKind::Point.prop_defs()[crate::components::prop::point::HIDE].default;
@@ -34,7 +34,7 @@ impl<'a> Compiler<'a> {
 
     /// `<graph extend="$g" name="g2"/>`: the copy's props alias the
     /// original's and its children are clones, named under the copy.
-    pub(super) fn plan_container_copy(&mut self, t: TemplateId, e: ElemId, p: PlanId) -> Result<()> {
+    pub(super) fn plan_container_copy(&mut self, t: TemplateId, e: ElemId, p: RefId) -> Result<()> {
         let r = self.plan_elem_target(t, p).ok_or_else(|| Error::UncopyableKind("graph from another scope".into()))?;
         self.plan_attrs(t, e, Some(p))?;
         let scope = self.child_scope(t, e);
@@ -58,8 +58,8 @@ impl<'a> Compiler<'a> {
                     }
                     let ne = self.push_elem_visible_to(t, NONE, kind, name, scope, root)?;
                     let label = format!("(copy of {})", self.elem_label(t, c));
-                    self.c.plans.push(RefPlan { hops: 0, steps: vec![Step::Elem(c)], prop: None, display: label });
-                    let ep = self.c.plans.len() - 1;
+                    self.c.refs.push(RefPlan { hops: 0, steps: vec![Step::Elem(c)], prop: None, display: label });
+                    let ep = self.c.refs.len() - 1;
                     {
                         let el = &mut self.c.templates[t].elems[ne];
                         el.extend = Some(ep);

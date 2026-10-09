@@ -147,7 +147,7 @@ impl<'a> Compiler<'a> {
     }
 
     /// Dispatch for the geometric kinds.
-    pub(super) fn plan_geo(&mut self, t: TemplateId, e: ElemId, extend: Option<PlanId>) -> Result<()> {
+    pub(super) fn plan_geo(&mut self, t: TemplateId, e: ElemId, extend: Option<RefId>) -> Result<()> {
         let d = self.c.dast;
         let Elem { node: el, kind, .. } = self.c.templates[t].elems[e];
         // Own attributes other than name and extend, or children, override
@@ -265,7 +265,7 @@ impl<'a> Compiler<'a> {
         while i < toks.len() {
             match &toks[i] {
                 Token::Cell(p) => {
-                    let p = *p as PlanId;
+                    let p = *p as RefId;
                     // An array prop expands to its items.
                     let items = self.array_items_of_plan(t, p)?;
                     match items {
@@ -311,8 +311,8 @@ impl<'a> Compiler<'a> {
 
     /// If plan `p` names an array prop, how many items it has (known at
     /// compile time from the referent element).
-    pub(super) fn array_items_of_plan(&self, t: TemplateId, p: PlanId) -> Result<Option<usize>> {
-        let plan = &self.c.plans[p];
+    pub(super) fn array_items_of_plan(&self, t: TemplateId, p: RefId) -> Result<Option<usize>> {
+        let plan = &self.c.refs[p];
         let Some(prop) = &plan.prop else {
             return Ok(None);
         };
@@ -490,9 +490,9 @@ impl<'a> Compiler<'a> {
         let e = self.c.arena.get(id).clone();
         match e {
             Expr::Cell(p) => {
-                let plan = &self.c.plans[p as usize];
+                let plan = &self.c.refs[p as usize];
                 let is_value = plan.prop.as_deref().is_none_or(|pr| pr == "value");
-                let Some(target) = (is_value).then(|| self.plan_elem_target(t, p as PlanId)).flatten() else {
+                let Some(target) = (is_value).then(|| self.plan_elem_target(t, p as RefId)).flatten() else {
                     return id;
                 };
                 // The math may come later in the document and not be planned yet.

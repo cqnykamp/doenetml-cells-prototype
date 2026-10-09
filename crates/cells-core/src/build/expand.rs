@@ -14,8 +14,8 @@ impl<'c, 'a> Builder<'c, 'a> {
             engine,
             sym_templates: Vec::new(),
             math_slots: Vec::new(),
-            symbolic: Vec::new(),
-            comps: Components {
+            math_mode: Vec::new(),
+            comps: ComponentTable {
                 kind: Vec::with_capacity(guess),
                 name: Vec::with_capacity(guess),
                 parent: Vec::with_capacity(guess),
@@ -279,7 +279,7 @@ impl<'c, 'a> Builder<'c, 'a> {
 
     /// Give a `$ref` child its kind: a copy of a component, a number aliasing
     /// one prop, or a number holding the missing-referent cell.
-    pub(super) fn place(&mut self, idx: CompIdx, plan: PlanId, scope: ScopeId) -> Result<()> {
+    pub(super) fn place(&mut self, idx: CompIdx, plan: RefId, scope: ScopeId) -> Result<()> {
         let (target, prop) = self.resolve(plan, scope)?;
         match (target, prop) {
             (Resolved::Missing, _) => {
@@ -325,11 +325,11 @@ impl<'c, 'a> Builder<'c, 'a> {
 
     /// The coordinate slots of each item of an array prop a plan names
     /// (`$l.points`, `$pg.vertices`), trimmed to the live item count.
-    pub(super) fn resolve_items(&mut self, plan: PlanId, scope: ScopeId) -> Result<Vec<[SlotId; 2]>> {
+    pub(super) fn resolve_items(&mut self, plan: RefId, scope: ScopeId) -> Result<Vec<[SlotId; 2]>> {
         let (target, prop) = self.resolve(plan, scope)?;
         let comp = self.single_component(target, plan)?;
         let kind = self.comps.kind[comp as usize];
-        let prop = prop.ok_or_else(|| Error::PathTooDeep(self.c.plans[plan].display.clone()))?;
+        let prop = prop.ok_or_else(|| Error::PathTooDeep(self.c.refs[plan].display.clone()))?;
         let items = kind.array_prop(prop).ok_or_else(|| Error::UnknownProp { name: self.comp_label(comp), prop: prop.into() })?;
         let count_slot = match kind {
             ComponentKind::Polygon => Some(self.slot(comp, prop::polygon::NUM_VERTICES)),
@@ -449,7 +449,7 @@ impl<'c, 'a> Builder<'c, 'a> {
                 let referent = self.single_component(target, p)?;
                 let rk = self.comps.kind[referent as usize];
                 if rk != kind {
-                    return Err(Error::ExtendKindMismatch { referent: self.c.plans[p].display.clone(), referent_kind: rk.tag().into(), kind: kind.tag().into() });
+                    return Err(Error::ExtendKindMismatch { referent: self.c.refs[p].display.clone(), referent_kind: rk.tag().into(), kind: kind.tag().into() });
                 }
                 Some(referent)
             }
@@ -562,7 +562,7 @@ impl<'c, 'a> Builder<'c, 'a> {
         let mut kids = |ts: &[Tree], this: &mut Self| ts.iter().map(|k| this.bind_leaves(k, scope, leaves)).collect::<Result<Vec<_>>>();
         Ok(match t {
             Tree::Cell { cell: plan, .. } => {
-                let (slot, math) = self.leaf_slot(*plan as PlanId, scope)?;
+                let (slot, math) = self.leaf_slot(*plan as RefId, scope)?;
                 if !leaves.contains(&slot) {
                     leaves.push(slot);
                 }
@@ -581,8 +581,8 @@ impl<'c, 'a> Builder<'c, 'a> {
 
     /// The slot a `$ref` inside math names, and whether it holds an
     /// expression (then the slot is the referent's math cell).
-    fn leaf_slot(&mut self, plan: PlanId, scope: ScopeId) -> Result<(SlotId, bool)> {
-        let display = &self.c.plans[plan].display;
+    fn leaf_slot(&mut self, plan: RefId, scope: ScopeId) -> Result<(SlotId, bool)> {
+        let display = &self.c.refs[plan].display;
         let slot = self.resolve_one(plan, scope).map_err(|e| match e {
             Error::ArityMismatch { .. } => Error::BadMath { text: display.clone(), reason: "a reference inside math must name one cell".into() },
             other => other,
@@ -618,15 +618,15 @@ impl<'c, 'a> Builder<'c, 'a> {
     /// expression. A copy is symbolic when its referent is. A reference
     /// cycle counts as numeric (the cycle is reported later).
     pub(super) fn is_symbolic(&mut self, comp: CompIdx) -> bool {
-        if self.symbolic.len() < self.comps.len() {
-            self.symbolic.resize(self.comps.len(), MathMode::Unknown);
+        if self.math_mode.len() < self.comps.len() {
+            self.math_mode.resize(self.comps.len(), MathMode::Unknown);
         }
-        match self.symbolic[comp as usize] {
+        match self.math_mode[comp as usize] {
             MathMode::Numeric | MathMode::Deciding => return false,
             MathMode::Symbolic => return true,
             MathMode::Unknown => {}
         }
-        self.symbolic[comp as usize] = MathMode::Deciding;
+        self.math_mode[comp as usize] = MathMode::Deciding;
         let kind = self.comps.kind[comp as usize];
         let inst = self.comp_instance[comp as usize];
         let yes = match kind {
@@ -652,14 +652,14 @@ impl<'c, 'a> Builder<'c, 'a> {
                         self.c.arena.symbols(id, &mut syms);
                         let mut leaves = Vec::new();
                         self.c.arena.cell_leaves(id, &mut leaves);
-                        !syms.is_empty() || leaves.into_iter().any(|p| self.resolve_one(p as PlanId, i.scope).is_ok_and(|s| self.math_target(s).is_some()))
+                        !syms.is_empty() || leaves.into_iter().any(|p| self.resolve_one(p as RefId, i.scope).is_ok_and(|s| self.math_target(s).is_some()))
                     }
                     _ => false,
                 }
             }
             _ => false,
         };
-        self.symbolic[comp as usize] = if yes { MathMode::Symbolic } else { MathMode::Numeric };
+        self.math_mode[comp as usize] = if yes { MathMode::Symbolic } else { MathMode::Numeric };
         yes
     }
 
@@ -697,8 +697,8 @@ impl<'c, 'a> Builder<'c, 'a> {
             Expr::Num(v) => Expr::Num(v),
             Expr::Sym(s) => Expr::Sym(s),
             Expr::Cell(plan) => {
-                let display = &self.c.plans[plan as usize].display;
-                let slot = self.resolve_one(plan as PlanId, scope).map_err(|e| match e {
+                let display = &self.c.refs[plan as usize].display;
+                let slot = self.resolve_one(plan as RefId, scope).map_err(|e| match e {
                     Error::ArityMismatch { .. } => Error::BadMath { text: display.clone(), reason: "a reference inside math must name one cell".into() },
                     other => other,
                 })?;
@@ -801,8 +801,8 @@ impl<'c, 'a> Builder<'c, 'a> {
 
     /// Walk a plan from `scope`. Returns where it arrived and the prop it
     /// named, if any. Every step is an array read.
-    pub(super) fn resolve(&self, plan: PlanId, scope: ScopeId) -> Result<(Resolved, Option<&'c str>)> {
-        let p = &self.c.plans[plan];
+    pub(super) fn resolve(&self, plan: RefId, scope: ScopeId) -> Result<(Resolved, Option<&'c str>)> {
+        let p = &self.c.refs[plan];
         let mut sc = scope;
         for _ in 0..p.hops {
             sc = self.scopes[sc as usize].0;
@@ -876,19 +876,19 @@ impl<'c, 'a> Builder<'c, 'a> {
     }
 
     /// The one component an unindexed path or `$r[k]` denotes.
-    pub(super) fn single_component(&self, target: Resolved, plan: PlanId) -> Result<CompIdx> {
+    pub(super) fn single_component(&self, target: Resolved, plan: RefId) -> Result<CompIdx> {
         match target {
             Resolved::Comp(c) => Ok(c),
             Resolved::Iter(repeat, s) => {
                 let comps = self.iteration_components(repeat, s);
-                if comps.len() == 1 { Ok(comps[0]) } else { Err(Error::AmbiguousIteration(self.c.plans[plan].display.clone(), comps.len())) }
+                if comps.len() == 1 { Ok(comps[0]) } else { Err(Error::AmbiguousIteration(self.c.refs[plan].display.clone(), comps.len())) }
             }
-            Resolved::Missing => Err(Error::UnknownName(self.c.plans[plan].display.clone())),
+            Resolved::Missing => Err(Error::UnknownName(self.c.refs[plan].display.clone())),
         }
     }
 
     /// Slots named by a resolved path, using the default prop when none was given.
-    pub(super) fn targets_of(&mut self, target: Resolved, prop: Option<&str>, plan: PlanId, expected: Option<usize>) -> Result<Vec<SlotId>> {
+    pub(super) fn targets_of(&mut self, target: Resolved, prop: Option<&str>, plan: RefId, expected: Option<usize>) -> Result<Vec<SlotId>> {
         let comp = match target {
             Resolved::Missing => {
                 let s = self.missing_slot();
@@ -908,7 +908,7 @@ impl<'c, 'a> Builder<'c, 'a> {
         Ok(vec![self.slot(comp, pi)])
     }
 
-    pub(super) fn resolve_ref(&mut self, plan: PlanId, scope: ScopeId, expected: Option<usize>) -> Result<Vec<SlotId>> {
+    pub(super) fn resolve_ref(&mut self, plan: RefId, scope: ScopeId, expected: Option<usize>) -> Result<Vec<SlotId>> {
         let (target, prop) = self.resolve(plan, scope)?;
         self.targets_of(target, prop, plan, expected)
     }
@@ -916,7 +916,7 @@ impl<'c, 'a> Builder<'c, 'a> {
     /// The one slot a reference names, without allocating. Errors with a
     /// placeholder `ArityMismatch` (callers fill in kind and prop) when the
     /// reference names several cells.
-    pub(super) fn resolve_one(&mut self, plan: PlanId, scope: ScopeId) -> Result<SlotId> {
+    pub(super) fn resolve_one(&mut self, plan: RefId, scope: ScopeId) -> Result<SlotId> {
         let (target, prop) = self.resolve(plan, scope)?;
         let comp = match target {
             Resolved::Missing => return Ok(self.missing_slot()),
