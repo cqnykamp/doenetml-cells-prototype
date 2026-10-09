@@ -7,6 +7,7 @@
 // Component columns are copied out once at load.
 import init, { Core } from "./wasm/cells_wasm.js";
 import { columnBuffers, columnsFromCore, type ComponentColumns } from "./components";
+import { openCore, reportRebuild } from "./open-core";
 
 export type WorkerMode = "sab" | "msg";
 
@@ -29,6 +30,20 @@ function view(): Float64Array {
   return new Float64Array(memory!.buffer, core!.cells_ptr(), core!.cells_len());
 }
 
+/** Post a message carrying the whole cell array, as a fresh shared buffer
+ * or a copy by mode, with the component columns' buffers transferred. */
+function postFull(base: object, columns: ComponentColumns, transfer: Transferable[] = []) {
+  if (mode === "sab") {
+    const sab = new SharedArrayBuffer(core!.cells_len() * 8);
+    shared = new Float64Array(sab);
+    shared.set(view());
+    (self as any).postMessage({ ...base, sab }, [...transfer, ...columnBuffers(columns)]);
+  } else {
+    const cells = view().slice();
+    (self as any).postMessage({ ...base, cells }, [...transfer, cells.buffer, ...columnBuffers(columns)]);
+  }
+}
+
 self.onmessage = async (e: MessageEvent<ToWorker>) => {
   const m = e.data;
   try {
@@ -37,42 +52,23 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
       let t = performance.now();
       if (!memory) memory = (await init()).memory;
       const wasmInit = performance.now() - t;
-      t = performance.now();
-      core = new Core(m.bytes);
-      core.set_evaluator(m.evaluator);
-      for (const w of JSON.parse(core.warnings_json()) as string[]) console.warn(w);
-      const coreTotal = performance.now() - t;
+      const opened = openCore(m.bytes, m.evaluator);
+      core = opened.core;
+      const coreTotal = opened.ms;
       t = performance.now();
       const columns = columnsFromCore(core, memory, true);
       const columnsMs = performance.now() - t;
-      const base = { type: "loaded" as const, columns, coreTimings: core.load_timings_json(), wasmInit, coreTotal, columnsMs };
-      if (mode === "sab") {
-        const sab = new SharedArrayBuffer(core.cells_len() * 8);
-        shared = new Float64Array(sab);
-        shared.set(view());
-        (self as any).postMessage({ ...base, sab }, columnBuffers(columns));
-      } else {
-        const cells = view().slice();
-        (self as any).postMessage({ ...base, cells }, [cells.buffer, ...columnBuffers(columns)]);
-      }
+      postFull({ type: "loaded", columns, coreTimings: core.load_timings_json(), wasmInit, coreTotal, columnsMs }, columns);
     } else if (m.type === "request") {
       const t = performance.now();
       const changed = m.points ? core!.request_points(m.cells, m.values) : core!.request(m.cells, m.values);
       const coreMs = performance.now() - t;
+      reportRebuild(core!);
       const v = view();
       if (core!.last_rebuilt()) {
         // Everything is new: post the columns again and a fresh cell array.
         const columns = columnsFromCore(core!, memory!, true);
-        const base = { type: "tick" as const, id: m.id, changed, coreMs, dropped: core!.last_dropped(), rebuilt: true, columns };
-        if (mode === "sab") {
-          const sab = new SharedArrayBuffer(core!.cells_len() * 8);
-          shared = new Float64Array(sab);
-          shared.set(v);
-          (self as any).postMessage({ ...base, sab }, [changed.buffer, ...columnBuffers(columns)]);
-        } else {
-          const cells = v.slice();
-          (self as any).postMessage({ ...base, cells }, [changed.buffer, cells.buffer, ...columnBuffers(columns)]);
-        }
+        postFull({ type: "tick", id: m.id, changed, coreMs, dropped: core!.last_dropped(), rebuilt: true, columns }, columns, [changed.buffer]);
       } else if (mode === "sab") {
         for (let i = 0; i < changed.length; i++) shared![changed[i]] = v[changed[i]];
         (self as any).postMessage({ type: "tick", id: m.id, changed, coreMs, dropped: core!.last_dropped(), rebuilt: false }, [changed.buffer]);

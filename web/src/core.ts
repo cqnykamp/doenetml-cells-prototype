@@ -6,6 +6,7 @@
 //  - worker-sab: wasm in a worker; changed cells copied into a SharedArrayBuffer
 //  - worker-msg: wasm in a worker; changed indices and values posted per tick
 import init, { Core } from "./wasm/cells_wasm.js";
+import { openCore, reportRebuild } from "./open-core";
 import type { FromWorker, ToWorker, WorkerMode } from "./worker";
 import { ComponentTable, columnsFromCore, type ComponentColumns } from "./components";
 
@@ -80,7 +81,7 @@ class MainBackend implements Backend {
     const changed = points ? this.core.request_points(cells, values) : this.core.request(cells, values);
     onCore(performance.now() - t);
     const rebuilt = this.core.last_rebuilt();
-    if (this.core.last_rebuild_error()) console.error("rebuild failed:", this.core.last_rebuild_error());
+    reportRebuild(this.core);
     return { changed, rebuilt, columns: rebuilt ? columnsFromCore(this.core, wasmMemory!, false) : undefined };
   }
   setEvaluator(name: string) {
@@ -248,12 +249,9 @@ export async function loadDocument(bytes: Uint8Array, kind: BackendKind, evaluat
     if (!wasmMemory) wasmMemory = (await init()).memory;
     timings.wasmInit = performance.now() - t;
     timings.workerSpawn = 0;
-    t = performance.now();
-    const core = new Core(bytes);
-    core.set_evaluator(evaluator);
-    timings.coreTotal = performance.now() - t;
+    const { core, ms } = openCore(bytes, evaluator);
+    timings.coreTotal = ms;
     timings.core = JSON.parse(core.load_timings_json());
-    for (const w of JSON.parse(core.warnings_json()) as string[]) console.warn(w);
     t = performance.now();
     // Views over wasm memory: the component layer never grows after load,
     // but the cell array may be reallocated, so cells are re-viewed per read.
