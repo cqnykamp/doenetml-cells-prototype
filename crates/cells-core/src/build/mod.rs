@@ -31,10 +31,11 @@
 //!
 //! **Compile** lives in `compile.rs` (the walk and each element's shape),
 //! `attrs.rs` (attribute and math sources), `refs.rs` (names and reference
-//! paths), `geometry.rs` (the planned kinds), `choice.rs`, and `copies.rs`
-//! (`extend`) and `fix.rs` (`fixed`). **Expand** lives in `expand.rs`, `expand_math.rs` and
-//! `resolve.rs`, with `scoring.rs` for credit and section numbers; **Emit**
-//! in `emit.rs`. This file holds the types they share.
+//! paths), `geometry.rs` (the planned kinds), `choice.rs`, `copies.rs`
+//! (`extend`) and `fix.rs` (`fixed`). **Expand** lives in `expand.rs`,
+//! `expand_math.rs` and `resolve.rs`, with `scoring.rs` for credit and
+//! section numbers; **Emit** in `emit.rs`. This file holds the types they
+//! share.
 
 use std::collections::HashMap;
 
