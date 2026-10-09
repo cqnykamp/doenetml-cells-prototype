@@ -20,23 +20,28 @@ pub fn points(n: usize) -> String {
 /// operator is a clamp so the point stays inside the graph for dragging.
 pub fn chain(l: usize) -> String {
     let mut s = String::from("<numberInput name=\"n\" value=\"1\"/>\n");
+    let last = op_chain(&mut s, l, true);
+    let _ = writeln!(s, "<graph name=\"g\"><point name=\"p\" x=\"${last}\" y=\"$n\"/></graph>");
+    s
+}
+
+/// L operators `c0..` from `$n`, alternating offset, scale and negate so
+/// every value changes when the input does; with `clamp_last` the last is a
+/// clamp, keeping a point inside the graph. Returns the last name.
+fn op_chain(s: &mut String, l: usize, clamp_last: bool) -> String {
     let mut prev = "n".to_string();
     for i in 0..l {
         let name = format!("c{i}");
-        let op = if i + 1 == l {
-            "kind=\"clamp\" lo=\"-9\" hi=\"9\""
-        } else {
-            match i % 3 {
-                0 => "kind=\"offset\" k=\"1\"",
-                1 => "kind=\"scale\" k=\"1.0001\"",
-                _ => "kind=\"negate\"",
-            }
+        let op = match i % 3 {
+            _ if clamp_last && i + 1 == l => "kind=\"clamp\" lo=\"-9\" hi=\"9\"",
+            0 => "kind=\"offset\" k=\"1\"",
+            1 => "kind=\"scale\" k=\"1.0001\"",
+            _ => "kind=\"negate\"",
         };
         let _ = writeln!(s, "<op name=\"{name}\" {op} args=\"${prev}\"/>");
         prev = name;
     }
-    let _ = writeln!(s, "<graph name=\"g\"><point name=\"p\" x=\"${prev}\" y=\"$n\"/></graph>");
-    s
+    prev
 }
 
 /// One input feeding K operators, each driving one point's x.
@@ -92,18 +97,8 @@ pub fn grid(n: usize, l: usize) -> String {
 /// Cells: L + 1 (chain) + 3 + 11 (slider) + 2 + 4.
 pub fn slider_chain(l: usize) -> String {
     let mut s = String::from("<numberInput name=\"n\" value=\"1\"/>\n");
-    let mut prev = "n".to_string();
-    for i in 0..l {
-        let name = format!("c{i}");
-        let op = match i % 3 {
-            0 => "kind=\"offset\" k=\"1\"",
-            1 => "kind=\"scale\" k=\"1.0001\"",
-            _ => "kind=\"negate\"",
-        };
-        let _ = writeln!(s, "<op name=\"{name}\" {op} args=\"${prev}\"/>");
-        prev = name;
-    }
-    let _ = writeln!(s, "<slider name=\"s\" from=\"-9\" to=\"9\" step=\"0.5\" bindValueTo=\"${prev}\"/>");
+    let last = op_chain(&mut s, l, false);
+    let _ = writeln!(s, "<slider name=\"s\" from=\"-9\" to=\"9\" step=\"0.5\" bindValueTo=\"${last}\"/>");
     let _ = writeln!(s, "<graph name=\"g\"><point name=\"p\" x=\"$s\" y=\"0\"/></graph>");
     s
 }
@@ -474,36 +469,38 @@ pub fn choice_curves(n: usize) -> String {
 
 pub fn from_spec(spec: &str) -> Option<String> {
     let (shape, size) = spec.split_once('-')?;
+    // The size of the one-number shapes; `grid` and `choicesweep` take `NxM`.
+    let n = size.parse::<usize>().ok();
     Some(match shape {
-        "points" => points(size.parse().ok()?),
-        "chain" => chain(size.parse().ok()?),
-        "fanout" => fanout(size.parse().ok()?),
-        "aliases" => aliases(size.parse().ok()?),
-        "sliderchain" => slider_chain(size.parse().ok()?),
-        "sliderstack" => slider_stack(size.parse().ok()?),
-        "repeat" => repeat(size.parse().ok()?),
-        "recur" => recur(size.parse().ok()?),
-        "intchain" => intchain(size.parse().ok()?),
-        "mathchain" => mathchain(size.parse().ok()?),
-        "hidden" => hidden(size.parse().ok()?),
-        "circles3" => circles3(size.parse().ok()?),
-        "sticky" => sticky(size.parse().ok()?, true),
-        "stickyfree" => sticky(size.parse().ok()?, false),
-        "answers" => answers(size.parse().ok()?),
-        "curves" => curves(size.parse().ok()?),
-        "symchain" => symchain(size.parse().ok()?),
+        "points" => points(n?),
+        "chain" => chain(n?),
+        "fanout" => fanout(n?),
+        "aliases" => aliases(n?),
+        "sliderchain" => slider_chain(n?),
+        "sliderstack" => slider_stack(n?),
+        "repeat" => repeat(n?),
+        "recur" => recur(n?),
+        "intchain" => intchain(n?),
+        "mathchain" => mathchain(n?),
+        "hidden" => hidden(n?),
+        "circles3" => circles3(n?),
+        "sticky" => sticky(n?, true),
+        "stickyfree" => sticky(n?, false),
+        "answers" => answers(n?),
+        "curves" => curves(n?),
+        "symchain" => symchain(n?),
         "grid" => {
             let (n, l) = size.split_once('x')?;
             grid(n.parse().ok()?, l.parse().ok()?)
         }
-        "wording" => wording(size.parse().ok()?),
-        "wordingflat" => wording_flat(size.parse().ok()?),
-        "adventure" => adventure(size.parse().ok()?, 2000),
-        "wordingall" => wording_all(size.parse().ok()?),
-        "choicecurves" => choice_curves(size.parse().ok()?),
-        "select" => select(size.parse().ok()?),
-        "selectall" => select_all(size.parse().ok()?),
-        "selectflat" => select_flat(size.parse().ok()?),
+        "wording" => wording(n?),
+        "wordingflat" => wording_flat(n?),
+        "adventure" => adventure(n?, 2000),
+        "wordingall" => wording_all(n?),
+        "choicecurves" => choice_curves(n?),
+        "select" => select(n?),
+        "selectall" => select_all(n?),
+        "selectflat" => select_flat(n?),
         "choicesweep" => {
             let (n, d) = size.split_once('x')?;
             choice_sweep(n.parse().ok()?, d.parse().ok()?)
