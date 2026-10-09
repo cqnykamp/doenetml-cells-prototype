@@ -187,11 +187,7 @@ impl<'a> Compiler<'a> {
             }
         }
         let scope = self.c.templates[t].elems[e].name_scope;
-        match self.plan_fix(t, scope, el, &["fixed"])? {
-            Fix::Off => {}
-            Fix::Literal => fix_literals(&mut ch.props),
-            Fix::Dynamic(flags) => gate_slots(&mut ch.props, flags),
-        }
+        self.plan_fix(t, scope, el, &["fixed"])?.apply(&mut ch.props);
         self.c.templates[t].elems[e].roles = ch.roles.clone();
         self.c.templates[t].elems[e].props = ch.finish();
         Ok(())

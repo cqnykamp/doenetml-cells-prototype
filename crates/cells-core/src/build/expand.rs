@@ -619,14 +619,14 @@ impl<'c, 'a> Builder<'c, 'a> {
     /// cycle counts as numeric (the cycle is reported later).
     pub(super) fn is_symbolic(&mut self, comp: CompIdx) -> bool {
         if self.symbolic.len() < self.comps.len() {
-            self.symbolic.resize(self.comps.len(), 0);
+            self.symbolic.resize(self.comps.len(), MathMode::Unknown);
         }
         match self.symbolic[comp as usize] {
-            1 | 3 => return false,
-            2 => return true,
-            _ => {}
+            MathMode::Numeric | MathMode::Deciding => return false,
+            MathMode::Symbolic => return true,
+            MathMode::Unknown => {}
         }
-        self.symbolic[comp as usize] = 3;
+        self.symbolic[comp as usize] = MathMode::Deciding;
         let kind = self.comps.kind[comp as usize];
         let inst = self.comp_instance[comp as usize];
         let yes = match kind {
@@ -659,7 +659,7 @@ impl<'c, 'a> Builder<'c, 'a> {
             }
             _ => false,
         };
-        self.symbolic[comp as usize] = if yes { 2 } else { 1 };
+        self.symbolic[comp as usize] = if yes { MathMode::Symbolic } else { MathMode::Numeric };
         yes
     }
 

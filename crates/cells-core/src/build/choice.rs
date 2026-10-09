@@ -543,8 +543,8 @@ impl<'c, 'a> Builder<'c, 'a> {
                 let (kind, elems) = &def.iface[&def.used[u]];
                 let members: Vec<CompIdx> = inst.scopes.iter().zip(&inst.branch_of).map(|(&s, &b)| self.scope_comps[s as usize][elems[b]]).collect();
                 let symbolic = members.iter().any(|&m| self.is_symbolic(m));
-                self.symbolic.resize(self.comps.len(), 0);
-                self.symbolic[ic as usize] = if symbolic { 2 } else { 1 };
+                self.symbolic.resize(self.comps.len(), MathMode::Unknown);
+                self.symbolic[ic as usize] = if symbolic { MathMode::Symbolic } else { MathMode::Numeric };
                 let n = members.len() as u8;
                 for pi in 0..kind.prop_defs().len() {
                     let inputs: Vec<SlotId> = std::iter::once(choice).chain(members.iter().map(|&m| self.slot(m, pi))).collect();

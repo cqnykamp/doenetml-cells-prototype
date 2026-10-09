@@ -388,11 +388,7 @@ impl<'a> Compiler<'a> {
             self.plan_section_flags(el, &mut props)?;
         }
         let fix_attrs: &[&str] = if kind == ComponentKind::Graph { &["fixed", "fixAxes"] } else { &["fixed"] };
-        match self.plan_fix(t, scope, el, fix_attrs)? {
-            Fix::Off => {}
-            Fix::Literal => fix_literals(&mut props),
-            Fix::Dynamic(flags) => gate_slots(&mut props, flags),
-        }
+        self.plan_fix(t, scope, el, fix_attrs)?.apply(&mut props);
         self.c.templates[t].elems[e].props = props.into_iter().map(|p| p.unwrap()).collect();
         Ok(())
     }

@@ -288,6 +288,17 @@ fn own_slot(i: usize) -> u8 {
     u8::try_from(i).expect("fewer than 256 slots per element")
 }
 
+/// `Builder::is_symbolic`'s memo for one component.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+enum MathMode {
+    #[default]
+    Unknown,
+    Numeric,
+    Symbolic,
+    /// Being decided: a reference cycle back to it counts as numeric.
+    Deciding,
+}
+
 /// A planned element's prop list under construction: public slots set by
 /// index, hidden slots appended after them and referenced by index like any
 /// own prop.
@@ -574,8 +585,8 @@ struct Builder<'c, 'a> {
     /// Slots that hold expression handles without being an instruction's
     /// output (essential and fixed math cells).
     math_slots: Vec<SlotId>,
-    /// Per component: 0 not yet known, 1 numeric, 2 symbolic, 3 deciding.
-    symbolic: Vec<u8>,
+    /// Per component, whether its `expr` is a math cell (`is_symbolic`).
+    symbolic: Vec<MathMode>,
     comps: Components,
     slot_base: Vec<u32>,
     sources: Vec<Source>,
@@ -618,6 +629,16 @@ enum Fix {
     Literal,
     /// References: flag cells (any nonzero holds) that gate the element.
     Dynamic(Vec<SourcePlan>),
+}
+
+impl Fix {
+    fn apply(self, props: &mut Vec<Option<SourcePlan>>) {
+        match self {
+            Fix::Off => {}
+            Fix::Literal => fix_literals(props),
+            Fix::Dynamic(flags) => gate_slots(props, flags),
+        }
+    }
 }
 
 /// Put a `Gate` on every slot a request could write through: its essential
