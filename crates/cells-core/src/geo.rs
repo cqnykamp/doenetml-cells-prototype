@@ -1,5 +1,6 @@
 //! Vector operators: instructions with several inputs and possibly several
-//! outputs, used by the geometric components (ADR 0006). Each is a pure
+//! outputs, used by the geometric components (ADR 0006), by choices (plan
+//! 6) and by scoring. Each is a pure
 //! function of its inputs with a hand-written inverse rule; none knows which
 //! component it serves. Inputs are consecutive entries of `Program::extra`,
 //! outputs are consecutive cells.
@@ -19,6 +20,12 @@
 //! | `LinePointsFromCoeffs`   | (a, b, c) → two points on ax+by+c=0   | points: translation keeps a, b and rescales c; otherwise all three   |
 //! | `ProjectCircle`          | (P, C, r) → nearest point on circle   | projection: the requested point is projected and written to P        |
 //! | `ProjectLine`            | (P, A, B) → nearest point on line AB  | projection: the requested point is projected and written to P        |
+//! | `First{n}`               | n conditions → position of the first  | none: a request cannot flip a branch                                 |
+//! |                          | that holds, or 0                      |                                                                      |
+//! | `Choose{n}`              | (choice, n branch cells) → the active | the active branch's cell only                                        |
+//! |                          | branch's cell                         |                                                                      |
+//! | `WeightedMean{n}`        | (n weights, n credits) → (mean,       | none: credit is not set by a request                                 |
+//! |                          | total weight)                         |                                                                      |
 //!
 //! Inverses that move several points at once hand them to the request
 //! engine as one *point group* ([`Produced::group`]); the engine, not the
