@@ -58,7 +58,10 @@ impl<'a> Compiler<'a> {
                 ch.set(2, plan);
             }
             Some(_) => {
-                let on = self.attr_flag(el, "hide") || base.is_some_and(|b| self.attr_flag(b, "hide"));
+                // The copy's own attribute wins: `hide="false"` reveals a
+                // copy of a hidden point, as in the current core.
+                let owner = if d.attr(el, "hide").is_some() { el } else { base.unwrap() };
+                let on = self.attr_flag(owner, "hide");
                 ch.set(2, SourcePlan::Literal(if on { 1.0 } else { 0.0 }));
             }
             None => ch.set(2, if base.is_some() { SourcePlan::Inherit } else { SourcePlan::Default(0.0) }),

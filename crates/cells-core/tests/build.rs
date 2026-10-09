@@ -223,3 +223,13 @@ fn names_resolve_through_containers_and_copies() {
     let hp = doc.resolve_path("h.p").unwrap();
     assert_eq!(doc.prop_cells(hp, "x"), doc.prop_cells(gp, "x"));
 }
+
+#[test]
+fn a_copys_own_hide_wins_over_the_inherited_one() {
+    // The current core: `<text extend="$hidden" hide="false"/>` reveals.
+    let doc = load_ok(r#"<point name="p" hide>(1,2)</point><point name="q" extend="$p" hide="false"/><point name="r" extend="$p"/><point name="s" extend="$q" hide/>"#);
+    assert_eq!(doc.value("p", "hide"), Some(1.0));
+    assert_eq!(doc.value("q", "hide"), Some(0.0));
+    assert_eq!(doc.value("r", "hide"), Some(1.0));
+    assert_eq!(doc.value("s", "hide"), Some(1.0));
+}
