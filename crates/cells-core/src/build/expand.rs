@@ -332,8 +332,8 @@ impl<'c, 'a> Builder<'c, 'a> {
         let prop = prop.ok_or_else(|| Error::PathTooDeep(self.c.plans[plan].display.clone()))?;
         let items = kind.array_prop(prop).ok_or_else(|| Error::UnknownProp { name: self.comp_label(comp), prop: prop.into() })?;
         let count_slot = match kind {
-            ComponentKind::Polygon => Some(self.slot(comp, 0)),
-            ComponentKind::Circle => Some(self.slot(comp, kind.prop_index("numThroughPoints").unwrap())),
+            ComponentKind::Polygon => Some(self.slot(comp, prop::polygon::NUM_VERTICES)),
+            ComponentKind::Circle => Some(self.slot(comp, prop::circle::NUM_THROUGH_POINTS)),
             _ => None,
         };
         let live = match count_slot.map(|s| self.sources[s as usize].clone()) {
@@ -355,7 +355,7 @@ impl<'c, 'a> Builder<'c, 'a> {
                 let items = self.resolve_items(from, inst.scope)?;
                 for [x, y] in items {
                     let pt = self.new_component(ComponentKind::Point, NONE, comp, NONE, inst.scope, 3);
-                    let (sx, sy, sh) = (self.slot(pt, 0), self.slot(pt, 1), self.slot(pt, 2));
+                    let (sx, sy, sh) = (self.slot(pt, prop::point::X), self.slot(pt, prop::point::Y), self.slot(pt, prop::point::HIDE));
                     self.sources[sx as usize] = Source::Alias(x);
                     self.sources[sy as usize] = Source::Alias(y);
                     // Not state: a synthesized point has no essential key.
@@ -631,7 +631,8 @@ impl<'c, 'a> Builder<'c, 'a> {
         let inst = self.comp_instance[comp as usize];
         let yes = match kind {
             ComponentKind::Function | ComponentKind::Derivative => true,
-            ComponentKind::Math | ComponentKind::MathInput if inst == NONE => match self.sources.get(self.slot(comp, 0) as usize) {
+            // A copy of a math (its `expr`) or a bound mathInput (its `value`).
+            ComponentKind::Math | ComponentKind::MathInput if inst == NONE => match self.sources.get(self.slot(comp, if kind == ComponentKind::Math { prop::math::EXPR } else { prop::math_input::VALUE }) as usize) {
                 Some(Source::Alias(t)) => {
                     let referent = self.slot_comp[*t as usize];
                     referent != NONE && self.is_symbolic(referent)

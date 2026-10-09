@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use cells_sym::SymEngine;
 
-use crate::components::ComponentKind;
+use crate::components::{ComponentKind, prop};
 use crate::dast::{Dast, NodeId, StrId, StringTable};
 use crate::invert::PointRequest;
 use crate::program::Program;
@@ -122,7 +122,7 @@ impl Components {
                 match self.kind[k as usize] {
                     ComponentKind::RepeatForSequence | ComponentKind::Collect | ComponentKind::Group | ComponentKind::Select | ComponentKind::ConditionalContent => stack.push((k, gates.clone())),
                     ComponentKind::Case => {
-                        let active = self.prop_cells[self.prop_base[k as usize] as usize];
+                        let active = self.prop_cells[self.prop_base[k as usize] as usize + prop::case::ACTIVE];
                         stack.push((k, [gates.as_slice(), &[active]].concat()));
                     }
                     kind if kind.sticky_layout().is_some() => out.push((k, gates.clone())),
@@ -335,7 +335,7 @@ impl Document {
     /// handle into its `submitted` cell.
     pub fn submit(&mut self, answer: CompIdx) -> Tick {
         let cells = self.comp_cells(answer);
-        let (response, submitted) = (cells[0], cells[2]);
+        let (response, submitted) = (cells[prop::answer::RESPONSE], cells[prop::answer::SUBMITTED]);
         let value = self.cells[response as usize];
         self.request(&[Request { cell: submitted, value }])
     }
@@ -348,8 +348,8 @@ impl Document {
             return None;
         }
         let cells = self.comp_cells(c);
-        let own = self.cells[cells[4] as usize].to_string();
-        if self.cells[cells[5] as usize] == 0.0 {
+        let own = self.cells[cells[prop::section::NUMBER] as usize].to_string();
+        if self.cells[cells[prop::section::INCLUDE_PARENT_NUMBER] as usize] == 0.0 {
             return Some(own);
         }
         let mut p = self.parent(c);
@@ -365,7 +365,7 @@ impl Document {
     /// A section's automatic title, such as "Section 2.1" or "Problem 3".
     pub fn section_title(&self, c: CompIdx) -> Option<String> {
         let number = self.section_number(c)?;
-        let label = self.cells[self.comp_cells(c)[6] as usize] as usize;
+        let label = self.cells[self.comp_cells(c)[prop::section::LABEL] as usize] as usize;
         Some(format!("{} {number}", crate::components::SECTION_TAGS[label].1))
     }
 
@@ -452,7 +452,7 @@ impl Document {
     /// A `<mathInput>` holds any math value, infinity included; every other
     /// request site rejects an infinite ask as the current core does.
     fn accepts_infinity(&self, cell: CellIdx) -> bool {
-        (0..self.comps.len() as CompIdx).any(|c| self.kind(c) == ComponentKind::MathInput && self.comp_cells(c)[0] == cell)
+        (0..self.comps.len() as CompIdx).any(|c| self.kind(c) == ComponentKind::MathInput && self.comp_cells(c)[prop::math_input::VALUE] == cell)
     }
 
     pub fn is_essential(&self, cell: CellIdx) -> bool {
@@ -652,7 +652,7 @@ impl Document {
                 return false;
             }
             // A built case that is not the active one is not there.
-            if self.kind(pc) == ComponentKind::Case && self.cells[self.comp_cells(pc)[0] as usize] != 1.0 {
+            if self.kind(pc) == ComponentKind::Case && self.cells[self.comp_cells(pc)[prop::case::ACTIVE] as usize] != 1.0 {
                 return false;
             }
             p = self.parent(pc);

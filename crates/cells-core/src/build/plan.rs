@@ -3,6 +3,7 @@
 //! reference paths. See the module docs in `mod.rs`.
 
 use super::*;
+use crate::components::prop::{math_input, section};
 
 /// The ways an element is planned; see `Compiler::elem_shape`.
 enum ElemShape {
@@ -31,7 +32,7 @@ impl<'a> Compiler<'a> {
             None => {
                 // Synthesize a root when the DAST was not normalized.
                 let e = cp.add_synthetic(0, ComponentKind::Document, NONE);
-                cp.c.templates[0].elems[e].props = vec![SourcePlan::Fixed(f64::NAN), SourcePlan::computed(OpSpec::Scale { k: 100.0 }, vec![0])];
+                cp.c.templates[0].elems[e].props = vec![SourcePlan::Fixed(f64::NAN), SourcePlan::computed(OpSpec::Scale { k: 100.0 }, vec![prop::document::CREDIT])];
                 let kids = cp.add_children(0, Some(e), ROOT_SCOPE, dast.children(Dast::ROOT))?;
                 cp.c.templates[0].elems[e].children = kids;
                 vec![Child::Elem(e)]
@@ -236,7 +237,7 @@ impl<'a> Compiler<'a> {
                     && crate::expr::split_top(inner, &Token::Comma).len() == 2
                 {
                     let [x, y] = self.plan_tuple(t, scope, &nodes)?;
-                    let hide = ComponentKind::Point.prop_defs()[2].default;
+                    let hide = ComponentKind::Point.prop_defs()[prop::point::HIDE].default;
                     self.c.templates[t].elems[e].kind = ComponentKind::Point;
                     self.c.templates[t].elems[e].props = vec![x, y, SourcePlan::Default(hide)];
                     return Ok(());
@@ -414,9 +415,9 @@ impl<'a> Compiler<'a> {
                 Some(_) => Err(Error::Unsupported(format!("'{name}' on a <{tag}> must be a literal: it decides how the section is wired"))),
             }
         };
-        props[3] = Some(SourcePlan::Fixed(flag("aggregateScores", aggregate)?));
-        props[5] = Some(SourcePlan::Fixed(flag("includeParentNumber", parent_number)?));
-        props[6] = Some(SourcePlan::Fixed(label as f64));
+        props[section::AGGREGATE] = Some(SourcePlan::Fixed(flag("aggregateScores", aggregate)?));
+        props[section::INCLUDE_PARENT_NUMBER] = Some(SourcePlan::Fixed(flag("includeParentNumber", parent_number)?));
+        props[section::LABEL] = Some(SourcePlan::Fixed(label as f64));
         Ok(())
     }
 
@@ -429,16 +430,16 @@ impl<'a> Compiler<'a> {
             Some(a) => d.attr_children(a),
             None => d.children(el),
         };
-        let bound = matches!(props[0], Some(SourcePlan::Alias(_))) || nodes.iter().any(|&n| d.kind(n) == NodeKind::Macro);
+        let bound = matches!(props[math_input::VALUE], Some(SourcePlan::Alias(_))) || nodes.iter().any(|&n| d.kind(n) == NodeKind::Macro);
         if bound {
-            props[1] = Some(SourcePlan::Fixed(f64::NAN));
+            props[math_input::EXPR] = Some(SourcePlan::Fixed(f64::NAN));
             return Ok(());
         }
         let text: String = nodes.iter().filter(|&&n| d.kind(n) == NodeKind::Text).map(|&n| d.str(n)).collect();
         let text = text.trim();
         let tree = if text.is_empty() { None } else { Some(cells_sym::parse::parse(text).map_err(|reason| Error::BadMath { text: text.into(), reason })?) };
-        props[1] = Some(SourcePlan::MathEssential(tree));
-        props[0] = Some(SourcePlan::Op(OpSpec::Sym(SymKind::Evaluate), vec![Arg::Own(1)]));
+        props[math_input::EXPR] = Some(SourcePlan::MathEssential(tree));
+        props[math_input::VALUE] = Some(SourcePlan::computed(OpSpec::Sym(SymKind::Evaluate), vec![math_input::EXPR]));
         Ok(())
     }
 

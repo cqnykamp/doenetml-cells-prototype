@@ -11,7 +11,7 @@ impl<'a> Compiler<'a> {
         let display = self.c.plans[p].display.clone();
         let props = match kind {
             ComponentKind::Point => {
-                let hide = ComponentKind::Point.prop_defs()[2].default;
+                let hide = ComponentKind::Point.prop_defs()[crate::components::prop::point::HIDE].default;
                 vec![SourcePlan::coord(p, 0), SourcePlan::coord(p, 1), SourcePlan::Default(hide)]
             }
             ComponentKind::Number | ComponentKind::NumberInput | ComponentKind::MathInput => {

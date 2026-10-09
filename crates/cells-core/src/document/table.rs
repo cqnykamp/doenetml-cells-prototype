@@ -45,7 +45,7 @@ impl Document {
     fn push_text(&self, c: CompIdx, out: &mut String) {
         let value = |prop: &str| self.prop_cells(c, prop).map(|cells| self.cells[cells[0] as usize]);
         match self.kind(c) {
-            ComponentKind::Text => out.push_str(&self.text_value(self.comp_cells(c)[0])),
+            ComponentKind::Text => out.push_str(&self.text_value(self.comp_cells(c)[prop::text::VALUE])),
             ComponentKind::Number | ComponentKind::NumberInput | ComponentKind::Slider => out.push_str(&format_number(value("value").unwrap_or(f64::NAN))),
             ComponentKind::Math | ComponentKind::MathInput => {
                 let expr = self.prop_cells(c, "expr").map(|cells| cells[0]);
@@ -54,7 +54,7 @@ impl Document {
                     _ => out.push_str(&format_number(value("value").unwrap_or(f64::NAN))),
                 }
             }
-            ComponentKind::Case if self.cells[self.comp_cells(c)[0] as usize] != 1.0 => {}
+            ComponentKind::Case if self.cells[self.comp_cells(c)[prop::case::ACTIVE] as usize] != 1.0 => {}
             ComponentKind::ConditionalContent | ComponentKind::Select if value("hide").is_some_and(|h| h != 0.0 && !h.is_nan()) => {}
             _ => {
                 for ch in self.children(c) {
@@ -88,7 +88,7 @@ impl Document {
         }
         if let Some(items) = kind.array_prop(prop) {
             let live = match kind {
-                ComponentKind::Polygon => self.cells[self.comp_cells(comp)[0] as usize] as usize,
+                ComponentKind::Polygon => self.cells[self.comp_cells(comp)[prop::polygon::NUM_VERTICES] as usize] as usize,
                 _ => items.len(),
             };
             return items.iter().take(live).map(|[x, y]| Some([self.prop_cells(comp, x)?[0], self.prop_cells(comp, y)?[0]])).collect::<Option<Vec<_>>>().map(|v| v.concat());

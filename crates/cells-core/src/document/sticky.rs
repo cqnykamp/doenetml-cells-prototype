@@ -42,16 +42,16 @@ impl Document {
             if self.kind(g) != ComponentKind::StickyGroup {
                 continue;
             }
-            let mut t = StickyTable { threshold: self.comp_cells(g)[0], relative: self.comp_cells(g)[1], bounds: None, members: Vec::new(), points: Vec::new(), index: HashMap::new(), gates: Vec::new() };
+            let mut t = StickyTable { threshold: self.comp_cells(g)[prop::sticky_group::THRESHOLD], relative: self.comp_cells(g)[prop::sticky_group::RELATIVE], bounds: None, members: Vec::new(), points: Vec::new(), index: HashMap::new(), gates: Vec::new() };
             if let Some(p) = self.parent(g).filter(|&p| self.kind(p) == ComponentKind::Graph) {
                 let c = self.comp_cells(p);
-                t.bounds = Some([c[0], c[1], c[2], c[3]]);
+                t.bounds = Some([c[prop::graph::XMIN], c[prop::graph::XMAX], c[prop::graph::YMIN], c[prop::graph::YMAX]]);
             }
             for (m, gates) in self.comps.sticky_members(g) {
                 let kind = self.kind(m);
                 let (shape, first, max) = kind.sticky_layout().unwrap();
                 let cells = self.comp_cells(m);
-                let n = if kind == ComponentKind::Polygon { (self.cells[cells[0] as usize].max(0.0) as usize).min(max) } else { max };
+                let n = if kind == ComponentKind::Polygon { (self.cells[cells[prop::polygon::NUM_VERTICES] as usize].max(0.0) as usize).min(max) } else { max };
                 let rigid = n > 0 && self.is_shape_output(cells[first]);
                 let mut ids = Vec::with_capacity(n);
                 for i in 0..n {

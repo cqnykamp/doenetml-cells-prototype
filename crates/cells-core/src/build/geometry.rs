@@ -4,6 +4,7 @@
 //! inverse rules of the operators it uses are in `geo.rs`.
 
 use super::*;
+use crate::components::prop::{circle, line, point, polygon, segment};
 
 impl<'a> Compiler<'a> {
     /// `<point>`: coordinates from `coords`, from `x`/`y`, or from `(a, b)`
@@ -16,7 +17,7 @@ impl<'a> Compiler<'a> {
         let base_children = base.map(|b| self.math_children(b)).unwrap_or_default();
         if let Some(a) = self.attr_or_inherited(el, base, "coords") {
             let p = self.plan_point_attr(t, scope, a)?;
-            Self::set_point_with_roles(&mut ch, [0, 1], &p, ["x", "y"], "coords");
+            Self::set_point_with_roles(&mut ch, [point::X, point::Y], &p, ["x", "y"], "coords");
         } else if self.attr_or_inherited(el, base, "x").is_some() || self.attr_or_inherited(el, base, "y").is_some() || (own_children.is_empty() && base_children.is_empty()) {
             for (i, name) in ["x", "y"].into_iter().enumerate() {
                 match self.attr_or_inherited(el, base, name) {
@@ -35,23 +36,23 @@ impl<'a> Compiler<'a> {
         } else {
             let nodes = if own_children.is_empty() { base_children } else { own_children };
             let p = PointPlan::Tuple(self.plan_tuple(t, scope, &nodes)?);
-            Self::set_point_with_roles(&mut ch, [0, 1], &p, ["x", "y"], "children");
+            Self::set_point_with_roles(&mut ch, [point::X, point::Y], &p, ["x", "y"], "children");
         }
         // `hide` is a 0/1 cell: a bare or literal flag, or a bound cell; a
         // copy inherits the original's.
         match self.attr_or_inherited(el, base, "hide") {
             Some(a) if self.single_macro(a).is_some() => {
                 let plan = self.plan_scalar(t, scope, "hide", d.attr_children(a))?;
-                ch.set(2, plan);
+                ch.set(point::HIDE, plan);
             }
             Some(_) => {
                 // The copy's own attribute wins: `hide="false"` reveals a
                 // copy of a hidden point, as in the current core.
                 let owner = if d.attr(el, "hide").is_some() { el } else { base.unwrap() };
                 let on = self.attr_flag(owner, "hide");
-                ch.set(2, SourcePlan::Literal(if on { 1.0 } else { 0.0 }));
+                ch.set(point::HIDE, SourcePlan::Literal(if on { 1.0 } else { 0.0 }));
             }
-            None => ch.set(2, if base.is_some() { SourcePlan::Inherit } else { SourcePlan::Default(0.0) }),
+            None => ch.set(point::HIDE, if base.is_some() { SourcePlan::Inherit } else { SourcePlan::Default(0.0) }),
         }
         // Constraints may sit directly under the point or in <constraints>.
         let mut constraints: Vec<NodeId> = Vec::new();
@@ -82,7 +83,7 @@ impl<'a> Compiler<'a> {
     /// the public `x`, `y` their projection onto the constraint.
     pub(super) fn wrap_constraint(&mut self, t: TemplateId, scope: ElemId, ch: &mut ElemPlan, c: NodeId) -> Result<()> {
         let d = self.c.dast;
-        let (px, py) = (ch.props[0].take().expect("x planned"), ch.props[1].take().expect("y planned"));
+        let (px, py) = (ch.props[point::X].take().expect("x planned"), ch.props[point::Y].take().expect("y planned"));
         let raw_x = ch.hidden(px);
         let raw_y = ch.hidden(py);
         // The raw coordinates are the essential state now; keep their roles.
@@ -120,8 +121,8 @@ impl<'a> Compiler<'a> {
                 };
                 let px = snap(ch, raw_x, dx, xo);
                 let py = snap(ch, raw_y, dy, yo);
-                ch.set(0, px);
-                ch.set(1, py);
+                ch.set(point::X, px);
+                ch.set(point::Y, py);
             }
             "constrainTo" => {
                 let m = d.children(c).iter().copied().find(|&n| d.kind(n) == NodeKind::Macro).ok_or_else(|| Error::Unsupported("<constrainTo> without a reference".into()))?;
@@ -131,11 +132,11 @@ impl<'a> Compiler<'a> {
                 match self.c.templates[t].elems[target].kind {
                     ComponentKind::Circle => {
                         let c = refs(self, ch, &["cx", "cy", "radius"]);
-                        ch.set_vec(0, VecOp::ProjectCircle, vec![raw_x, raw_y, c[0], c[1], c[2]]);
+                        ch.set_vec(point::X, VecOp::ProjectCircle, vec![raw_x, raw_y, c[0], c[1], c[2]]);
                     }
                     ComponentKind::Line | ComponentKind::LineSegment => {
                         let l = refs(self, ch, &["x1", "y1", "x2", "y2"]);
-                        ch.set_vec(0, VecOp::ProjectLine, vec![raw_x, raw_y, l[0], l[1], l[2], l[3]]);
+                        ch.set_vec(point::X, VecOp::ProjectLine, vec![raw_x, raw_y, l[0], l[1], l[2], l[3]]);
                     }
                     other => return Err(Error::Unsupported(format!("constrainTo a <{}>", other.tag()))),
                 }
@@ -405,8 +406,8 @@ impl<'a> Compiler<'a> {
                 ch.set(i, SourcePlan::from_def(op, args));
             }
         }
-        let r2 = ch.hidden(SourcePlan::computed(OpSpec::Mul, vec![2, 2]));
-        ch.set(5, SourcePlan::computed(OpSpec::Scale { k: std::f64::consts::PI }, vec![r2]));
+        let r2 = ch.hidden(SourcePlan::computed(OpSpec::Mul, vec![circle::RADIUS, circle::RADIUS]));
+        ch.set(circle::AREA, SourcePlan::computed(OpSpec::Scale { k: std::f64::consts::PI }, vec![r2]));
         let (hc, hr) = (center.is_some(), radius.is_some());
         // The radius shown is never negative; the prescribed radius, or an
         // essential one (1 by default), behind it receives the clamped value
@@ -425,7 +426,7 @@ impl<'a> Compiler<'a> {
         let nan = || SourcePlan::Fixed(f64::NAN);
         // Through points and the center-as-reference, for `$c.throughPoint1`
         // and `<point extend="$c.center">`.
-        let through_slot = |i: usize, j: usize| kind.prop_index("throughX1").unwrap() + 2 * i + j;
+        let through_slot = |i: usize, j: usize| circle::THROUGH_X1 + 2 * i + j;
         for (i, p) in through.iter().enumerate().take(3) {
             Self::set_point_with_roles(&mut ch, [through_slot(i, 0), through_slot(i, 1)], p, POINT_ROLES[i], "through");
         }
@@ -433,54 +434,54 @@ impl<'a> Compiler<'a> {
             ch.set(through_slot(i, 0), nan());
             ch.set(through_slot(i, 1), nan());
         }
-        ch.set(kind.prop_index("numThroughPoints").unwrap(), SourcePlan::Fixed(n as f64));
-        let (center_x, center_y) = (kind.prop_index("centerX").unwrap(), kind.prop_index("centerY").unwrap());
+        ch.set(circle::NUM_THROUGH_POINTS, SourcePlan::Fixed(n as f64));
+        let (center_x, center_y) = (circle::CENTER_X, circle::CENTER_Y);
         let (tx1, ty1, tx2, ty2) = (through_slot(0, 0), through_slot(0, 1), through_slot(1, 0), through_slot(1, 1));
         // The prescribed center lives on `centerX`/`centerY` and the cases
         // read it from there; without one they alias the derived center.
         match &center {
             Some(c) => Self::set_point_with_roles(&mut ch, [center_x, center_y], c, ["cx", "cy"], "center"),
             None => {
-                ch.set(center_x, SourcePlan::own(0));
-                ch.set(center_y, SourcePlan::own(1));
+                ch.set(center_x, SourcePlan::own(circle::CX));
+                ch.set(center_y, SourcePlan::own(circle::CY));
             }
         }
         match (hc, hr, n) {
             // The current core warns and gives up on over-determined circles.
             (_, _, n) if n > 3 || (hc && hr && n >= 1) || (hc && n >= 2) || (hr && n >= 3) => {
-                ch.set(0, nan());
-                ch.set(1, nan());
-                ch.set(2, nan());
+                ch.set(circle::CX, nan());
+                ch.set(circle::CY, nan());
+                ch.set(circle::RADIUS, nan());
             }
             (_, _, 0) => {
                 if hc {
-                    ch.set(0, SourcePlan::own(center_x));
-                    ch.set(1, SourcePlan::own(center_y));
+                    ch.set(circle::CX, SourcePlan::own(center_x));
+                    ch.set(circle::CY, SourcePlan::own(center_y));
                 } else {
-                    ch.set_essential(0, "cx", 0.0);
-                    ch.set_essential(1, "cy", 0.0);
+                    ch.set_essential(circle::CX, "cx", 0.0);
+                    ch.set_essential(circle::CY, "cy", 0.0);
                 }
                 let r = radius_plan(&mut ch);
-                ch.set(2, r);
+                ch.set(circle::RADIUS, r);
             }
             (true, false, 1) => {
-                ch.set_vec(0, VecOp::CircleCenterPoint, vec![center_x, center_y, tx1, ty1]);
+                ch.set_vec(circle::CX, VecOp::CircleCenterPoint, vec![center_x, center_y, tx1, ty1]);
             }
             (false, _, 1) => {
                 // The through point sits on top of the circle.
                 let r = radius_plan(&mut ch);
-                ch.set(2, r);
-                ch.set(0, SourcePlan::own(tx1));
-                ch.set(1, SourcePlan::computed(OpSpec::Sub, vec![ty1, 2]));
+                ch.set(circle::RADIUS, r);
+                ch.set(circle::CX, SourcePlan::own(tx1));
+                ch.set(circle::CY, SourcePlan::computed(OpSpec::Sub, vec![ty1, circle::RADIUS]));
             }
             (false, true, 2) => {
                 let r = radius_plan(&mut ch);
-                ch.set(2, r);
-                ch.set_vec(0, VecOp::CircleTwoPointsRadius, vec![tx1, ty1, tx2, ty2, 2]);
+                ch.set(circle::RADIUS, r);
+                ch.set_vec(circle::CX, VecOp::CircleTwoPointsRadius, vec![tx1, ty1, tx2, ty2, circle::RADIUS]);
             }
             (false, false, n) => {
                 let args: Vec<usize> = (0..2 * n).map(|k| tx1 + k).collect();
-                ch.set_vec(0, VecOp::CirclePoints { n: n as u8 }, args);
+                ch.set_vec(circle::CX, VecOp::CirclePoints { n: n as u8 }, args);
             }
             _ => unreachable!(),
         }
@@ -586,17 +587,17 @@ impl<'a> Compiler<'a> {
                 Some([a, b, c]) => [self.plan_from_expr(a), self.plan_from_expr(b), self.plan_from_expr(c)],
             };
             let [a, b, c] = coeffs;
-            ch.set(7, a);
-            ch.set(8, b);
-            ch.set(9, c);
-            ch.set_vec(0, VecOp::LinePointsFromCoeffs, vec![7, 8, 9]);
-            let q = ch.hidden(SourcePlan::computed(OpSpec::Div, vec![7, 8]));
-            ch.set(4, SourcePlan::computed(OpSpec::Negate, vec![q]));
-            let xi = ch.hidden(SourcePlan::computed(OpSpec::Div, vec![9, 7]));
-            ch.set(5, SourcePlan::computed(OpSpec::Negate, vec![xi]));
-            let yi = ch.hidden(SourcePlan::computed(OpSpec::Div, vec![9, 8]));
-            ch.set(6, SourcePlan::computed(OpSpec::Negate, vec![yi]));
-            ch.set(10, SourcePlan::Fixed(0.0));
+            ch.set(line::COEFFVAR1, a);
+            ch.set(line::COEFFVAR2, b);
+            ch.set(line::COEFF0, c);
+            ch.set_vec(line::X1, VecOp::LinePointsFromCoeffs, vec![line::COEFFVAR1, line::COEFFVAR2, line::COEFF0]);
+            let q = ch.hidden(SourcePlan::computed(OpSpec::Div, vec![line::COEFFVAR1, line::COEFFVAR2]));
+            ch.set(line::SLOPE, SourcePlan::computed(OpSpec::Negate, vec![q]));
+            let xi = ch.hidden(SourcePlan::computed(OpSpec::Div, vec![line::COEFF0, line::COEFFVAR1]));
+            ch.set(line::XINTERCEPT, SourcePlan::computed(OpSpec::Negate, vec![xi]));
+            let yi = ch.hidden(SourcePlan::computed(OpSpec::Div, vec![line::COEFF0, line::COEFFVAR2]));
+            ch.set(line::YINTERCEPT, SourcePlan::computed(OpSpec::Negate, vec![yi]));
+            ch.set(line::BASED_ON_DIRECTION, SourcePlan::Fixed(0.0));
             return Ok(ch);
         }
 
@@ -605,12 +606,12 @@ impl<'a> Compiler<'a> {
         // current core takes as (1, 0) for a two-point line and (0, 0) when a
         // slope or direction gives the second point (`ESS1`, `ESS2`).
         if direction_mode {
-            Self::set_point_or_default(&mut ch, [0, 1], through.first(), POINT_ROLES[0], "through", ESS2);
+            Self::set_point_or_default(&mut ch, [line::X1, line::Y1], through.first(), POINT_ROLES[0], "through", ESS2);
             let dist = ch.essential("dist", 1.0);
             if let Some(a) = slope {
                 let m = self.plan_scalar(t, scope, "slope", d.attr_children(a))?;
                 let m = ch.hidden(m);
-                ch.set_vec(2, VecOp::PolarSlope, vec![0, 1, m, dist]);
+                ch.set_vec(line::X2, VecOp::PolarSlope, vec![line::X1, line::Y1, m, dist]);
             } else {
                 let (a, perp) = match (parallel, perpendicular) {
                     (Some(a), _) => (a, false),
@@ -618,33 +619,33 @@ impl<'a> Compiler<'a> {
                     _ => unreachable!(),
                 };
                 let [ux, uy] = self.plan_direction(t, scope, a, &mut ch)?;
-                ch.set_vec(2, VecOp::PolarDirection { perpendicular: perp }, vec![0, 1, ux, uy, dist]);
+                ch.set_vec(line::X2, VecOp::PolarDirection { perpendicular: perp }, vec![line::X1, line::Y1, ux, uy, dist]);
             }
-            ch.set(10, SourcePlan::Fixed(1.0));
+            ch.set(line::BASED_ON_DIRECTION, SourcePlan::Fixed(1.0));
         } else {
             // The line's points are the through points (or essential
             // defaults) themselves; a whole-line drag is a point group.
-            Self::set_point_or_default(&mut ch, [0, 1], through.first(), POINT_ROLES[0], "through", ESS1);
-            Self::set_point_or_default(&mut ch, [2, 3], through.get(1), POINT_ROLES[1], "through", ESS2);
-            ch.set(10, SourcePlan::Fixed(0.0));
+            Self::set_point_or_default(&mut ch, [line::X1, line::Y1], through.first(), POINT_ROLES[0], "through", ESS1);
+            Self::set_point_or_default(&mut ch, [line::X2, line::Y2], through.get(1), POINT_ROLES[1], "through", ESS2);
+            ch.set(line::BASED_ON_DIRECTION, SourcePlan::Fixed(0.0));
         }
         // slope, intercepts and coefficients from the two points:
         // a = y2 - y1, b = x1 - x2, c = -(a x1 + b y1). The slope is the
         // points' ratio even for a slope-based line, as in the current core
         // (NaN when the points coincide).
-        let dy = ch.hidden(SourcePlan::computed(OpSpec::Sub, vec![3, 1]));
-        let dx = ch.hidden(SourcePlan::computed(OpSpec::Sub, vec![2, 0]));
-        ch.set(4, SourcePlan::computed(OpSpec::Div, vec![dy, dx]));
-        let q = ch.hidden(SourcePlan::computed(OpSpec::Div, vec![1, 4]));
-        ch.set(5, SourcePlan::computed(OpSpec::Sub, vec![0, q]));
-        let mx = ch.hidden(SourcePlan::computed(OpSpec::Mul, vec![4, 0]));
-        ch.set(6, SourcePlan::computed(OpSpec::Sub, vec![1, mx]));
-        ch.set(7, SourcePlan::own(dy));
-        ch.set(8, SourcePlan::computed(OpSpec::Sub, vec![0, 2]));
-        let ax = ch.hidden(SourcePlan::computed(OpSpec::Mul, vec![7, 0]));
-        let by = ch.hidden(SourcePlan::computed(OpSpec::Mul, vec![8, 1]));
+        let dy = ch.hidden(SourcePlan::computed(OpSpec::Sub, vec![line::Y2, line::Y1]));
+        let dx = ch.hidden(SourcePlan::computed(OpSpec::Sub, vec![line::X2, line::X1]));
+        ch.set(line::SLOPE, SourcePlan::computed(OpSpec::Div, vec![dy, dx]));
+        let q = ch.hidden(SourcePlan::computed(OpSpec::Div, vec![line::Y1, line::SLOPE]));
+        ch.set(line::XINTERCEPT, SourcePlan::computed(OpSpec::Sub, vec![line::X1, q]));
+        let mx = ch.hidden(SourcePlan::computed(OpSpec::Mul, vec![line::SLOPE, line::X1]));
+        ch.set(line::YINTERCEPT, SourcePlan::computed(OpSpec::Sub, vec![line::Y1, mx]));
+        ch.set(line::COEFFVAR1, SourcePlan::own(dy));
+        ch.set(line::COEFFVAR2, SourcePlan::computed(OpSpec::Sub, vec![line::X1, line::X2]));
+        let ax = ch.hidden(SourcePlan::computed(OpSpec::Mul, vec![line::COEFFVAR1, line::X1]));
+        let by = ch.hidden(SourcePlan::computed(OpSpec::Mul, vec![line::COEFFVAR2, line::Y1]));
         let sum = ch.hidden(SourcePlan::computed(OpSpec::Add, vec![ax, by]));
-        ch.set(9, SourcePlan::computed(OpSpec::Negate, vec![sum]));
+        ch.set(line::COEFF0, SourcePlan::computed(OpSpec::Negate, vec![sum]));
         Ok(ch)
     }
 
@@ -678,8 +679,8 @@ impl<'a> Compiler<'a> {
             Some(a) => self.plan_point_list(t, scope, a)?,
             None => Vec::new(),
         };
-        Self::set_point_or_default(&mut ch, [0, 1], ends.first(), POINT_ROLES[0], "endpoints", ESS1);
-        Self::set_point_or_default(&mut ch, [2, 3], ends.get(1), POINT_ROLES[1], "endpoints", ESS2);
+        Self::set_point_or_default(&mut ch, [segment::X1, segment::Y1], ends.first(), POINT_ROLES[0], "endpoints", ESS1);
+        Self::set_point_or_default(&mut ch, [segment::X2, segment::Y2], ends.get(1), POINT_ROLES[1], "endpoints", ESS2);
         Ok(ch)
     }
 
@@ -734,7 +735,7 @@ impl<'a> Compiler<'a> {
         } else {
             None
         };
-        ch.set(0, SourcePlan::Fixed(n as f64));
+        ch.set(polygon::NUM_VERTICES, SourcePlan::Fixed(n as f64));
         match rigid_opts {
             // Rigid: the document declares the coupling, so one instruction
             // owns every vertex.
@@ -758,18 +759,18 @@ impl<'a> Compiler<'a> {
                         args.push(ch.hidden(SourcePlan::Fixed(f64::NAN)));
                     }
                 }
-                ch.set_vec(1, VecOp::Shape { n: n as u8, opts }, args);
+                ch.set_vec(polygon::X1, VecOp::Shape { n: n as u8, opts }, args);
             }
             // Free: the vertices are the points; a vertex may be defined
             // from its siblings without a cycle.
             _ => {
                 for (k, v) in vertices.iter().enumerate() {
-                    Self::set_point_with_roles(&mut ch, [1 + 2 * k, 2 + 2 * k], v, POINT_ROLES[k], "vertices");
+                    Self::set_point_with_roles(&mut ch, [polygon::X1 + 2 * k, polygon::X1 + 2 * k + 1], v, POINT_ROLES[k], "vertices");
                 }
             }
         }
         for k in 2 * n..2 * crate::components::MAX_VERTICES {
-            ch.set(1 + k, SourcePlan::Fixed(f64::NAN));
+            ch.set(polygon::X1 + k, SourcePlan::Fixed(f64::NAN));
         }
         Ok(ch)
     }

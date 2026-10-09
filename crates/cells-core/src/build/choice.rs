@@ -450,12 +450,12 @@ impl<'c, 'a> Builder<'c, 'a> {
                 inst.branch_of.push(b);
             }
         } else {
-            let choice = self.slot(comp, 0);
+            let choice = self.slot(comp, crate::components::prop::conditional_content::CHOICE);
             for k in 1..=def.branches.len() {
                 let s = self.scope_for(scope, node, k as u32);
                 let case = self.new_component(ComponentKind::Case, NONE, comp, NONE, scope, 1);
                 let pos = self.anon_slot(Source::Fixed(k as f64));
-                let active_slot = self.slot(case, 0);
+                let active_slot = self.slot(case, crate::components::prop::case::ACTIVE);
                 self.sources[active_slot as usize] = self.op_source(OpSpec::Eq, &[choice, pos]);
                 self.enter_scope(s, def.branches[k - 1]);
                 let these = self.expand(def.branches[k - 1], s, case)?;

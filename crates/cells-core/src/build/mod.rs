@@ -37,7 +37,7 @@ use std::collections::HashMap;
 
 use cells_sym::{SymEngine, Tree};
 
-use crate::components::{ComponentKind, PropFrom};
+use crate::components::{ComponentKind, PropFrom, prop};
 use crate::dast::{Dast, NodeId, NodeKind, StrId, StringTable};
 use crate::document::{CellIdx, CompIdx, Components, Document, NONE, Repeat, ScopeId, Structure, TEXT_BIT};
 use crate::error::{Error, Result};

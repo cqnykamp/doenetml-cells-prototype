@@ -302,6 +302,192 @@ const SEQUENCE_VALUE_PROPS: &[PropDef] = &[
     /* 5 */ computed("value", OpSpec::Add, &[4, 0]),
 ];
 
+const GRAPH_PROPS: &[PropDef] = &[attr("xmin", -10.0), attr("xmax", 10.0), attr("ymin", -10.0), attr("ymax", 10.0)];
+// `hide` is a boolean in the current core; here it is a 0/1 cell.
+const POINT_PROPS: &[PropDef] = &[planned("x"), planned("y"), planned("hide")];
+const BOOLEAN_INPUT_PROPS: &[PropDef] = &[attr("value", 0.0)];
+// Both of a math's props are set by the builder from its children.
+const MATH_PROPS: &[PropDef] = &[
+    PropDef { name: "expr", default: f64::NAN, from: PropFrom::Children, attr: None, bind: None, ref_prop: None },
+    PropDef { name: "value", default: f64::NAN, from: PropFrom::Children, attr: None, bind: None, ref_prop: None },
+];
+const EVALUATE_PROPS: &[PropDef] = &[
+    PropDef { name: "function", default: f64::NAN, from: PropFrom::Attribute, attr: None, bind: None, ref_prop: Some("expr") },
+    attr("input", f64::NAN),
+    computed("value", OpSpec::Sym(SymKind::EvalAt), &[0, 1]),
+];
+const NUMBER_PROPS: &[PropDef] = &[PropDef { name: "value", default: f64::NAN, from: PropFrom::Children, attr: None, bind: None, ref_prop: None }];
+const NUMBER_INPUT_PROPS: &[PropDef] = &[attr("value", f64::NAN)];
+// A mathInput's value is bound by a child reference or `bindValueTo`,
+// else it is the `prefill` (the builder reads it). The builder plans
+// `expr` from what `value` turned out to be.
+const MATH_INPUT_PROPS: &[PropDef] = &[
+    PropDef { name: "value", default: f64::NAN, from: PropFrom::Children, attr: Some("prefill"), bind: Some("bindValueTo"), ref_prop: None },
+    PropDef { name: "expr", default: f64::NAN, from: PropFrom::Attribute, attr: Some("(planned)"), bind: None, ref_prop: None },
+];
+// Planned by the builder (`plan_symbolic`); `samples` is the first of
+// `SAMPLES` consecutive cells.
+const CURVE_PROPS: &[PropDef] = &[
+    PropDef { name: "expr", default: f64::NAN, from: PropFrom::Children, attr: None, bind: None, ref_prop: None },
+    planned("xmin"),
+    planned("xmax"),
+    planned("samples"),
+];
+const ANSWER_PROPS: &[PropDef] = &[
+    PropDef { name: "response", default: f64::NAN, from: PropFrom::Attribute, attr: None, bind: None, ref_prop: Some("expr") },
+    PropDef { name: "correct", default: f64::NAN, from: PropFrom::Children, attr: None, bind: None, ref_prop: None },
+    attr("submitted", f64::NAN),
+    planned("credit"),
+    attr("weight", 1.0),
+];
+const OP_PROPS: &[PropDef] = &[PropDef { name: "value", default: f64::NAN, from: PropFrom::Derived, attr: None, bind: None, ref_prop: None }];
+const COLLECT_PROPS: &[PropDef] = &[attr("count", 0.0)];
+const STICKY_GROUP_PROPS: &[PropDef] = &[attr("threshold", f64::NAN), attr("relativeToGraphScales", 0.0)];
+// `creditAchieved` and `number` are wired after expansion; the
+// flags are literals the builder reads, since they decide the wiring.
+const DOCUMENT_PROPS: &[PropDef] = &[planned("creditAchieved"), computed("percentCreditAchieved", OpSpec::Scale { k: 100.0 }, &[0])];
+const SECTION_PROPS: &[PropDef] = &[
+    planned("creditAchieved"),
+    computed("percentCreditAchieved", OpSpec::Scale { k: 100.0 }, &[0]),
+    attr("weight", 1.0),
+    planned("aggregateScores"),
+    planned("number"),
+    planned("includeParentNumber"),
+    planned("label"),
+];
+const TEXT_PROPS: &[PropDef] = &[PropDef { name: "value", default: f64::NAN, from: PropFrom::Children, attr: None, bind: None, ref_prop: None }];
+// `hide` hides what the choice shows, not copies of its names.
+const CONDITIONAL_CONTENT_PROPS: &[PropDef] = &[planned("choice"), planned("hide")];
+const CASE_PROPS: &[PropDef] = &[planned("active")];
+const SELECT_PROPS: &[PropDef] = &[planned("hide")];
+
+/// Positions of props in their kind's table, for code that sets or reads a
+/// prop by position. Each is looked up by name when compiled, so renaming
+/// or reordering a table cannot silently break a reader.
+pub mod prop {
+    use super::*;
+
+    const fn at(defs: &[PropDef], name: &str) -> usize {
+        let mut i = 0;
+        while i < defs.len() {
+            let (a, b) = (defs[i].name.as_bytes(), name.as_bytes());
+            if a.len() == b.len() {
+                let mut j = 0;
+                while j < a.len() && a[j] == b[j] {
+                    j += 1;
+                }
+                if j == a.len() {
+                    return i;
+                }
+            }
+            i += 1;
+        }
+        panic!("no such prop")
+    }
+
+    pub mod point {
+        use super::*;
+        pub const X: usize = at(POINT_PROPS, "x");
+        pub const Y: usize = at(POINT_PROPS, "y");
+        pub const HIDE: usize = at(POINT_PROPS, "hide");
+    }
+    pub mod circle {
+        use super::*;
+        pub const CX: usize = at(CIRCLE_PROPS, "cx");
+        pub const CY: usize = at(CIRCLE_PROPS, "cy");
+        pub const RADIUS: usize = at(CIRCLE_PROPS, "radius");
+        pub const AREA: usize = at(CIRCLE_PROPS, "area");
+        pub const CENTER_X: usize = at(CIRCLE_PROPS, "centerX");
+        pub const CENTER_Y: usize = at(CIRCLE_PROPS, "centerY");
+        /// The first of three through points' (x, y) pairs.
+        pub const THROUGH_X1: usize = at(CIRCLE_PROPS, "throughX1");
+        pub const NUM_THROUGH_POINTS: usize = at(CIRCLE_PROPS, "numThroughPoints");
+    }
+    pub mod line {
+        use super::*;
+        pub const X1: usize = at(LINE_PROPS, "x1");
+        pub const Y1: usize = at(LINE_PROPS, "y1");
+        pub const X2: usize = at(LINE_PROPS, "x2");
+        pub const Y2: usize = at(LINE_PROPS, "y2");
+        pub const SLOPE: usize = at(LINE_PROPS, "slope");
+        pub const XINTERCEPT: usize = at(LINE_PROPS, "xintercept");
+        pub const YINTERCEPT: usize = at(LINE_PROPS, "yintercept");
+        pub const COEFFVAR1: usize = at(LINE_PROPS, "coeffvar1");
+        pub const COEFFVAR2: usize = at(LINE_PROPS, "coeffvar2");
+        pub const COEFF0: usize = at(LINE_PROPS, "coeff0");
+        pub const BASED_ON_DIRECTION: usize = at(LINE_PROPS, "basedOnDirection");
+    }
+    pub mod segment {
+        use super::*;
+        pub const X1: usize = at(LINE_SEGMENT_PROPS, "x1");
+        pub const Y1: usize = at(LINE_SEGMENT_PROPS, "y1");
+        pub const X2: usize = at(LINE_SEGMENT_PROPS, "x2");
+        pub const Y2: usize = at(LINE_SEGMENT_PROPS, "y2");
+    }
+    pub mod polygon {
+        use super::*;
+        pub const NUM_VERTICES: usize = at(POLYGON_PROPS, "numVertices");
+        /// The first vertex's x; vertex k's (x, y) are at `X1 + 2k`, `X1 + 2k + 1`.
+        pub const X1: usize = at(POLYGON_PROPS, "x1");
+    }
+    pub mod graph {
+        use super::*;
+        pub const XMIN: usize = at(GRAPH_PROPS, "xmin");
+        pub const XMAX: usize = at(GRAPH_PROPS, "xmax");
+        pub const YMIN: usize = at(GRAPH_PROPS, "ymin");
+        pub const YMAX: usize = at(GRAPH_PROPS, "ymax");
+    }
+    pub mod sticky_group {
+        use super::*;
+        pub const THRESHOLD: usize = at(STICKY_GROUP_PROPS, "threshold");
+        pub const RELATIVE: usize = at(STICKY_GROUP_PROPS, "relativeToGraphScales");
+    }
+    pub mod math {
+        use super::*;
+        pub const EXPR: usize = at(MATH_PROPS, "expr");
+        pub const VALUE: usize = at(MATH_PROPS, "value");
+    }
+    pub mod math_input {
+        use super::*;
+        pub const VALUE: usize = at(MATH_INPUT_PROPS, "value");
+        pub const EXPR: usize = at(MATH_INPUT_PROPS, "expr");
+    }
+    pub mod answer {
+        use super::*;
+        pub const RESPONSE: usize = at(ANSWER_PROPS, "response");
+        pub const SUBMITTED: usize = at(ANSWER_PROPS, "submitted");
+        pub const CREDIT: usize = at(ANSWER_PROPS, "credit");
+        pub const WEIGHT: usize = at(ANSWER_PROPS, "weight");
+    }
+    pub mod document {
+        use super::*;
+        pub const CREDIT: usize = at(DOCUMENT_PROPS, "creditAchieved");
+        pub const PERCENT_CREDIT: usize = at(DOCUMENT_PROPS, "percentCreditAchieved");
+    }
+    pub mod section {
+        use super::*;
+        pub const CREDIT: usize = at(SECTION_PROPS, "creditAchieved");
+        pub const PERCENT_CREDIT: usize = at(SECTION_PROPS, "percentCreditAchieved");
+        pub const WEIGHT: usize = at(SECTION_PROPS, "weight");
+        pub const AGGREGATE: usize = at(SECTION_PROPS, "aggregateScores");
+        pub const NUMBER: usize = at(SECTION_PROPS, "number");
+        pub const INCLUDE_PARENT_NUMBER: usize = at(SECTION_PROPS, "includeParentNumber");
+        pub const LABEL: usize = at(SECTION_PROPS, "label");
+    }
+    pub mod text {
+        use super::*;
+        pub const VALUE: usize = at(TEXT_PROPS, "value");
+    }
+    pub mod conditional_content {
+        use super::*;
+        pub const CHOICE: usize = at(CONDITIONAL_CONTENT_PROPS, "choice");
+    }
+    pub mod case {
+        use super::*;
+        pub const ACTIVE: usize = at(CASE_PROPS, "active");
+    }
+}
+
 impl ComponentKind {
     pub const ALL: [ComponentKind; 31] = [
         Self::Document,
@@ -413,87 +599,34 @@ impl ComponentKind {
 
     /// Single-cell props, in declaration order.
     pub fn prop_defs(self) -> &'static [PropDef] {
-        const GRAPH: &[PropDef] = &[attr("xmin", -10.0), attr("xmax", 10.0), attr("ymin", -10.0), attr("ymax", 10.0)];
-        // `hide` is a boolean in the current core; here it is a 0/1 cell.
-        const POINT: &[PropDef] = &[planned("x"), planned("y"), planned("hide")];
-        const BOOLEAN_INPUT: &[PropDef] = &[attr("value", 0.0)];
-        // Both of a math's props are set by the builder from its children.
-        const MATH: &[PropDef] = &[
-            PropDef { name: "expr", default: f64::NAN, from: PropFrom::Children, attr: None, bind: None, ref_prop: None },
-            PropDef { name: "value", default: f64::NAN, from: PropFrom::Children, attr: None, bind: None, ref_prop: None },
-        ];
-        const EVALUATE: &[PropDef] = &[
-            PropDef { name: "function", default: f64::NAN, from: PropFrom::Attribute, attr: None, bind: None, ref_prop: Some("expr") },
-            attr("input", f64::NAN),
-            computed("value", OpSpec::Sym(SymKind::EvalAt), &[0, 1]),
-        ];
-        const NUMBER: &[PropDef] = &[PropDef { name: "value", default: f64::NAN, from: PropFrom::Children, attr: None, bind: None, ref_prop: None }];
-        const NUMBER_INPUT: &[PropDef] = &[attr("value", f64::NAN)];
-        // A mathInput's value is bound by a child reference or `bindValueTo`,
-        // else it is the `prefill` (the builder reads it). The builder plans
-        // `expr` from what `value` turned out to be.
-        const MATH_INPUT: &[PropDef] = &[
-            PropDef { name: "value", default: f64::NAN, from: PropFrom::Children, attr: Some("prefill"), bind: Some("bindValueTo"), ref_prop: None },
-            PropDef { name: "expr", default: f64::NAN, from: PropFrom::Attribute, attr: Some("(planned)"), bind: None, ref_prop: None },
-        ];
-        // Planned by the builder (`plan_symbolic`); `samples` is the first of
-        // `SAMPLES` consecutive cells.
-        const CURVE: &[PropDef] = &[
-            PropDef { name: "expr", default: f64::NAN, from: PropFrom::Children, attr: None, bind: None, ref_prop: None },
-            planned("xmin"),
-            planned("xmax"),
-            planned("samples"),
-        ];
-        const ANSWER: &[PropDef] = &[
-            PropDef { name: "response", default: f64::NAN, from: PropFrom::Attribute, attr: None, bind: None, ref_prop: Some("expr") },
-            PropDef { name: "correct", default: f64::NAN, from: PropFrom::Children, attr: None, bind: None, ref_prop: None },
-            attr("submitted", f64::NAN),
-            planned("credit"),
-            attr("weight", 1.0),
-        ];
-        const OP: &[PropDef] = &[PropDef { name: "value", default: f64::NAN, from: PropFrom::Derived, attr: None, bind: None, ref_prop: None }];
-        const COLLECT: &[PropDef] = &[attr("count", 0.0)];
-        const STICKY_GROUP: &[PropDef] = &[attr("threshold", f64::NAN), attr("relativeToGraphScales", 0.0)];
-        // `creditAchieved` and `number` are wired after expansion; the
-        // flags are literals the builder reads, since they decide the wiring.
-        const DOCUMENT: &[PropDef] = &[planned("creditAchieved"), computed("percentCreditAchieved", OpSpec::Scale { k: 100.0 }, &[0])];
-        const SECTION: &[PropDef] = &[
-            planned("creditAchieved"),
-            computed("percentCreditAchieved", OpSpec::Scale { k: 100.0 }, &[0]),
-            attr("weight", 1.0),
-            planned("aggregateScores"),
-            planned("number"),
-            planned("includeParentNumber"),
-            planned("label"),
-        ];
         match self {
-            Self::Document => DOCUMENT,
-            Self::Section => SECTION,
-            Self::Graph => GRAPH,
-            Self::Point => POINT,
-            Self::Number => NUMBER,
-            Self::NumberInput => NUMBER_INPUT,
-            Self::Op => OP,
+            Self::Document => DOCUMENT_PROPS,
+            Self::Section => SECTION_PROPS,
+            Self::Graph => GRAPH_PROPS,
+            Self::Point => POINT_PROPS,
+            Self::Number => NUMBER_PROPS,
+            Self::NumberInput => NUMBER_INPUT_PROPS,
+            Self::Op => OP_PROPS,
             Self::Slider => SLIDER_PROPS,
             Self::RepeatForSequence => REPEAT_PROPS,
-            Self::Collect => COLLECT,
+            Self::Collect => COLLECT_PROPS,
             Self::SequenceValue => SEQUENCE_VALUE_PROPS,
-            Self::BooleanInput => BOOLEAN_INPUT,
-            Self::Math => MATH,
-            Self::Evaluate => EVALUATE,
-            Self::MathInput => MATH_INPUT,
+            Self::BooleanInput => BOOLEAN_INPUT_PROPS,
+            Self::Math => MATH_PROPS,
+            Self::Evaluate => EVALUATE_PROPS,
+            Self::MathInput => MATH_INPUT_PROPS,
             Self::Circle => CIRCLE_PROPS,
             Self::Line => LINE_PROPS,
             Self::LineSegment => LINE_SEGMENT_PROPS,
             Self::Polygon => POLYGON_PROPS,
-            Self::StickyGroup => STICKY_GROUP,
-            Self::Function | Self::Derivative => CURVE,
-            Self::Answer => ANSWER,
-            Self::Text => const { &[PropDef { name: "value", default: f64::NAN, from: PropFrom::Children, attr: None, bind: None, ref_prop: None }] },
+            Self::StickyGroup => STICKY_GROUP_PROPS,
+            Self::Function | Self::Derivative => CURVE_PROPS,
+            Self::Answer => ANSWER_PROPS,
+            Self::Text => TEXT_PROPS,
             // `hide` hides what the choice shows, not copies of its names.
-            Self::ConditionalContent => const { &[planned("choice"), planned("hide")] },
-            Self::Case => const { &[planned("active")] },
-            Self::Select => const { &[planned("hide")] },
+            Self::ConditionalContent => CONDITIONAL_CONTENT_PROPS,
+            Self::Case => CASE_PROPS,
+            Self::Select => SELECT_PROPS,
             Self::PointList | Self::P | Self::Setup | Self::Group => &[],
         }
     }

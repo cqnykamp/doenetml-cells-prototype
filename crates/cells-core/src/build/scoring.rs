@@ -26,11 +26,11 @@ use super::*;
 /// `geo::MAX_VEC_IN` inputs.
 const CHUNK: usize = crate::geo::MAX_VEC_IN / 2;
 
-/// Section props (`components.rs`).
-const CREDIT: usize = 0;
-const WEIGHT: usize = 2;
-const AGGREGATE: usize = 3;
-const NUMBER: usize = 4;
+use crate::components::prop::{answer, document, section};
+use section::{AGGREGATE, CREDIT, NUMBER, PERCENT_CREDIT, WEIGHT};
+
+// The document's credit props sit where a section's do.
+const _: () = assert!(document::CREDIT == CREDIT && document::PERCENT_CREDIT == PERCENT_CREDIT);
 
 impl<'c, 'a> Builder<'c, 'a> {
     /// Wire the document's and every section's `creditAchieved`, and every
@@ -66,7 +66,7 @@ impl<'c, 'a> Builder<'c, 'a> {
     /// A credit that cannot change, and its percentage, as constants: a
     /// document with nothing to score costs no instruction.
     fn set_constant_credit(&mut self, c: CompIdx, credit: f64) {
-        let (s, p) = (self.slot(c, CREDIT), self.slot(c, CREDIT + 1));
+        let (s, p) = (self.slot(c, CREDIT), self.slot(c, PERCENT_CREDIT));
         self.sources[s as usize] = Source::Fixed(credit);
         self.sources[p as usize] = Source::Fixed(100.0 * credit);
     }
@@ -82,7 +82,7 @@ impl<'c, 'a> Builder<'c, 'a> {
 
     /// `gate` times a case's `active` cell.
     fn gate_through(&mut self, gate: Option<SlotId>, case: CompIdx) -> Option<SlotId> {
-        let active = self.slot(case, 0);
+        let active = self.slot(case, crate::components::prop::case::ACTIVE);
         Some(self.gated(gate, active))
     }
 
@@ -126,9 +126,9 @@ impl<'c, 'a> Builder<'c, 'a> {
                 }
                 ComponentKind::Answer => {
                     // A blank response checks as NaN; it is no credit.
-                    let checked = self.slot(k, 3);
+                    let checked = self.slot(k, answer::CREDIT);
                     let credit = self.op_slot(OpSpec::NanTo { k: 0.0 }, &[checked]);
-                    (self.slot(k, 4), credit)
+                    (self.slot(k, answer::WEIGHT), credit)
                 }
                 ComponentKind::Section if self.aggregates(k) => (self.slot(k, WEIGHT), self.slot(k, CREDIT)),
                 _ => {
