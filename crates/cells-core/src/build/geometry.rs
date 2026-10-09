@@ -666,8 +666,6 @@ impl<'a> Compiler<'a> {
         // The essential defaults carry the current core's roles: `ess1` is
         // (1, 0) and `ess2` is (0, 0); a direction-based line's first point
         // is `ess2`.
-        let mut slope_slot: Option<u8> = None;
-        let mut direction_slots: Option<[u8; 2]> = None;
         if direction_mode {
             match through.first() {
                 Some(p) => {
@@ -690,7 +688,6 @@ impl<'a> Compiler<'a> {
             if let Some(a) = slope {
                 let m = self.plan_scalar(t, scope, "slope", d.attr_children(a))?;
                 let m = ch.hidden(m);
-                slope_slot = Some(m);
                 ch.set(2, SourcePlan::vector(VecOp::PolarSlope, vec![0, 1, m, dist]));
             } else {
                 let (a, perp) = match (parallel, perpendicular) {
@@ -699,7 +696,6 @@ impl<'a> Compiler<'a> {
                     _ => unreachable!(),
                 };
                 let [ux, uy] = self.plan_direction(t, scope, a, &mut ch)?;
-                direction_slots = Some(if perp { [uy, ux] } else { [ux, uy] });
                 ch.set(2, SourcePlan::vector(VecOp::PolarDirection { perpendicular: perp }, vec![0, 1, ux, uy, dist]));
             }
             ch.set(3, SourcePlan::VecOut(2, 1));
@@ -724,7 +720,6 @@ impl<'a> Compiler<'a> {
         // (NaN when the points coincide).
         let dy = ch.hidden(SourcePlan::computed(OpSpec::Sub, vec![3, 1]));
         let dx = ch.hidden(SourcePlan::computed(OpSpec::Sub, vec![2, 0]));
-        let _ = (slope_slot, direction_slots);
         ch.set(4, SourcePlan::computed(OpSpec::Div, vec![dy, dx]));
         let q = ch.hidden(SourcePlan::computed(OpSpec::Div, vec![1, 4]));
         ch.set(5, SourcePlan::computed(OpSpec::Sub, vec![0, q]));

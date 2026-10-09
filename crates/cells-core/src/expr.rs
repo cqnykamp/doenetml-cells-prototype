@@ -86,23 +86,6 @@ impl Arena {
         }
     }
 
-    /// Evaluate to a number, reading cell leaves from `cells`. A free symbol
-    /// evaluates to NaN unless `subst` gives it a value (every symbol gets
-    /// the same value: the single-variable "evaluate at" of the experiment).
-    pub fn eval(&self, id: ExprId, cells: &[f64], subst: Option<f64>) -> f64 {
-        match self.get(id) {
-            Expr::Num(v) => *v,
-            Expr::Sym(_) => subst.unwrap_or(f64::NAN),
-            Expr::Cell(c) => cells[*c as usize],
-            Expr::Add(a, b) => self.eval(*a, cells, subst) + self.eval(*b, cells, subst),
-            Expr::Sub(a, b) => self.eval(*a, cells, subst) - self.eval(*b, cells, subst),
-            Expr::Mul(a, b) => self.eval(*a, cells, subst) * self.eval(*b, cells, subst),
-            Expr::Div(a, b) => self.eval(*a, cells, subst) / self.eval(*b, cells, subst),
-            Expr::Pow(a, b) => self.eval(*a, cells, subst).powf(self.eval(*b, cells, subst)),
-            Expr::Neg(a) => -self.eval(*a, cells, subst),
-        }
-    }
-
     /// Distinct cell leaves, in first-appearance order.
     pub fn cell_leaves(&self, id: ExprId, out: &mut Vec<CellIdx>) {
         match self.get(id) {
@@ -118,36 +101,6 @@ impl Arena {
             }
             Expr::Neg(a) => self.cell_leaves(*a, out),
         }
-    }
-
-    /// Infix text, with cell leaves shown by `cell_name`.
-    pub fn display(&self, id: ExprId, cell_name: &dyn Fn(CellIdx) -> String) -> String {
-        fn prec(e: &Expr) -> u8 {
-            match e {
-                Expr::Add(..) | Expr::Sub(..) => 1,
-                Expr::Mul(..) | Expr::Div(..) => 2,
-                Expr::Neg(..) => 3,
-                Expr::Pow(..) => 4,
-                _ => 5,
-            }
-        }
-        fn go(a: &Arena, id: ExprId, min: u8, name: &dyn Fn(CellIdx) -> String) -> String {
-            let e = a.get(id);
-            let p = prec(e);
-            let s = match e {
-                Expr::Num(v) => format!("{v}"),
-                Expr::Sym(s) => s.clone(),
-                Expr::Cell(c) => name(*c),
-                Expr::Add(x, y) => format!("{} + {}", go(a, *x, 1, name), go(a, *y, 2, name)),
-                Expr::Sub(x, y) => format!("{} - {}", go(a, *x, 1, name), go(a, *y, 2, name)),
-                Expr::Mul(x, y) => format!("{} * {}", go(a, *x, 2, name), go(a, *y, 3, name)),
-                Expr::Div(x, y) => format!("{} / {}", go(a, *x, 2, name), go(a, *y, 3, name)),
-                Expr::Pow(x, y) => format!("{}^{}", go(a, *x, 5, name), go(a, *y, 4, name)),
-                Expr::Neg(x) => format!("-{}", go(a, *x, 3, name)),
-            };
-            if p < min { format!("({s})") } else { s }
-        }
-        go(self, id, 0, cell_name)
     }
 
     pub fn heap_bytes(&self) -> usize {
