@@ -78,10 +78,6 @@ impl Document {
         self.resolve_path(path)
     }
 
-    pub fn component_names(&self) -> impl Iterator<Item = (&str, CompIdx)> {
-        (0..self.comps.len() as CompIdx).filter_map(|c| self.name(c).map(|n| (n, c)))
-    }
-
     /// Cells of a prop, including virtual props such as a point's `coords`
     /// and array props such as a line's `points` (items flattened, live
     /// items only).

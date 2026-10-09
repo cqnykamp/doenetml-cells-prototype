@@ -158,23 +158,6 @@ impl VecOp {
         }
     }
 
-    pub fn name(&self) -> &'static str {
-        match self {
-            VecOp::Shape { .. } => "rigidShape",
-            VecOp::CircleCenterPoint => "circleCenterPoint",
-            VecOp::CirclePoints { .. } => "circlePoints",
-            VecOp::CircleTwoPointsRadius => "circleTwoPointsRadius",
-            VecOp::PolarSlope => "polarSlope",
-            VecOp::PolarDirection { .. } => "polarDirection",
-            VecOp::LinePointsFromCoeffs => "linePointsFromCoeffs",
-            VecOp::ProjectCircle => "projectCircle",
-            VecOp::ProjectLine => "projectLine",
-            VecOp::First { .. } => "first",
-            VecOp::Choose { .. } => "choose",
-            VecOp::WeightedMean { .. } => "weightedMean",
-        }
-    }
-
     /// Forward evaluation. `inp` holds the input values, `out` receives
     /// `n_out()` values.
     pub fn eval(&self, inp: &[f64], out: &mut [f64]) {

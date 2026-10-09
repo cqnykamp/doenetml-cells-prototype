@@ -338,44 +338,6 @@ impl Op {
         };
         a.into_iter().chain(b).chain(extra[self.extra_range()].iter().copied())
     }
-
-    pub fn kind_name(&self) -> &'static str {
-        match self {
-            Op::Add(..) => "add",
-            Op::Sub(..) => "sub",
-            Op::Mul(..) => "mul",
-            Op::Div(..) => "div",
-            Op::Min(..) => "min",
-            Op::Max(..) => "max",
-            Op::Default(..) => "default",
-            Op::Negate(..) => "negate",
-            Op::Round(..) => "round",
-            Op::Floor(..) => "floor",
-            Op::Scale(..) => "scale",
-            Op::Offset(..) => "offset",
-            Op::Clamp(..) => "clamp",
-            Op::NanTo(..) => "nanTo",
-            Op::Lerp(..) => "lerp",
-            Op::Pow(..) => "pow",
-            Op::Gate(..) => "gate",
-            Op::Lt(..) => "lt",
-            Op::Le(..) => "le",
-            Op::Eq(..) => "eq",
-            Op::Truthy(..) => "truthy",
-            Op::Not(..) => "not",
-            Op::Vec(v, ..) => v.name(),
-            Op::Sym(k, ..) => match k {
-                SymKind::Instantiate { .. } => "instantiate",
-                SymKind::Evaluate => "evaluate",
-                SymKind::EvalAt => "evalAt",
-                SymKind::Derivative => "derivative",
-                SymKind::Equals => "equals",
-                SymKind::EqualsSyntax => "equalsSyntax",
-                SymKind::Sample => "sample",
-                SymKind::SampleTape { .. } => "sampleTape",
-            },
-        }
-    }
 }
 
 /// Description of an operator before its inputs are bound to cells.

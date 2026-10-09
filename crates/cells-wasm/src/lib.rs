@@ -61,11 +61,6 @@ impl Core {
         self.doc.program.sym.stats.get().runs as f64
     }
 
-    /// Expressions (R) or nodes (A) the engine holds.
-    pub fn engine_len(&self) -> usize {
-        self.doc.program.sym.engine.borrow().len()
-    }
-
     /// Pointer to the cell array inside wasm memory. Valid until the next
     /// call that may allocate; callers re-derive their view after each call.
     pub fn cells_ptr(&self) -> *const f64 {
@@ -78,10 +73,6 @@ impl Core {
 
     pub fn n_essential(&self) -> usize {
         self.doc.n_essential
-    }
-
-    pub fn n_instrs(&self) -> usize {
-        self.doc.program.len()
     }
 
     /// Stage timings from loading, in milliseconds, as JSON.
@@ -192,7 +183,6 @@ impl Core {
     }
 
     fn apply(&mut self, reqs: &[Request], groups: &[Vec<PointRequest>]) -> Vec<u32> {
-        let n_before = self.doc.program.len();
         let clock = web_time::Instant::now();
         let tick = self.doc.request_with_groups(self.evaluator.as_mut(), reqs, groups);
         self.last_dropped = tick.dropped.len() as u32;
@@ -203,7 +193,6 @@ impl Core {
             // The whole tick is the rebuild when the program changed shape;
             // the evaluator's dependency tables are for the old program.
             self.last_rebuild_ms = clock.elapsed().as_secs_f64() * 1e3;
-            let _ = n_before;
             let name = self.evaluator.name().to_string();
             self.set_evaluator(&name).unwrap();
         }
@@ -250,12 +239,6 @@ impl Core {
         }
     }
 
-    /// Components named at the top level, as JSON `[[name, idx], ...]`, for
-    /// adapter diagnostics.
-    pub fn component_names_json(&self) -> String {
-        serde_json::to_string(&self.doc.component_names().collect::<Vec<_>>()).unwrap()
-    }
-
     pub fn last_dropped(&self) -> u32 {
         self.last_dropped
     }
@@ -288,11 +271,6 @@ impl Core {
         self.doc.math_text(cell)
     }
 
-    /// LaTeX of the expression a math cell holds.
-    pub fn expr_latex(&self, cell: u32) -> String {
-        self.doc.math_latex(cell)
-    }
-
     /// Build passes the load took to settle repeat counts.
     pub fn passes(&self) -> u32 {
         self.timings.passes
@@ -312,9 +290,5 @@ impl Core {
             other => return Err(JsError::new(&format!("unknown evaluator {other}"))),
         };
         Ok(())
-    }
-
-    pub fn evaluator_name(&self) -> String {
-        self.evaluator.name().to_string()
     }
 }

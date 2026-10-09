@@ -540,14 +540,6 @@ pub const DEFAULT_SWEEP: &[&str] = &[
     "selectall-100", "selectall-1000", "selectall-10000",
 ];
 
-/// The plan 6 mechanism sweep: branch size (points per branch) by
-/// background size (free points elsewhere).
-pub const CHOICE_SWEEP: &[&str] = &[
-    "choicesweep-10x100", "choicesweep-100x100", "choicesweep-1000x100", "choicesweep-10000x100",
-    "choicesweep-10x10000", "choicesweep-100x10000", "choicesweep-1000x10000", "choicesweep-10000x10000",
-    "choicesweep-10x50000", "choicesweep-100x50000", "choicesweep-1000x50000", "choicesweep-10000x50000",
-];
-
 /// The current-core counterpart of a spec, for the baseline measurement.
 /// Shapes with a direct translation go through `to_legacy`; the slider and
 /// repeat shapes are written for the current core directly so its actions

@@ -469,10 +469,6 @@ impl Document {
         (self.n_essential..self.n_essential + self.n_fixed).contains(&(cell as usize))
     }
 
-    pub fn essential_cells(&self) -> &[f64] {
-        &self.cells[..self.n_essential]
-    }
-
     /// Recompute all derived cells from the essential cells.
     pub fn recompute(&mut self) {
         self.program.run_all(&mut self.cells);

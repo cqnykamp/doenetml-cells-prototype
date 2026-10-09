@@ -120,15 +120,6 @@ impl Arena {
         }
     }
 
-    /// Rebind cell leaves (slots during build become cells afterwards).
-    pub fn map_cells(&mut self, f: impl Fn(CellIdx) -> CellIdx) {
-        for n in &mut self.nodes {
-            if let Expr::Cell(c) = n {
-                *c = f(*c);
-            }
-        }
-    }
-
     /// Infix text, with cell leaves shown by `cell_name`.
     pub fn display(&self, id: ExprId, cell_name: &dyn Fn(CellIdx) -> String) -> String {
         fn prec(e: &Expr) -> u8 {

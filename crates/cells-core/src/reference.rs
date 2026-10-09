@@ -32,11 +32,6 @@ impl<'a> ReferenceEvaluator<'a> {
         self.doc.program.eval_into(ins, &scratch, &mut out);
         out[(cell - ins.out) as usize]
     }
-
-    /// Every derived cell, recomputed from scratch.
-    pub fn all_values(&self) -> Vec<f64> {
-        (0..self.doc.cells.len() as CellIdx).map(|c| self.value(c)).collect()
-    }
 }
 
 /// Compare the document's current cells with the reference evaluator.
