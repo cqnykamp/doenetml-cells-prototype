@@ -196,7 +196,7 @@ impl<'a> Compiler<'a> {
             }
             for name in &def.used {
                 match iface.get(name) {
-                    Some((kind, _)) if !kind.copyable() || matches!(kind, ComponentKind::Function | ComponentKind::Derivative | ComponentKind::Answer) => {
+                    Some((kind, _)) if !kind.copyable() || kind.symbolic() => {
                         return Err(Error::Unsupported(format!("a <{}> in a branch interface ('{name}')", kind.tag())));
                     }
                     Some(_) => {}

@@ -197,31 +197,13 @@ const VERTEX_PARTS: [[&str; 2]; MAX_VERTICES] = [
 /// `<polygon>`: `numVertices` then `MAX_VERTICES` coordinate pairs
 /// (`x1`, `y1`, ...); unused pairs hold the shared NaN.
 const POLYGON_PROPS: &[PropDef] = {
-    const NAMES: [[&str; 2]; MAX_VERTICES] = [
-        ["x1", "y1"],
-        ["x2", "y2"],
-        ["x3", "y3"],
-        ["x4", "y4"],
-        ["x5", "y5"],
-        ["x6", "y6"],
-        ["x7", "y7"],
-        ["x8", "y8"],
-        ["x9", "y9"],
-        ["x10", "y10"],
-        ["x11", "y11"],
-        ["x12", "y12"],
-        ["x13", "y13"],
-        ["x14", "y14"],
-        ["x15", "y15"],
-        ["x16", "y16"],
-    ];
     const fn build() -> [PropDef; 1 + 2 * MAX_VERTICES] {
         let mut out = [planned(""); 1 + 2 * MAX_VERTICES];
         out[0] = planned("numVertices");
         let mut i = 0;
         while i < MAX_VERTICES {
-            out[1 + 2 * i] = planned(NAMES[i][0]);
-            out[2 + 2 * i] = planned(NAMES[i][1]);
+            out[1 + 2 * i] = planned(VERTEX_PARTS[i][0]);
+            out[2 + 2 * i] = planned(VERTEX_PARTS[i][1]);
             i += 1;
         }
         out
@@ -488,147 +470,171 @@ pub mod prop {
     }
 }
 
+/// What the core knows about a kind apart from how it is planned and
+/// expanded: one row per kind in `KINDS`, indexed by discriminant.
+pub struct KindInfo {
+    pub kind: ComponentKind,
+    /// The tag the kind shows as, then other tags that make it.
+    pub tags: &'static [&'static str],
+    pub props: &'static [PropDef],
+    /// The prop a bare `$name` reference resolves to.
+    pub default_prop: Option<&'static str>,
+    /// Point-valued props that are views over two single-cell props.
+    pub views: &'static [(&'static str, [&'static str; 2])],
+    /// Array props whose items are points.
+    pub arrays: &'static [ArrayProp],
+    /// The current core's spellings of a few props, accepted in references
+    /// so its documents resolve unchanged.
+    pub aliases: &'static [(&'static str, &'static str)],
+    pub flags: u8,
+    /// How a member of a sticky group attracts and snaps: its shape, the
+    /// prop of its first coordinate, and how many points it has at most (a
+    /// polygon's live count is its `numVertices` cell).
+    pub sticky: Option<(crate::sticky::Shape, usize, usize)>,
+}
+
+/// An array prop of points, such as a polygon's `vertices`: the names it
+/// goes by, the name of an item (`vertex` for `vertex3`), and each item's
+/// coordinate props, as many as the kind can hold.
+pub struct ArrayProp {
+    pub names: &'static [&'static str],
+    pub item: &'static str,
+    pub items: &'static [[&'static str; 2]],
+}
+
+/// `$name` as a child may produce a copy of the component, and
+/// `<collect componentType>` may name the kind.
+pub const COPYABLE: u8 = 1;
+/// The children are rendered; `extend` copies them deeply.
+pub const CONTAINER: u8 = 2;
+/// The builder plans the props from the element's attributes and children
+/// rather than from `PropFrom` (the geometric kinds).
+pub const PLANNED: u8 = 4;
+/// Planned as math cells (`plan_symbolic`); not allowed in a branch
+/// interface.
+pub const SYMBOLIC: u8 = 8;
+/// Made by the builder, never by a tag in the source.
+pub const INTERNAL: u8 = 16;
+
+const fn row(kind: ComponentKind, tags: &'static [&'static str], props: &'static [PropDef], flags: u8) -> KindInfo {
+    KindInfo { kind, tags, props, default_prop: None, views: &[], arrays: &[], aliases: &[], flags, sticky: None }
+}
+
+impl KindInfo {
+    const fn default_prop(mut self, prop: &'static str) -> Self {
+        self.default_prop = Some(prop);
+        self
+    }
+    const fn views(mut self, views: &'static [(&'static str, [&'static str; 2])]) -> Self {
+        self.views = views;
+        self
+    }
+    const fn arrays(mut self, arrays: &'static [ArrayProp]) -> Self {
+        self.arrays = arrays;
+        self
+    }
+    const fn aliases(mut self, aliases: &'static [(&'static str, &'static str)]) -> Self {
+        self.aliases = aliases;
+        self
+    }
+    const fn sticky(mut self, shape: crate::sticky::Shape, first: usize, max: usize) -> Self {
+        self.sticky = Some((shape, first, max));
+        self
+    }
+}
+
+const LINE_POINTS: &[ArrayProp] = &[ArrayProp { names: &["points", "endpoints"], item: "point", items: &[["x1", "y1"], ["x2", "y2"]] }];
+
+pub const KINDS: [KindInfo; 31] = {
+    use crate::sticky::Shape;
+    use ComponentKind as K;
+    [
+        row(K::Document, &["document"], DOCUMENT_PROPS, 0),
+        row(K::Graph, &["graph"], GRAPH_PROPS, CONTAINER),
+        row(K::Point, &["point"], POINT_PROPS, COPYABLE | PLANNED).default_prop("coords").views(&[("coords", ["x", "y"])]).sticky(Shape::Point, prop::point::X, 1),
+        row(K::Number, &["number"], NUMBER_PROPS, COPYABLE).default_prop("value"),
+        row(K::NumberInput, &["numberInput"], NUMBER_INPUT_PROPS, COPYABLE).default_prop("value"),
+        row(K::Op, &["op"], OP_PROPS, COPYABLE).default_prop("value"),
+        row(K::Slider, &["slider"], SLIDER_PROPS, COPYABLE).default_prop("value"),
+        row(K::RepeatForSequence, &["repeatForSequence"], REPEAT_PROPS, 0),
+        row(K::Collect, &["collect"], COLLECT_PROPS, 0),
+        row(K::SequenceValue, &["sequenceValue"], SEQUENCE_VALUE_PROPS, COPYABLE | INTERNAL).default_prop("value"),
+        row(K::BooleanInput, &["booleanInput"], BOOLEAN_INPUT_PROPS, COPYABLE).default_prop("value"),
+        row(K::Math, &["math"], MATH_PROPS, COPYABLE).default_prop("value"),
+        row(K::Evaluate, &["evaluate"], EVALUATE_PROPS, COPYABLE).default_prop("value"),
+        row(K::MathInput, &["mathInput"], MATH_INPUT_PROPS, COPYABLE).default_prop("value"),
+        row(K::Circle, &["circle"], CIRCLE_PROPS, COPYABLE | PLANNED)
+            .views(&[("center", ["centerX", "centerY"]), ("numericalCenter", ["cx", "cy"])])
+            .arrays(&[ArrayProp { names: &["throughPoints"], item: "throughPoint", items: &[["throughX1", "throughY1"], ["throughX2", "throughY2"], ["throughX3", "throughY3"]] }])
+            .aliases(&[
+                ("centerX1", "centerX"),
+                ("centerX2", "centerY"),
+                ("throughPointX1_1", "throughX1"),
+                ("throughPointX1_2", "throughY1"),
+                ("throughPointX2_1", "throughX2"),
+                ("throughPointX2_2", "throughY2"),
+                ("throughPointX3_1", "throughX3"),
+                ("throughPointX3_2", "throughY3"),
+            ]),
+        row(K::Line, &["line"], LINE_PROPS, COPYABLE | PLANNED).arrays(LINE_POINTS),
+        row(K::LineSegment, &["lineSegment"], LINE_SEGMENT_PROPS, COPYABLE | PLANNED).arrays(LINE_POINTS).sticky(Shape::Open, prop::segment::X1, 2),
+        row(K::Polygon, &["polygon", "triangle"], POLYGON_PROPS, COPYABLE | PLANNED)
+            .arrays(&[ArrayProp { names: &["vertices"], item: "vertex", items: &VERTEX_PARTS }])
+            .sticky(Shape::Closed, prop::polygon::X1, MAX_VERTICES),
+        row(K::PointList, &["pointList"], &[], 0),
+        row(K::P, &["p"], &[], CONTAINER),
+        row(K::Setup, &["setup"], &[], CONTAINER),
+        row(K::StickyGroup, &["stickyGroup"], STICKY_GROUP_PROPS, CONTAINER),
+        row(K::Function, &["function"], CURVE_PROPS, COPYABLE | SYMBOLIC).default_prop("expr"),
+        row(K::Derivative, &["derivative"], CURVE_PROPS, COPYABLE | SYMBOLIC).default_prop("expr"),
+        row(K::Answer, &["answer"], ANSWER_PROPS, COPYABLE | SYMBOLIC).default_prop("credit"),
+        row(K::Text, &["text"], TEXT_PROPS, COPYABLE).default_prop("value"),
+        row(K::ConditionalContent, &["conditionalContent"], CONDITIONAL_CONTENT_PROPS, 0),
+        row(K::Case, &["case"], CASE_PROPS, 0),
+        row(K::Select, &["select"], SELECT_PROPS, 0),
+        // Containers the prototype renders nothing special for.
+        row(K::Group, &["group", "label"], &[], CONTAINER),
+        // The parser writes `<section>` as `<division type="section">`.
+        row(K::Section, &["section", "division", "subsection", "subsubsection", "problem", "exercise", "example"], SECTION_PROPS, CONTAINER),
+    ]
+};
+
+const _: () = {
+    let mut i = 0;
+    while i < KINDS.len() {
+        assert!(KINDS[i].kind as usize == i, "KINDS is in discriminant order");
+        i += 1;
+    }
+};
+
 impl ComponentKind {
-    pub const ALL: [ComponentKind; 31] = [
-        Self::Document,
-        Self::Graph,
-        Self::Point,
-        Self::Number,
-        Self::NumberInput,
-        Self::Op,
-        Self::Slider,
-        Self::RepeatForSequence,
-        Self::Collect,
-        Self::SequenceValue,
-        Self::BooleanInput,
-        Self::Math,
-        Self::Evaluate,
-        Self::MathInput,
-        Self::Circle,
-        Self::Line,
-        Self::LineSegment,
-        Self::Polygon,
-        Self::PointList,
-        Self::P,
-        Self::Setup,
-        Self::StickyGroup,
-        Self::Function,
-        Self::Derivative,
-        Self::Answer,
-        Self::Text,
-        Self::ConditionalContent,
-        Self::Case,
-        Self::Select,
-        Self::Group,
-        Self::Section,
-    ];
+    pub const ALL: [ComponentKind; 31] = {
+        let mut out = [ComponentKind::Document; 31];
+        let mut i = 0;
+        while i < KINDS.len() {
+            out[i] = KINDS[i].kind;
+            i += 1;
+        }
+        out
+    };
+
+    pub fn info(self) -> &'static KindInfo {
+        &KINDS[self as usize]
+    }
 
     pub fn from_tag(tag: &str) -> Option<Self> {
-        Some(match tag {
-            "document" => Self::Document,
-            "graph" => Self::Graph,
-            "point" => Self::Point,
-            "number" => Self::Number,
-            "numberInput" => Self::NumberInput,
-            "op" => Self::Op,
-            "slider" => Self::Slider,
-            "repeatForSequence" => Self::RepeatForSequence,
-            "collect" => Self::Collect,
-            "booleanInput" => Self::BooleanInput,
-            "math" => Self::Math,
-            "evaluate" => Self::Evaluate,
-            "mathInput" => Self::MathInput,
-            "circle" => Self::Circle,
-            "line" => Self::Line,
-            "lineSegment" => Self::LineSegment,
-            "polygon" | "triangle" => Self::Polygon,
-            "pointList" => Self::PointList,
-            "p" => Self::P,
-            "setup" => Self::Setup,
-            "stickyGroup" => Self::StickyGroup,
-            "function" => Self::Function,
-            "derivative" => Self::Derivative,
-            "answer" => Self::Answer,
-            "text" => Self::Text,
-            "conditionalContent" => Self::ConditionalContent,
-            "case" => Self::Case,
-            "select" => Self::Select,
-            // Containers the prototype renders nothing special for.
-            "group" | "label" => Self::Group,
-            // The parser writes `<section>` as `<division type="section">`.
-            "division" | "section" | "subsection" | "subsubsection" | "problem" | "exercise" | "example" => Self::Section,
-            _ => return None,
-        })
+        static BY_TAG: std::sync::OnceLock<std::collections::HashMap<&'static str, ComponentKind>> = std::sync::OnceLock::new();
+        let by_tag = BY_TAG.get_or_init(|| KINDS.iter().filter(|k| k.flags & INTERNAL == 0).flat_map(|k| k.tags.iter().map(move |&t| (t, k.kind))).collect());
+        by_tag.get(tag).copied()
     }
 
     pub fn tag(self) -> &'static str {
-        match self {
-            Self::Document => "document",
-            Self::Graph => "graph",
-            Self::Point => "point",
-            Self::Number => "number",
-            Self::NumberInput => "numberInput",
-            Self::Op => "op",
-            Self::Slider => "slider",
-            Self::RepeatForSequence => "repeatForSequence",
-            Self::Collect => "collect",
-            Self::SequenceValue => "sequenceValue",
-            Self::BooleanInput => "booleanInput",
-            Self::Math => "math",
-            Self::Evaluate => "evaluate",
-            Self::MathInput => "mathInput",
-            Self::Circle => "circle",
-            Self::Line => "line",
-            Self::LineSegment => "lineSegment",
-            Self::Polygon => "polygon",
-            Self::PointList => "pointList",
-            Self::P => "p",
-            Self::Setup => "setup",
-            Self::StickyGroup => "stickyGroup",
-            Self::Function => "function",
-            Self::Derivative => "derivative",
-            Self::Answer => "answer",
-            Self::Text => "text",
-            Self::ConditionalContent => "conditionalContent",
-            Self::Case => "case",
-            Self::Select => "select",
-            Self::Group => "group",
-            Self::Section => "section",
-        }
+        self.info().tags[0]
     }
 
     /// Single-cell props, in declaration order.
     pub fn prop_defs(self) -> &'static [PropDef] {
-        match self {
-            Self::Document => DOCUMENT_PROPS,
-            Self::Section => SECTION_PROPS,
-            Self::Graph => GRAPH_PROPS,
-            Self::Point => POINT_PROPS,
-            Self::Number => NUMBER_PROPS,
-            Self::NumberInput => NUMBER_INPUT_PROPS,
-            Self::Op => OP_PROPS,
-            Self::Slider => SLIDER_PROPS,
-            Self::RepeatForSequence => REPEAT_PROPS,
-            Self::Collect => COLLECT_PROPS,
-            Self::SequenceValue => SEQUENCE_VALUE_PROPS,
-            Self::BooleanInput => BOOLEAN_INPUT_PROPS,
-            Self::Math => MATH_PROPS,
-            Self::Evaluate => EVALUATE_PROPS,
-            Self::MathInput => MATH_INPUT_PROPS,
-            Self::Circle => CIRCLE_PROPS,
-            Self::Line => LINE_PROPS,
-            Self::LineSegment => LINE_SEGMENT_PROPS,
-            Self::Polygon => POLYGON_PROPS,
-            Self::StickyGroup => STICKY_GROUP_PROPS,
-            Self::Function | Self::Derivative => CURVE_PROPS,
-            Self::Answer => ANSWER_PROPS,
-            Self::Text => TEXT_PROPS,
-            // `hide` hides what the choice shows, not copies of its names.
-            Self::ConditionalContent => CONDITIONAL_CONTENT_PROPS,
-            Self::Case => CASE_PROPS,
-            Self::Select => SELECT_PROPS,
-            Self::PointList | Self::P | Self::Setup | Self::Group => &[],
-        }
+        self.info().props
     }
 
     pub fn prop_index(self, name: &str) -> Option<usize> {
@@ -636,113 +642,69 @@ impl ComponentKind {
         self.prop_defs().iter().position(|p| p.name == name)
     }
 
-    /// The current core's spellings of a few props, accepted in references
-    /// so its documents resolve unchanged.
+    /// A prop name with the current core's spellings mapped to ours.
     pub fn canonical_prop<'a>(self, name: &'a str) -> &'a str {
-        match (self, name) {
-            (Self::Circle, "centerX1") => "centerX",
-            (Self::Circle, "centerX2") => "centerY",
-            (Self::Circle, "throughPointX1_1") => "throughX1",
-            (Self::Circle, "throughPointX1_2") => "throughY1",
-            (Self::Circle, "throughPointX2_1") => "throughX2",
-            (Self::Circle, "throughPointX2_2") => "throughY2",
-            (Self::Circle, "throughPointX3_1") => "throughX3",
-            (Self::Circle, "throughPointX3_2") => "throughY3",
-            _ => name,
-        }
+        self.info().aliases.iter().find(|(from, _)| *from == name).map_or(name, |(_, to)| to)
     }
 
-    /// Multi-cell props that are views over single-cell props.
+    /// Multi-cell props that are views over single-cell props: the kind's
+    /// views, and each array item by name (`vertex3`, `point1`).
     pub fn virtual_prop(self, name: &str) -> Option<&'static [&'static str]> {
-        match (self, name) {
-            (Self::Point, "coords") => Some(&["x", "y"]),
-            (Self::Circle, "center") => Some(&["centerX", "centerY"]),
-            (Self::Circle, "numericalCenter") => Some(&["cx", "cy"]),
-            (Self::Circle, "throughPoint1") => Some(&["throughX1", "throughY1"]),
-            (Self::Circle, "throughPoint2") => Some(&["throughX2", "throughY2"]),
-            (Self::Circle, "throughPoint3") => Some(&["throughX3", "throughY3"]),
-            (Self::Line | Self::LineSegment, "point1") => Some(&["x1", "y1"]),
-            (Self::Line | Self::LineSegment, "point2") => Some(&["x2", "y2"]),
-            (Self::Polygon, v) if v.starts_with("vertex") => {
-                let k: usize = v["vertex".len()..].parse().ok()?;
-                (1..=MAX_VERTICES).contains(&k).then(|| &VERTEX_PARTS[k - 1][..])
-            }
-            _ => None,
+        let info = self.info();
+        if let Some((_, parts)) = info.views.iter().find(|(v, _)| *v == name) {
+            return Some(parts);
         }
+        info.arrays.iter().find_map(|a| {
+            let k: usize = name.strip_prefix(a.item)?.parse().ok()?;
+            (1..=a.items.len()).contains(&k).then(|| &a.items[k - 1][..])
+        })
     }
 
     /// Array props whose items are points: the prop names of each item's
     /// cells, as many items as the kind can hold. A polygon's live count is
     /// its `numVertices` cell; the builder trims the list.
-    pub fn array_prop(self, name: &str) -> Option<Vec<[&'static str; 2]>> {
-        match (self, name) {
-            (Self::Line | Self::LineSegment, "points" | "endpoints") => Some(vec![["x1", "y1"], ["x2", "y2"]]),
-            (Self::Polygon, "vertices") => Some(POLYGON_PROPS[1..].chunks(2).map(|c| [c[0].name, c[1].name]).collect()),
-            (Self::Circle, "throughPoints") => Some(vec![["throughX1", "throughY1"], ["throughX2", "throughY2"], ["throughX3", "throughY3"]]),
-            _ => None,
-        }
+    pub fn array_prop(self, name: &str) -> Option<&'static [[&'static str; 2]]> {
+        self.array(name).map(|a| a.items)
     }
 
     /// The point-valued virtual prop for item `k` (1-based) of an array prop.
     pub fn array_item_prop(self, name: &str, k: usize) -> Option<String> {
-        match (self, name) {
-            (Self::Line | Self::LineSegment, "points" | "endpoints") => Some(format!("point{k}")),
-            (Self::Polygon, "vertices") => Some(format!("vertex{k}")),
-            (Self::Circle, "throughPoints") => Some(format!("throughPoint{k}")),
-            _ => None,
-        }
+        self.array(name).map(|a| format!("{}{k}", a.item))
+    }
+
+    fn array(self, name: &str) -> Option<&'static ArrayProp> {
+        self.info().arrays.iter().find(|a| a.names.contains(&name))
     }
 
     /// The prop a bare `$name` reference resolves to.
     pub fn default_prop(self) -> Option<&'static str> {
-        match self {
-            Self::Point => Some("coords"),
-            Self::Number | Self::NumberInput | Self::Op | Self::Slider | Self::SequenceValue | Self::BooleanInput | Self::Math | Self::Evaluate | Self::MathInput | Self::Text => Some("value"),
-            Self::Function | Self::Derivative => Some("expr"),
-            Self::Answer => Some("credit"),
-            Self::Document | Self::Graph | Self::RepeatForSequence | Self::Collect | Self::Circle | Self::Line | Self::LineSegment | Self::Polygon | Self::PointList | Self::P | Self::Setup | Self::StickyGroup => None,
-            Self::ConditionalContent | Self::Case | Self::Select | Self::Group | Self::Section => None,
-        }
+        self.info().default_prop
     }
 
-    /// Whether `$name` as a child may produce a copy of this component.
+    /// Whether `$name` as a child may produce a copy of this component, and
+    /// `<collect componentType>` name the kind.
     pub fn copyable(self) -> bool {
-        !matches!(self, Self::Document | Self::Graph | Self::RepeatForSequence | Self::Collect | Self::PointList | Self::P | Self::Setup | Self::StickyGroup | Self::ConditionalContent | Self::Case | Self::Select | Self::Group | Self::Section)
+        self.info().flags & COPYABLE != 0
     }
 
     /// Containers whose children are rendered; `extend` copies them deeply.
     pub fn container(self) -> bool {
-        matches!(self, Self::Graph | Self::P | Self::Setup | Self::StickyGroup | Self::Group | Self::Section)
-    }
-
-    /// How a member of a sticky group attracts and snaps: its shape, the
-    /// prop of its first coordinate, and how many points it has at most (a
-    /// polygon's live count is its `numVertices` cell). None for kinds that
-    /// do not take part.
-    pub fn sticky_layout(self) -> Option<(crate::sticky::Shape, usize, usize)> {
-        use crate::sticky::Shape;
-        match self {
-            Self::Point => Some((Shape::Point, 0, 1)),
-            Self::LineSegment => Some((Shape::Open, 0, 2)),
-            Self::Polygon => Some((Shape::Closed, 1, MAX_VERTICES)),
-            _ => None,
-        }
+        self.info().flags & CONTAINER != 0
     }
 
     /// Kinds whose prop sources the builder plans from the element's
     /// attributes and children rather than from `PropFrom`.
     pub fn planned(self) -> bool {
-        matches!(self, Self::Point | Self::Circle | Self::Line | Self::LineSegment | Self::Polygon)
+        self.info().flags & PLANNED != 0
     }
 
-    /// Whether `<collect componentType="...">` may name this kind.
-    pub fn collectable(self) -> bool {
-        self.copyable()
+    /// Function, derivative and answer: planned as math cells.
+    pub fn symbolic(self) -> bool {
+        self.info().flags & SYMBOLIC != 0
     }
 
-    /// Whether the component contributes nodes to the rendered tree.
-    pub fn rendered(self) -> bool {
-        !matches!(self, Self::Op | Self::Setup)
+    pub fn sticky_layout(self) -> Option<(crate::sticky::Shape, usize, usize)> {
+        self.info().sticky
     }
 }
 

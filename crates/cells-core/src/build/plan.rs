@@ -259,7 +259,7 @@ impl<'a> Compiler<'a> {
             ElemShape::Collect => {
                 let from = d.attr(el, "from").and_then(|a| self.single_macro(a)).ok_or(Error::BadCollect)?;
                 let type_text = d.attr(el, "componentType").and_then(|a| self.attr_text(a)).ok_or(Error::BadCollect)?;
-                let ck = ComponentKind::from_tag(type_text.trim()).filter(|k| k.collectable()).ok_or_else(|| Error::BadCollectType(type_text.trim().into()))?;
+                let ck = ComponentKind::from_tag(type_text.trim()).filter(|k| k.copyable()).ok_or_else(|| Error::BadCollectType(type_text.trim().into()))?;
                 let p = self.plan_ref(t, scope, from)?;
                 if self.c.plans[p].prop.is_some() {
                     return Err(Error::BadCollect);
@@ -311,7 +311,7 @@ impl<'a> Compiler<'a> {
             (ComponentKind::PointList, _) => return Err(Error::BadValue { attr: "extend".into(), text: "<pointList> needs extend=\"$shape.points\"".into() }),
             (k, _) if k.planned() => ElemShape::Planned(extend),
             (ComponentKind::Math, _) => ElemShape::Math,
-            (ComponentKind::Function | ComponentKind::Derivative | ComponentKind::Answer, _) => ElemShape::Symbolic,
+            (k, _) if k.symbolic() => ElemShape::Symbolic,
             (ComponentKind::Collect, _) => ElemShape::Collect,
             (ComponentKind::Text, None) => ElemShape::Text,
             _ => ElemShape::Generic(extend),
