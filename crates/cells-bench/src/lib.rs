@@ -88,7 +88,8 @@ pub fn drag_target(doc: &cells_core::Document, spec: &str) -> cells_core::CellId
         "aliases" => doc.cell("p", "x").unwrap(),
         "grid" => doc.cell("p0", "x").unwrap(),
         // A vertex of the first polygon: snapping against the group.
-        "sticky" | "stickyfree" => doc.cell("sg.p0", "x1").unwrap(),
+        "sticky" => doc.cell("sg.p0", "x1").unwrap(),
+        "stickyfree" => doc.cell("p0", "x1").unwrap(),
         // The shared coefficient: every curve resamples.
         "curves" | "choicecurves" => doc.cell("a", "value").unwrap(),
         // The evaluation point the chain's evaluates read.
