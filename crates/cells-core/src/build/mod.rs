@@ -29,11 +29,12 @@
 //! instruction list is scheduled, with a fast path when creation order is
 //! already a valid evaluation order.
 //!
-//! Compile lives in `compile.rs` (the walk and each element's shape),
+//! **Compile** lives in `compile.rs` (the walk and each element's shape),
 //! `attrs.rs` (attribute and math sources), `refs.rs` (names and reference
-//! paths), `geometry.rs` (the planned kinds), `choice.rs` and `copies.rs`
-//! (`extend`); then `expand.rs` and `emit.rs`. This file holds the types
-//! they share.
+//! paths), `geometry.rs` (the planned kinds), `choice.rs`, and `copies.rs`
+//! (`extend`). **Expand** lives in `expand.rs`, `expand_math.rs` and
+//! `resolve.rs`, with `scoring.rs` for credit and section numbers; **Emit**
+//! in `emit.rs`. This file holds the types they share.
 
 use std::collections::HashMap;
 
@@ -48,14 +49,16 @@ use crate::geo::{Pivot, RigidOpts, VecOp};
 use crate::ops::{Instr, OpSpec, Post, SymKind};
 use crate::program::{Program, Sym};
 
+mod attrs;
 mod choice;
+mod compile;
 mod copies;
 mod emit;
 mod expand;
+mod expand_math;
 mod geometry;
-mod attrs;
-mod compile;
 mod refs;
+mod resolve;
 mod scoring;
 
 type SlotId = u32;
