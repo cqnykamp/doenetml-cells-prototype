@@ -262,8 +262,9 @@ impl Program {
     }
 
     /// Recompute every derived cell, appending the indices whose value
-    /// changed to `changed`. NaN to NaN counts as unchanged.
-    #[inline]
+    /// changed to `changed`. NaN to NaN counts as unchanged. Never inlined:
+    /// the tick's hot loop then compiles the same whatever its caller does.
+    #[inline(never)]
     pub fn run_all_tracking(&self, cells: &mut [f64], changed: &mut Vec<CellIdx>) {
         for ins in &self.instrs {
             self.step(ins, cells, Some(changed));

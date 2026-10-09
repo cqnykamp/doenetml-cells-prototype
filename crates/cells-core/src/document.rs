@@ -191,9 +191,6 @@ pub struct Tick {
     pub rebuilt: bool,
     /// The rebuild failed and the document is unchanged from before it.
     pub rebuild_error: Option<String>,
-    /// For each changed math cell, its expression as LaTeX, so a renderer
-    /// never reads the engine (Plan 5).
-    pub latex: Vec<(CellIdx, String)>,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -327,12 +324,6 @@ impl Document {
     pub fn math_text(&self, cell: CellIdx) -> String {
         let h = self.cells[cell as usize];
         if h.is_nan() { String::new() } else { self.program.sym.engine.borrow().text(h as cells_sym::Handle) }
-    }
-
-    /// The expression a math cell holds, as LaTeX; empty when blank.
-    pub fn math_latex(&self, cell: CellIdx) -> String {
-        let h = self.cells[cell as usize];
-        if h.is_nan() { String::new() } else { self.program.sym.engine.borrow().latex(h as cells_sym::Handle) }
     }
 
     /// Submit an answer: an ordinary request copying the live response
@@ -525,11 +516,6 @@ impl Document {
         }
         if !tick.changed.is_empty() {
             evaluator.recompute(&self.program, &mut self.cells, &mut tick.changed);
-            for &c in &tick.changed {
-                if self.program.math[c as usize] {
-                    tick.latex.push((c, self.math_latex(c)));
-                }
-            }
             if !self.structure_settled() {
                 match self.rebuild() {
                     Ok(()) => {

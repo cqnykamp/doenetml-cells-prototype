@@ -17,7 +17,7 @@ cp crates/cells-bench/examples/regress.rs $wt/crates/cells-bench/examples/regres
 (cd $wt && CARGO_TARGET_DIR=$repo/target/perf-base cargo build --release -q -p cells-bench --example regress)
 cargo build --release -q -p cells-bench --example regress
 B=$repo/target/perf-base/release/examples/regress; N=$repo/target/release/examples/regress
-F="chain-100000 points-10000 repeat-10000 recur-10000 fanout-10000 circles3-10000 sticky-1000 curves-1000 symchain-1000 wording-10000"
+F="${PERF_FIXTURES:-chain-100000 points-10000 repeat-10000 recur-10000 fanout-10000 circles3-10000 sticky-1000 curves-1000 symchain-1000 wording-10000}"
 : > $S/perf-base.jsonl; : > $S/perf-new.jsonl
 for r in 1 2 3 4 5; do for f in $F; do
   $B 50 $f >> $S/perf-base.jsonl; $N 50 $f >> $S/perf-new.jsonl

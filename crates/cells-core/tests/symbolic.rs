@@ -146,15 +146,6 @@ fn math_to_number_to_math() {
 }
 
 #[test]
-fn the_tick_reports_latex_for_changed_math_cells() {
-    let mut doc = load(r#"<numberInput name="n" value="2"/><math name="m">$n/x</math>"#).unwrap();
-    let tick = doc.request(&[req(&doc, "n", "value", 3.0)]);
-    let m = doc.cell("m", "expr").unwrap();
-    assert_eq!(tick.latex, vec![(m, doc.math_latex(m))]);
-    assert!(tick.latex[0].1.contains("frac"), "{}", tick.latex[0].1);
-}
-
-#[test]
 fn a_copy_of_a_symbolic_math_shares_its_cell() {
     let doc = load(r#"<numberInput name="n" value="2"/><math name="m">$n x</math><math name="c">$m</math>"#).unwrap();
     assert_eq!(doc.cell("c", "expr"), doc.cell("m", "expr"));
