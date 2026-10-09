@@ -402,74 +402,100 @@ impl JsonBuilder {
     }
 
     fn parse_root(&mut self, json: &str) -> crate::Result<Vec<NodeId>> {
-        use serde::de::DeserializeSeed;
         let mut de = serde_json::Deserializer::from_str(json);
-        let kids = RootSeed(self).deserialize(&mut de)?;
+        let kids = Seed(self, Field { key: "children", what: "a DAST root object" }).deserialize(&mut de)?;
         Ok(kids)
     }
 }
 
 use serde::de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor};
+use std::borrow::Cow;
 use std::fmt;
 
-struct RootSeed<'b>(&'b mut JsonBuilder);
+/// One kind of JSON value the builder reads; `Seed` adapts it to serde.
+trait Item: Copy {
+    type Value;
+    fn read<'de, D: de::Deserializer<'de>>(self, b: &mut JsonBuilder, d: D) -> Result<Self::Value, D::Error>;
+}
 
-impl<'de, 'b> DeserializeSeed<'de> for RootSeed<'b> {
-    type Value = Vec<NodeId>;
+struct Seed<'b, I>(&'b mut JsonBuilder, I);
+
+impl<'de, I: Item> DeserializeSeed<'de> for Seed<'_, I> {
+    type Value = I::Value;
     fn deserialize<D: de::Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
-        struct V<'b>(&'b mut JsonBuilder);
-        impl<'de, 'b> Visitor<'de> for V<'b> {
+        self.1.read(self.0, d)
+    }
+}
+
+/// A JSON array of items.
+#[derive(Clone, Copy)]
+struct Seq<I>(I, &'static str);
+
+impl<I: Item> Item for Seq<I> {
+    type Value = Vec<I::Value>;
+    fn read<'de, D: de::Deserializer<'de>>(self, b: &mut JsonBuilder, d: D) -> Result<Self::Value, D::Error> {
+        struct V<'b, I>(&'b mut JsonBuilder, Seq<I>);
+        impl<'de, I: Item> Visitor<'de> for V<'_, I> {
+            type Value = Vec<I::Value>;
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str(self.1.1)
+            }
+            fn visit_seq<A: SeqAccess<'de>>(self, mut s: A) -> Result<Self::Value, A::Error> {
+                let mut v = Vec::with_capacity(s.size_hint().unwrap_or(0));
+                while let Some(x) = s.next_element_seed(Seed(&mut *self.0, self.1.0))? {
+                    v.push(x);
+                }
+                Ok(v)
+            }
+        }
+        d.deserialize_seq(V(b, self))
+    }
+}
+
+/// An object of which only one key, a node list, matters: the root's and an
+/// attribute's `children`, an index's `value`.
+#[derive(Clone, Copy)]
+struct Field {
+    key: &'static str,
+    what: &'static str,
+}
+
+impl Item for Field {
+    type Value = Vec<NodeId>;
+    fn read<'de, D: de::Deserializer<'de>>(self, b: &mut JsonBuilder, d: D) -> Result<Self::Value, D::Error> {
+        struct V<'b>(&'b mut JsonBuilder, Field);
+        impl<'de> Visitor<'de> for V<'_> {
             type Value = Vec<NodeId>;
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.write_str("a DAST root object")
+                f.write_str(self.1.what)
             }
             fn visit_map<A: MapAccess<'de>>(self, mut m: A) -> Result<Self::Value, A::Error> {
-                let mut kids = Vec::new();
-                while let Some(key) = m.next_key::<std::borrow::Cow<str>>()? {
-                    if key == "children" {
-                        kids = m.next_value_seed(NodeListSeed(self.0))?;
+                let mut nodes = Vec::new();
+                while let Some(key) = m.next_key::<Cow<str>>()? {
+                    if key == self.1.key {
+                        nodes = m.next_value_seed(Seed(&mut *self.0, NODES))?;
                     } else {
                         m.next_value::<de::IgnoredAny>()?;
                     }
                 }
-                Ok(kids)
+                Ok(nodes)
             }
         }
-        d.deserialize_map(V(self.0))
+        d.deserialize_map(V(b, self))
     }
 }
 
 /// A JSON array of nodes, returned as their ids (not yet attached).
-struct NodeListSeed<'b>(&'b mut JsonBuilder);
+const NODES: Seq<Node> = Seq(Node, "an array of DAST nodes");
 
-impl<'de, 'b> DeserializeSeed<'de> for NodeListSeed<'b> {
-    type Value = Vec<NodeId>;
-    fn deserialize<D: de::Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
-        struct V<'b>(&'b mut JsonBuilder);
-        impl<'de, 'b> Visitor<'de> for V<'b> {
-            type Value = Vec<NodeId>;
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.write_str("an array of DAST nodes")
-            }
-            fn visit_seq<A: SeqAccess<'de>>(self, mut s: A) -> Result<Self::Value, A::Error> {
-                let mut ids = Vec::with_capacity(s.size_hint().unwrap_or(0));
-                while let Some(id) = s.next_element_seed(NodeSeed(self.0))? {
-                    ids.push(id);
-                }
-                Ok(ids)
-            }
-        }
-        d.deserialize_seq(V(self.0))
-    }
-}
+#[derive(Clone, Copy)]
+struct Node;
 
-struct NodeSeed<'b>(&'b mut JsonBuilder);
-
-impl<'de, 'b> DeserializeSeed<'de> for NodeSeed<'b> {
+impl Item for Node {
     type Value = NodeId;
-    fn deserialize<D: de::Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
+    fn read<'de, D: de::Deserializer<'de>>(self, b: &mut JsonBuilder, d: D) -> Result<Self::Value, D::Error> {
         struct V<'b>(&'b mut JsonBuilder);
-        impl<'de, 'b> Visitor<'de> for V<'b> {
+        impl<'de> Visitor<'de> for V<'_> {
             type Value = NodeId;
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 f.write_str("a DAST node object")
@@ -484,10 +510,10 @@ impl<'de, 'b> DeserializeSeed<'de> for NodeSeed<'b> {
                 // (name, children) per attribute
                 let mut attrs: Vec<(StrId, Vec<NodeId>)> = Vec::new();
                 let mut kids: Vec<NodeId> = Vec::new();
-                while let Some(key) = m.next_key::<std::borrow::Cow<str>>()? {
+                while let Some(key) = m.next_key::<Cow<str>>()? {
                     match key.as_ref() {
                         "type" => {
-                            let t: std::borrow::Cow<str> = m.next_value()?;
+                            let t: Cow<str> = m.next_value()?;
                             kind = match t.as_ref() {
                                 "element" => NodeKind::Element,
                                 "text" => NodeKind::Text,
@@ -496,16 +522,16 @@ impl<'de, 'b> DeserializeSeed<'de> for NodeSeed<'b> {
                             };
                         }
                         "name" => {
-                            let s: std::borrow::Cow<str> = m.next_value()?;
+                            let s: Cow<str> = m.next_value()?;
                             name = Some(b.intern(&s));
                         }
                         "value" => {
-                            let s: std::borrow::Cow<str> = m.next_value()?;
+                            let s: Cow<str> = m.next_value()?;
                             value = Some(b.intern(&s));
                         }
-                        "path" => path = m.next_value_seed(PathSeed(b))?,
-                        "attributes" => attrs = m.next_value_seed(AttrsSeed(b))?,
-                        "children" => kids = m.next_value_seed(NodeListSeed(b))?,
+                        "path" => path = m.next_value_seed(Seed(&mut *b, Seq(Part, "a macro path array")))?,
+                        "attributes" => attrs = m.next_value_seed(Seed(&mut *b, Attrs))?,
+                        "children" => kids = m.next_value_seed(Seed(&mut *b, NODES))?,
                         _ => {
                             m.next_value::<de::IgnoredAny>()?;
                         }
@@ -548,41 +574,19 @@ impl<'de, 'b> DeserializeSeed<'de> for NodeSeed<'b> {
                 Ok(id)
             }
         }
-        d.deserialize_map(V(self.0))
-    }
-}
-
-struct PathSeed<'b>(&'b mut JsonBuilder);
-
-impl<'de, 'b> DeserializeSeed<'de> for PathSeed<'b> {
-    type Value = Vec<(StrId, Vec<Vec<NodeId>>)>;
-    fn deserialize<D: de::Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
-        struct V<'b>(&'b mut JsonBuilder);
-        impl<'de, 'b> Visitor<'de> for V<'b> {
-            type Value = Vec<(StrId, Vec<Vec<NodeId>>)>;
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.write_str("a macro path array")
-            }
-            fn visit_seq<A: SeqAccess<'de>>(self, mut s: A) -> Result<Self::Value, A::Error> {
-                let mut v = Vec::new();
-                while let Some(p) = s.next_element_seed(PartSeed(self.0))? {
-                    v.push(p);
-                }
-                Ok(v)
-            }
-        }
-        d.deserialize_seq(V(self.0))
+        d.deserialize_map(V(b))
     }
 }
 
 /// One path part: `{name, index: [{value: [nodes]}, ...]}`.
-struct PartSeed<'b>(&'b mut JsonBuilder);
+#[derive(Clone, Copy)]
+struct Part;
 
-impl<'de, 'b> DeserializeSeed<'de> for PartSeed<'b> {
+impl Item for Part {
     type Value = (StrId, Vec<Vec<NodeId>>);
-    fn deserialize<D: de::Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
+    fn read<'de, D: de::Deserializer<'de>>(self, b: &mut JsonBuilder, d: D) -> Result<Self::Value, D::Error> {
         struct V<'b>(&'b mut JsonBuilder);
-        impl<'de, 'b> Visitor<'de> for V<'b> {
+        impl<'de> Visitor<'de> for V<'_> {
             type Value = (StrId, Vec<Vec<NodeId>>);
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 f.write_str("a path part object")
@@ -590,13 +594,14 @@ impl<'de, 'b> DeserializeSeed<'de> for PartSeed<'b> {
             fn visit_map<A: MapAccess<'de>>(self, mut m: A) -> Result<Self::Value, A::Error> {
                 let mut name = None;
                 let mut indices = Vec::new();
-                while let Some(key) = m.next_key::<std::borrow::Cow<str>>()? {
+                while let Some(key) = m.next_key::<Cow<str>>()? {
                     match key.as_ref() {
                         "name" => {
-                            let s: std::borrow::Cow<str> = m.next_value()?;
+                            let s: Cow<str> = m.next_value()?;
                             name = Some(self.0.intern(&s));
                         }
-                        "index" => indices = m.next_value_seed(IndexListSeed(self.0))?,
+                        // Only each index object's `value` node list matters.
+                        "index" => indices = m.next_value_seed(Seed(&mut *self.0, Seq(Field { key: "value", what: "an index object" }, "an index array")))?,
                         _ => {
                             m.next_value::<de::IgnoredAny>()?;
                         }
@@ -606,112 +611,35 @@ impl<'de, 'b> DeserializeSeed<'de> for PartSeed<'b> {
                 Ok((name, indices))
             }
         }
-        d.deserialize_map(V(self.0))
+        d.deserialize_map(V(b))
     }
 }
 
-/// `[{type: "index", value: [nodes]}, ...]`
-struct IndexListSeed<'b>(&'b mut JsonBuilder);
+/// The attributes object: (name, children) per attribute.
+#[derive(Clone, Copy)]
+struct Attrs;
 
-impl<'de, 'b> DeserializeSeed<'de> for IndexListSeed<'b> {
-    type Value = Vec<Vec<NodeId>>;
-    fn deserialize<D: de::Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
-        struct V<'b>(&'b mut JsonBuilder);
-        impl<'de, 'b> Visitor<'de> for V<'b> {
-            type Value = Vec<Vec<NodeId>>;
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.write_str("an index array")
-            }
-            fn visit_seq<A: SeqAccess<'de>>(self, mut s: A) -> Result<Self::Value, A::Error> {
-                let mut v = Vec::new();
-                while let Some(nodes) = s.next_element_seed(IndexSeed(self.0))? {
-                    v.push(nodes);
-                }
-                Ok(v)
-            }
-        }
-        d.deserialize_seq(V(self.0))
-    }
-}
-
-/// One index object: only its `value` node list matters.
-struct IndexSeed<'b>(&'b mut JsonBuilder);
-
-impl<'de, 'b> DeserializeSeed<'de> for IndexSeed<'b> {
-    type Value = Vec<NodeId>;
-    fn deserialize<D: de::Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
-        struct V<'b>(&'b mut JsonBuilder);
-        impl<'de, 'b> Visitor<'de> for V<'b> {
-            type Value = Vec<NodeId>;
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.write_str("an index object")
-            }
-            fn visit_map<A: MapAccess<'de>>(self, mut m: A) -> Result<Self::Value, A::Error> {
-                let mut nodes = Vec::new();
-                while let Some(key) = m.next_key::<std::borrow::Cow<str>>()? {
-                    if key == "value" {
-                        nodes = m.next_value_seed(NodeListSeed(self.0))?;
-                    } else {
-                        m.next_value::<de::IgnoredAny>()?;
-                    }
-                }
-                Ok(nodes)
-            }
-        }
-        d.deserialize_map(V(self.0))
-    }
-}
-
-struct AttrsSeed<'b>(&'b mut JsonBuilder);
-
-impl<'de, 'b> DeserializeSeed<'de> for AttrsSeed<'b> {
+impl Item for Attrs {
     type Value = Vec<(StrId, Vec<NodeId>)>;
-    fn deserialize<D: de::Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
+    fn read<'de, D: de::Deserializer<'de>>(self, b: &mut JsonBuilder, d: D) -> Result<Self::Value, D::Error> {
         struct V<'b>(&'b mut JsonBuilder);
-        impl<'de, 'b> Visitor<'de> for V<'b> {
+        impl<'de> Visitor<'de> for V<'_> {
             type Value = Vec<(StrId, Vec<NodeId>)>;
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 f.write_str("an attributes object")
             }
             fn visit_map<A: MapAccess<'de>>(self, mut m: A) -> Result<Self::Value, A::Error> {
                 let mut v = Vec::new();
-                while let Some(key) = m.next_key::<std::borrow::Cow<str>>()? {
+                while let Some(key) = m.next_key::<Cow<str>>()? {
                     let name = self.0.intern(&key);
-                    let kids = m.next_value_seed(AttrSeed(self.0))?;
+                    // Only each attribute object's `children` matter.
+                    let kids = m.next_value_seed(Seed(&mut *self.0, Field { key: "children", what: "an attribute object" }))?;
                     v.push((name, kids));
                 }
                 Ok(v)
             }
         }
-        d.deserialize_map(V(self.0))
-    }
-}
-
-/// One attribute object: only its `children` matter.
-struct AttrSeed<'b>(&'b mut JsonBuilder);
-
-impl<'de, 'b> DeserializeSeed<'de> for AttrSeed<'b> {
-    type Value = Vec<NodeId>;
-    fn deserialize<D: de::Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
-        struct V<'b>(&'b mut JsonBuilder);
-        impl<'de, 'b> Visitor<'de> for V<'b> {
-            type Value = Vec<NodeId>;
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.write_str("an attribute object")
-            }
-            fn visit_map<A: MapAccess<'de>>(self, mut m: A) -> Result<Self::Value, A::Error> {
-                let mut kids = Vec::new();
-                while let Some(key) = m.next_key::<std::borrow::Cow<str>>()? {
-                    if key == "children" {
-                        kids = m.next_value_seed(NodeListSeed(self.0))?;
-                    } else {
-                        m.next_value::<de::IgnoredAny>()?;
-                    }
-                }
-                Ok(kids)
-            }
-        }
-        d.deserialize_map(V(self.0))
+        d.deserialize_map(V(b))
     }
 }
 
