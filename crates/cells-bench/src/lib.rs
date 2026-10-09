@@ -66,10 +66,11 @@ pub fn spec_key(spec: &str) -> (String, u64, u64) {
 }
 
 /// The cell a drag request would target in each fixture shape: the end of
-/// the chain, the fan-out root, or the first point's x.
-pub fn drag_target(doc: &cells_core::Document, spec: &str) -> cells_core::CellIdx {
+/// the chain, the fan-out root, or the first point's x; None for shapes
+/// with nothing to drag.
+pub fn drag_target(doc: &cells_core::Document, spec: &str) -> Option<cells_core::CellIdx> {
     let shape = spec.split('-').next().unwrap();
-    match shape {
+    Some(match shape {
         "chain" | "intchain" | "mathchain" => doc.cell("p", "x").unwrap(),
         "hidden" => doc.cell("b", "value").unwrap(),
         "sliderchain" => doc.cell("s", "value").unwrap(),
@@ -94,6 +95,7 @@ pub fn drag_target(doc: &cells_core::Document, spec: &str) -> cells_core::CellId
         "curves" | "choicecurves" => doc.cell("a", "value").unwrap(),
         // The evaluation point the chain's evaluates read.
         "symchain" => doc.cell("t", "value").unwrap(),
-        _ => doc.cell("p0", "x").unwrap(),
-    }
+        // Shapes with nothing to drag (load-time choices, answers) have no p0.
+        _ => return doc.cell("p0", "x"),
+    })
 }

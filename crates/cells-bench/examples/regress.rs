@@ -16,7 +16,7 @@ fn main() {
             loads.push(t.elapsed().as_secs_f64() * 1e3);
         }
         let mut doc = Document::from_bytes(&bytes).unwrap();
-        let target = cells_bench::drag_target(&doc, &spec);
+        let target = cells_bench::drag_target(&doc, &spec).unwrap_or_else(|| panic!("{spec} has nothing to drag"));
         let mut ticks = Vec::with_capacity(reps);
         for i in 0..reps {
             let t = Instant::now();

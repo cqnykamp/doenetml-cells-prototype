@@ -5,7 +5,7 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Through
 fn tick(c: &mut Criterion) {
     for (spec, json) in cells_bench::fixtures() {
         let base = Document::from_bytes(json.as_bytes()).unwrap();
-        let target = cells_bench::drag_target(&base, &spec);
+        let Some(target) = cells_bench::drag_target(&base, &spec) else { continue };
         let mut g = c.benchmark_group("tick");
         g.throughput(Throughput::Elements(base.program.len().max(1) as u64));
 
