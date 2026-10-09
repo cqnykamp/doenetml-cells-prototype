@@ -227,6 +227,18 @@ impl<'a> Compiler<'a> {
         }
     }
 
+    /// A given point as `set_point_with_roles` sets it, else an essential
+    /// default with its roles.
+    fn set_point_or_default(ch: &mut ElemPlan, slots: [usize; 2], p: Option<&PointPlan>, roles: [&'static str; 2], attr: &'static str, (default_roles, default): DefaultPoint) {
+        match p {
+            Some(p) => Self::set_point_with_roles(ch, slots, p, roles, attr),
+            None => {
+                ch.set_essential(slots[0], default_roles[0], default[0]);
+                ch.set_essential(slots[1], default_roles[1], default[1]);
+            }
+        }
+    }
+
     pub(super) fn point_slots_with_roles(ch: &mut ElemPlan, p: &PointPlan, roles: [&'static str; 2], attr: &'static str) -> [u8; 2] {
         let mut out = [0u8; 2];
         for j in 0..2 {
@@ -625,28 +637,9 @@ impl<'a> Compiler<'a> {
         let direction_mode = through.len() < 2 && (slope.is_some() || parallel.is_some() || perpendicular.is_some());
         // First point: a through point or the essential default, which the
         // current core takes as (1, 0) for a two-point line and (0, 0) when a
-        // slope or direction gives the second point.
-        // The essential defaults carry the current core's roles: `ess1` is
-        // (1, 0) and `ess2` is (0, 0); a direction-based line's first point
-        // is `ess2`.
+        // slope or direction gives the second point (`ESS1`, `ESS2`).
         if direction_mode {
-            match through.first() {
-                Some(p) => {
-                    for j in 0..2 {
-                        match p.coord(j) {
-                            SourcePlan::Literal(v) => {
-                                ch.from_attr(POINT_ROLES[0][j], "through");
-                                ch.set_essential(j, POINT_ROLES[0][j], v)
-                            }
-                            other => ch.set(j, other),
-                        }
-                    }
-                }
-                None => {
-                    ch.set_essential(0, "ess2x", 0.0);
-                    ch.set_essential(1, "ess2y", 0.0);
-                }
-            }
+            Self::set_point_or_default(&mut ch, [0, 1], through.first(), POINT_ROLES[0], "through", ESS2);
             let dist = ch.essential("dist", 1.0);
             if let Some(a) = slope {
                 let m = self.plan_scalar(t, scope, "slope", d.attr_children(a))?;
@@ -666,15 +659,8 @@ impl<'a> Compiler<'a> {
         } else {
             // The line's points are the through points (or essential
             // defaults) themselves; a whole-line drag is a point group.
-            let pt = |ch: &mut ElemPlan, slots: [usize; 2], p: Option<&PointPlan>, k: usize, roles: [&'static str; 2], default: [f64; 2]| match p {
-                Some(p) => Self::set_point_with_roles(ch, slots, p, POINT_ROLES[k], "through"),
-                None => {
-                    ch.set_essential(slots[0], roles[0], default[0]);
-                    ch.set_essential(slots[1], roles[1], default[1]);
-                }
-            };
-            pt(&mut ch, [0, 1], through.first(), 0, ["ess1x", "ess1y"], [1.0, 0.0]);
-            pt(&mut ch, [2, 3], through.get(1), 1, ["ess2x", "ess2y"], [0.0, 0.0]);
+            Self::set_point_or_default(&mut ch, [0, 1], through.first(), POINT_ROLES[0], "through", ESS1);
+            Self::set_point_or_default(&mut ch, [2, 3], through.get(1), POINT_ROLES[1], "through", ESS2);
             ch.set(10, SourcePlan::Fixed(0.0));
         }
         // slope, intercepts and coefficients from the two points:
@@ -727,15 +713,8 @@ impl<'a> Compiler<'a> {
             Some(a) => self.plan_point_list(t, scope, a)?,
             None => Vec::new(),
         };
-        let pt = |ch: &mut ElemPlan, slots: [usize; 2], p: Option<&PointPlan>, k: usize, roles: [&'static str; 2], default: [f64; 2]| match p {
-            Some(p) => Self::set_point_with_roles(ch, slots, p, POINT_ROLES[k], "endpoints"),
-            None => {
-                ch.set_essential(slots[0], roles[0], default[0]);
-                ch.set_essential(slots[1], roles[1], default[1]);
-            }
-        };
-        pt(&mut ch, [0, 1], ends.first(), 0, ["ess1x", "ess1y"], [1.0, 0.0]);
-        pt(&mut ch, [2, 3], ends.get(1), 1, ["ess2x", "ess2y"], [0.0, 0.0]);
+        Self::set_point_or_default(&mut ch, [0, 1], ends.first(), POINT_ROLES[0], "endpoints", ESS1);
+        Self::set_point_or_default(&mut ch, [2, 3], ends.get(1), POINT_ROLES[1], "endpoints", ESS2);
         Ok(ch)
     }
 
@@ -835,3 +814,10 @@ impl<'a> Compiler<'a> {
 
     // ---- reference plans -----------------------------------------------------
 }
+
+/// A line's or segment's default point: its essential roles and value. The
+/// current core takes a missing first point as (1, 0) and a missing second
+/// one as (0, 0); a direction-based line's first point is the latter.
+type DefaultPoint = ([&'static str; 2], [f64; 2]);
+const ESS1: DefaultPoint = (["ess1x", "ess1y"], [1.0, 0.0]);
+const ESS2: DefaultPoint = (["ess2x", "ess2y"], [0.0, 0.0]);
