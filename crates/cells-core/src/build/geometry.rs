@@ -413,9 +413,9 @@ impl<'a> Compiler<'a> {
             if let PropFrom::Computed { op, args } = def.from {
                 ch.set(i, SourcePlan::computed(op, args.to_vec()));
             }
+        }
         let r2 = ch.hidden(SourcePlan::computed(OpSpec::Mul, vec![2, 2]));
         ch.set(5, SourcePlan::computed(OpSpec::Scale { k: std::f64::consts::PI }, vec![r2]));
-        }
         let (hc, hr) = (center.is_some(), radius.is_some());
         let center_slots = |ch: &mut ElemPlan, c: &CenterPlan| -> [SourcePlan; 2] {
             match c {
