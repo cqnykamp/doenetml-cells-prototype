@@ -291,7 +291,7 @@ impl<'a> Compiler<'a> {
                             break;
                         }
                     }
-                    let inner = crate::expr::unwrap_parens(&toks[start..i]).unwrap();
+                    let inner = super::expr::unwrap_parens(&toks[start..i]).unwrap();
                     out.push(PointPlan::Tuple(self.tuple_from_tokens(inner, &text)?));
                 }
                 Token::Comma => i += 1,
@@ -567,7 +567,7 @@ impl<'a> Compiler<'a> {
             // Equation mode: coefficients are the state, points follow.
             let (vx, vy) = self.line_variables(el, base);
             let (toks, text) = self.math_tokens(t, scope, &nodes)?;
-            let sides = crate::expr::split_top(&toks, &Token::Eq);
+            let sides = super::expr::split_top(&toks, &Token::Eq);
             if sides.len() != 2 {
                 return Err(Error::BadMath { text, reason: "a line equation needs one '='".into() });
             }
@@ -577,7 +577,7 @@ impl<'a> Compiler<'a> {
             // (`$m` standing for `2x`) is inlined, so it takes part in the
             // linear extraction instead of being an opaque cell.
             let diff = self.inline_symbolic_maths(t, diff);
-            let coeffs = match crate::expr::linear_coeffs(&mut self.c.arena, diff, &vx, &vy) {
+            let coeffs = match super::expr::linear_coeffs(&mut self.c.arena, diff, &vx, &vy) {
                 // A symbolic or nonlinear equation is not a line here.
                 None => [SourcePlan::Fixed(f64::NAN), SourcePlan::Fixed(f64::NAN), SourcePlan::Fixed(f64::NAN)],
                 Some([a, b, c]) => [self.plan_from_expr(a), self.plan_from_expr(b), self.plan_from_expr(c)],

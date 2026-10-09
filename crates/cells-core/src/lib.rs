@@ -10,7 +10,6 @@ pub mod dast;
 pub mod document;
 pub mod error;
 pub mod eval;
-pub mod expr;
 pub mod geo;
 pub mod invert;
 pub mod ops;

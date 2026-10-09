@@ -311,7 +311,7 @@ impl<'a> Compiler<'a> {
                 NodeKind::Text => {
                     text.push_str(d.str(n));
                     sym.push_str(d.str(n));
-                    crate::expr::tokenize(d.str(n), &mut toks).map_err(|reason| Error::BadMath { text: text.clone(), reason })?;
+                    super::expr::tokenize(d.str(n), &mut toks).map_err(|reason| Error::BadMath { text: text.clone(), reason })?;
                 }
                 NodeKind::Element if matches!(d.str(n), "conditionalContent" | "select") => {
                     return Err(Error::Unsupported(format!("a <{}> inside math: each branch would have to yield the same type", d.str(n))));
@@ -375,13 +375,13 @@ impl<'a> Compiler<'a> {
             return Ok([SourcePlan::coord(p, 0), SourcePlan::coord(p, 1)]);
         }
         let (toks, text) = self.math_tokens(t, scope, nodes)?;
-        let inner = crate::expr::unwrap_parens(&toks).ok_or_else(|| Error::BadMath { text: text.clone(), reason: "expected a tuple like (x, y)".into() })?;
+        let inner = super::expr::unwrap_parens(&toks).ok_or_else(|| Error::BadMath { text: text.clone(), reason: "expected a tuple like (x, y)".into() })?;
         self.tuple_from_tokens(inner, &text)
     }
 
     /// The inside of `(a, b)`, as two scalar plans.
     pub(super) fn tuple_from_tokens(&mut self, inner: &[Token], text: &str) -> Result<[SourcePlan; 2]> {
-        let parts = crate::expr::split_top(inner, &Token::Comma);
+        let parts = super::expr::split_top(inner, &Token::Comma);
         let [x, y] = parts.as_slice() else {
             return Err(Error::BadMath { text: text.to_string(), reason: format!("expected 2 coordinates, got {}", parts.len()) });
         };

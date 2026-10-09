@@ -117,9 +117,6 @@ impl Arena {
         }
     }
 
-    pub fn heap_bytes(&self) -> usize {
-        self.nodes.capacity() * std::mem::size_of::<Expr>()
-    }
 }
 
 /// A token of math text. References (`$a`) arrive already resolved to a

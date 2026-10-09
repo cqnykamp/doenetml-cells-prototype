@@ -31,7 +31,8 @@
 //!
 //! **Compile** lives in `compile.rs` (the walk and each element's shape),
 //! `attrs.rs` (attribute and math sources), `refs.rs` (names and reference
-//! paths), `geometry.rs` (the planned kinds), `choice.rs`, `copies.rs`
+//! paths), `expr.rs` (the parse arena for math text), `geometry.rs` (the
+//! planned kinds), `choice.rs` with `condition.rs`, `copies.rs`
 //! (`extend`) and `fix.rs` (`fixed`). **Expand** lives in `expand.rs`,
 //! `expand_math.rs` and `resolve.rs`, with `scoring.rs` for credit and
 //! section numbers; **Emit** in `emit.rs`. This file holds the types they
@@ -45,7 +46,7 @@ use crate::components::{ComponentKind, PropFrom, prop};
 use crate::dast::{Dast, NodeId, NodeKind, StrId, StringTable};
 use crate::document::{CellIdx, CompIdx, ComponentTable, Document, NONE, Repeat, ScopeId, Structure, TEXT_BIT};
 use crate::error::{Error, Result};
-use crate::expr::{Arena, Expr, ExprId, Parser, Token};
+use expr::{Arena, Expr, ExprId, Parser, Token};
 use crate::geo::{Pivot, RigidOpts, VecOp};
 use crate::ops::{Instr, OpSpec, Post, SymKind};
 use crate::program::{Program, Sym};
@@ -53,10 +54,12 @@ use crate::program::{Program, Sym};
 mod attrs;
 mod choice;
 mod compile;
+mod condition;
 mod copies;
 mod emit;
 mod expand;
 mod expand_math;
+mod expr;
 mod fix;
 mod geometry;
 mod refs;

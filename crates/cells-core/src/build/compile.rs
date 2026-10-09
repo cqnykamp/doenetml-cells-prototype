@@ -230,8 +230,8 @@ impl<'a> Compiler<'a> {
                 // the cells core: two cells, draggable as a direction source.
                 let nodes: Vec<NodeId> = d.children(el).to_vec();
                 let (toks, _) = self.math_tokens(t, scope, &nodes)?;
-                if let Some(inner) = crate::expr::unwrap_parens(&toks)
-                    && crate::expr::split_top(inner, &Token::Comma).len() == 2
+                if let Some(inner) = super::expr::unwrap_parens(&toks)
+                    && super::expr::split_top(inner, &Token::Comma).len() == 2
                 {
                     let [x, y] = self.plan_tuple(t, scope, &nodes)?;
                     let hide = ComponentKind::Point.prop_defs()[prop::point::HIDE].default;
