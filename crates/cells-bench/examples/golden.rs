@@ -3,7 +3,8 @@
 //! commits can be diffed (`scripts/golden-diff.sh`). Values print as Rust's
 //! shortest round-trip `f64`; math cells print their expression text and
 //! `<text>` values their string, so neither cell layout nor handle numbering
-//! shows up. Usage: `golden <out-dir>`.
+//! shows up. Usage: `golden <out-dir>`; program fingerprints go to
+//! `<out-dir>.programs`.
 //!
 //! Documents: `crates/cells-bench/golden/*.doenet` plus the smallest fixture
 //! of each shape in `fixtures/`.
@@ -147,13 +148,25 @@ fn describe(a: &Action) -> String {
     }
 }
 
-fn run(source: &str) -> String {
+/// A hash of the loaded program (instructions, their inputs, initial
+/// cells): equal when a refactor left the built document untouched.
+fn fingerprint(doc: &Document) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    format!("{:?}", doc.program.instrs).hash(&mut h);
+    doc.program.extra.hash(&mut h);
+    doc.cells.iter().for_each(|c| c.to_bits().hash(&mut h));
+    h.finish()
+}
+
+fn run(source: &str, programs: &mut String, name: &str) -> String {
     let mut out = String::new();
     let json = cells_core::test_utils::dast_json(source);
     let mut doc = match Document::from_dast_json(&json) {
         Ok(d) => d,
         Err(e) => return format!("load error: {e}\n"),
     };
+    let _ = writeln!(programs, "{name} {:016x}", fingerprint(&doc));
     let _ = writeln!(out, "## load");
     for w in doc.warnings() {
         let _ = writeln!(out, "warning {w}");
@@ -209,10 +222,13 @@ fn main() {
     let dir = PathBuf::from(std::env::args().nth(1).expect("usage: golden <out-dir>"));
     std::fs::create_dir_all(&dir).unwrap();
     let root = cells_core::test_utils::repo_root();
+    let mut programs = String::new();
     for (name, path) in sources(&root) {
-        let text = run(&std::fs::read_to_string(&path).unwrap());
+        let text = run(&std::fs::read_to_string(&path).unwrap(), &mut programs, &name);
         let lines = text.lines().count();
         std::fs::write(dir.join(format!("{name}.txt")), text).unwrap();
         eprintln!("{name}: {lines} lines");
     }
+    // Beside the dump, not in it: a refactor may change the program on purpose.
+    std::fs::write(dir.with_extension("programs"), programs).unwrap();
 }

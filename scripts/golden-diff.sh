@@ -14,7 +14,7 @@ out="$repo/results/raw/golden"
 wt="$repo/../.cells-prototype-golden"
 export DOENETML_DIR=${DOENETML_DIR:-$(cd "$repo/../../ml" && pwd)}
 
-rm -rf "$out/base" "$out/head"
+rm -rf "$out/base" "$out/head" "$out/base.programs" "$out/head.programs"
 git -C "$repo" worktree remove --force "$wt" 2>/dev/null || true
 git -C "$repo" worktree add --detach --quiet "$wt" "$base"
 trap 'git -C "$repo" worktree remove --force "$wt"' EXIT
@@ -27,6 +27,11 @@ fi
 (cd "$wt" && CARGO_TARGET_DIR="$repo/target/golden-base" cargo run --release -q -p cells-bench --example golden -- "$out/base")
 (cd "$repo" && cargo run --release -q -p cells-bench --example golden -- "$out/head")
 
+if cmp -s "$out/base.programs" "$out/head.programs"; then
+  echo "programs: identical"
+else
+  echo "programs: $(diff "$out/base.programs" "$out/head.programs" | grep -c '^>') documents built differently"
+fi
 if diff -r "$out/base" "$out/head" > "$out/diff.txt"; then
   echo "golden: identical ($(ls "$out/head" | wc -l) documents)"
 else
