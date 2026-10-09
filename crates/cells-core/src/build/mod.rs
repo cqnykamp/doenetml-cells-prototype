@@ -297,6 +297,14 @@ impl ElemPlan {
     fn set(&mut self, i: usize, plan: SourcePlan) {
         self.props[i] = Some(plan);
     }
+    /// A vector instruction over own slots, its head at public slot `head`
+    /// and its other outputs at the slots after it.
+    fn set_vec(&mut self, head: usize, op: VecOp, args: Vec<u8>) {
+        for k in 1..op.n_out() {
+            self.set(head + k, SourcePlan::VecOut(head as u8, k as u8));
+        }
+        self.set(head, SourcePlan::vector(op, args));
+    }
     fn hidden(&mut self, plan: SourcePlan) -> u8 {
         self.props.push(Some(plan));
         u8::try_from(self.props.len() - 1).expect("fewer than 256 slots per element")

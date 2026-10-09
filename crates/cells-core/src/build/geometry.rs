@@ -12,9 +12,8 @@ impl<'a> Compiler<'a> {
         let d = self.c.dast;
         let Elem { node: el, name_scope: scope, .. } = self.c.templates[t].elems[e];
         let mut ch = ElemPlan::new(ComponentKind::Point.prop_defs().len());
-        let math_children = |me: &Self, node: NodeId| -> Vec<NodeId> { d.children(node).iter().copied().filter(|&n| !me.is_blank(n) && d.kind(n) != NodeKind::Element).collect() };
-        let own_children = math_children(self, el);
-        let base_children = base.map(|b| math_children(self, b)).unwrap_or_default();
+        let own_children = self.math_children(el);
+        let base_children = base.map(|b| self.math_children(b)).unwrap_or_default();
         if let Some(a) = self.attr_or_inherited(el, base, "coords") {
             let p = self.plan_point_attr(t, scope, a)?;
             Self::set_point_with_roles(&mut ch, [0, 1], &p, ["x", "y"], "coords");
@@ -132,13 +131,11 @@ impl<'a> Compiler<'a> {
                 match self.c.templates[t].elems[target].kind {
                     ComponentKind::Circle => {
                         let c = refs(self, ch, &["cx", "cy", "radius"]);
-                        ch.set(0, SourcePlan::vector(VecOp::ProjectCircle, vec![raw_x, raw_y, c[0], c[1], c[2]]));
-                        ch.set(1, SourcePlan::VecOut(0, 1));
+                        ch.set_vec(0, VecOp::ProjectCircle, vec![raw_x, raw_y, c[0], c[1], c[2]]);
                     }
                     ComponentKind::Line | ComponentKind::LineSegment => {
                         let l = refs(self, ch, &["x1", "y1", "x2", "y2"]);
-                        ch.set(0, SourcePlan::vector(VecOp::ProjectLine, vec![raw_x, raw_y, l[0], l[1], l[2], l[3]]));
-                        ch.set(1, SourcePlan::VecOut(0, 1));
+                        ch.set_vec(0, VecOp::ProjectLine, vec![raw_x, raw_y, l[0], l[1], l[2], l[3]]);
                     }
                     other => return Err(Error::Unsupported(format!("constrainTo a <{}>", other.tag()))),
                 }
@@ -201,6 +198,13 @@ impl<'a> Compiler<'a> {
 
     /// Attribute of the element, or of the `extend` referent when the
     /// element does not give it (a copy with overrides).
+    /// The children that make up math text: text and `$ref`s, not blanks
+    /// or elements (constraints).
+    fn math_children(&self, node: NodeId) -> Vec<NodeId> {
+        let d = self.c.dast;
+        d.children(node).iter().copied().filter(|&n| !self.is_blank(n) && d.kind(n) != NodeKind::Element).collect()
+    }
+
     pub(super) fn attr_or_inherited(&self, el: NodeId, base: Option<NodeId>, name: &str) -> Option<u32> {
         let d = self.c.dast;
         d.attr(el, name).or_else(|| base.and_then(|b| d.attr(b, name)))
@@ -461,9 +465,7 @@ impl<'a> Compiler<'a> {
                 ch.set(2, r);
             }
             (true, false, 1) => {
-                ch.set(0, SourcePlan::vector(VecOp::CircleCenterPoint, vec![center_x, center_y, tx1, ty1]));
-                ch.set(1, SourcePlan::VecOut(0, 1));
-                ch.set(2, SourcePlan::VecOut(0, 2));
+                ch.set_vec(0, VecOp::CircleCenterPoint, vec![center_x, center_y, tx1, ty1]);
             }
             (false, _, 1) => {
                 // The through point sits on top of the circle.
@@ -475,14 +477,11 @@ impl<'a> Compiler<'a> {
             (false, true, 2) => {
                 let r = radius_plan(&mut ch);
                 ch.set(2, r);
-                ch.set(0, SourcePlan::vector(VecOp::CircleTwoPointsRadius, vec![tx1, ty1, tx2, ty2, 2]));
-                ch.set(1, SourcePlan::VecOut(0, 1));
+                ch.set_vec(0, VecOp::CircleTwoPointsRadius, vec![tx1, ty1, tx2, ty2, 2]);
             }
             (false, false, n) => {
                 let args: Vec<u8> = (0..2 * n as u8).map(|k| tx1 + k).collect();
-                ch.set(0, SourcePlan::vector(VecOp::CirclePoints { n: n as u8 }, args));
-                ch.set(1, SourcePlan::VecOut(0, 1));
-                ch.set(2, SourcePlan::VecOut(0, 2));
+                ch.set_vec(0, VecOp::CirclePoints { n: n as u8 }, args);
             }
             _ => unreachable!(),
         }
@@ -559,9 +558,8 @@ impl<'a> Compiler<'a> {
         let parallel = self.attr_or_inherited(el, base, "parallelTo");
         let perpendicular = self.attr_or_inherited(el, base, "perpendicularTo");
         let equation_attr = self.attr_or_inherited(el, base, "equation");
-        let is_math_child = |me: &Self, n: NodeId| !me.is_blank(n) && d.kind(n) != NodeKind::Element;
-        let own_children: Vec<NodeId> = d.children(el).iter().copied().filter(|&n| is_math_child(self, n)).collect();
-        let base_children: Vec<NodeId> = base.map(|b| d.children(b).iter().copied().filter(|&n| is_math_child(self, n)).collect()).unwrap_or_default();
+        let own_children = self.math_children(el);
+        let base_children = base.map(|b| self.math_children(b)).unwrap_or_default();
         let equation_nodes: Option<Vec<NodeId>> = if let Some(a) = equation_attr {
             Some(d.attr_children(a).to_vec())
         } else if !own_children.is_empty() {
@@ -598,10 +596,7 @@ impl<'a> Compiler<'a> {
             ch.set(7, a);
             ch.set(8, b);
             ch.set(9, c);
-            ch.set(0, SourcePlan::vector(VecOp::LinePointsFromCoeffs, vec![7, 8, 9]));
-            ch.set(1, SourcePlan::VecOut(0, 1));
-            ch.set(2, SourcePlan::VecOut(0, 2));
-            ch.set(3, SourcePlan::VecOut(0, 3));
+            ch.set_vec(0, VecOp::LinePointsFromCoeffs, vec![7, 8, 9]);
             let q = ch.hidden(SourcePlan::computed(OpSpec::Div, vec![7, 8]));
             ch.set(4, SourcePlan::computed(OpSpec::Negate, vec![q]));
             let xi = ch.hidden(SourcePlan::computed(OpSpec::Div, vec![9, 7]));
@@ -622,7 +617,7 @@ impl<'a> Compiler<'a> {
             if let Some(a) = slope {
                 let m = self.plan_scalar(t, scope, "slope", d.attr_children(a))?;
                 let m = ch.hidden(m);
-                ch.set(2, SourcePlan::vector(VecOp::PolarSlope, vec![0, 1, m, dist]));
+                ch.set_vec(2, VecOp::PolarSlope, vec![0, 1, m, dist]);
             } else {
                 let (a, perp) = match (parallel, perpendicular) {
                     (Some(a), _) => (a, false),
@@ -630,9 +625,8 @@ impl<'a> Compiler<'a> {
                     _ => unreachable!(),
                 };
                 let [ux, uy] = self.plan_direction(t, scope, a, &mut ch)?;
-                ch.set(2, SourcePlan::vector(VecOp::PolarDirection { perpendicular: perp }, vec![0, 1, ux, uy, dist]));
+                ch.set_vec(2, VecOp::PolarDirection { perpendicular: perp }, vec![0, 1, ux, uy, dist]);
             }
-            ch.set(3, SourcePlan::VecOut(2, 1));
             ch.set(10, SourcePlan::Fixed(1.0));
         } else {
             // The line's points are the through points (or essential
@@ -771,10 +765,7 @@ impl<'a> Compiler<'a> {
                         args.push(ch.hidden(SourcePlan::Fixed(f64::NAN)));
                     }
                 }
-                ch.set(1, SourcePlan::vector(VecOp::Shape { n: n as u8, opts }, args));
-                for k in 1..2 * n {
-                    ch.set(1 + k, SourcePlan::VecOut(1, k as u8));
-                }
+                ch.set_vec(1, VecOp::Shape { n: n as u8, opts }, args);
             }
             // Free: the vertices are the points; a vertex may be defined
             // from its siblings without a cycle.
