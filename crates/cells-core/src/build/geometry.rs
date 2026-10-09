@@ -410,20 +410,18 @@ impl<'a> Compiler<'a> {
         let r2 = ch.hidden(SourcePlan::computed(OpSpec::Mul, vec![2, 2]));
         ch.set(5, SourcePlan::computed(OpSpec::Scale { k: std::f64::consts::PI }, vec![r2]));
         let (hc, hr) = (center.is_some(), radius.is_some());
-        // The radius shown is never negative; the prescribed or essential
-        // radius behind it receives the clamped value (projection, ADR 0003).
-        let clamped_radius = |ch: &mut ElemPlan, r: &SourcePlan| -> SourcePlan {
-            let pres = match r {
-                SourcePlan::Literal(v) => {
+        // The radius shown is never negative; the prescribed radius, or an
+        // essential one (1 by default), behind it receives the clamped value
+        // (projection, ADR 0003).
+        let radius_plan = |ch: &mut ElemPlan| -> SourcePlan {
+            let pres = match &radius {
+                Some(SourcePlan::Literal(v)) => {
                     ch.from_attr("r", "radius");
                     ch.essential("r", *v)
                 }
-                other => ch.hidden(other.clone()),
+                Some(other) => ch.hidden(other.clone()),
+                None => ch.essential("r", 1.0),
             };
-            SourcePlan::computed(OpSpec::Clamp { lo: 0.0, hi: f64::INFINITY }, vec![pres])
-        };
-        let essential_radius = |ch: &mut ElemPlan| -> SourcePlan {
-            let pres = ch.essential("r", 1.0);
             SourcePlan::computed(OpSpec::Clamp { lo: 0.0, hi: f64::INFINITY }, vec![pres])
         };
         let nan = || SourcePlan::Fixed(f64::NAN);
@@ -457,28 +455,15 @@ impl<'a> Compiler<'a> {
                 ch.set(1, nan());
                 ch.set(2, nan());
             }
-            (false, false, 0) => {
-                ch.set_essential(0, "cx", 0.0);
-                ch.set_essential(1, "cy", 0.0);
-                let r = essential_radius(&mut ch);
-                ch.set(2, r);
-            }
-            (true, false, 0) => {
-                ch.set(0, SourcePlan::own(center_x));
-                ch.set(1, SourcePlan::own(center_y));
-                let r = essential_radius(&mut ch);
-                ch.set(2, r);
-            }
-            (false, true, 0) => {
-                ch.set_essential(0, "cx", 0.0);
-                ch.set_essential(1, "cy", 0.0);
-                let r = clamped_radius(&mut ch, radius.as_ref().unwrap());
-                ch.set(2, r);
-            }
-            (true, true, 0) => {
-                ch.set(0, SourcePlan::own(center_x));
-                ch.set(1, SourcePlan::own(center_y));
-                let r = clamped_radius(&mut ch, radius.as_ref().unwrap());
+            (_, _, 0) => {
+                if hc {
+                    ch.set(0, SourcePlan::own(center_x));
+                    ch.set(1, SourcePlan::own(center_y));
+                } else {
+                    ch.set_essential(0, "cx", 0.0);
+                    ch.set_essential(1, "cy", 0.0);
+                }
+                let r = radius_plan(&mut ch);
                 ch.set(2, r);
             }
             (true, false, 1) => {
@@ -486,15 +471,15 @@ impl<'a> Compiler<'a> {
                 ch.set(1, SourcePlan::VecOut(0, 1));
                 ch.set(2, SourcePlan::VecOut(0, 2));
             }
-            (false, has_r, 1) => {
+            (false, _, 1) => {
                 // The through point sits on top of the circle.
-                let r = if has_r { clamped_radius(&mut ch, radius.as_ref().unwrap()) } else { essential_radius(&mut ch) };
+                let r = radius_plan(&mut ch);
                 ch.set(2, r);
                 ch.set(0, SourcePlan::own(tx1));
                 ch.set(1, SourcePlan::computed(OpSpec::Sub, vec![ty1, 2]));
             }
             (false, true, 2) => {
-                let r = clamped_radius(&mut ch, radius.as_ref().unwrap());
+                let r = radius_plan(&mut ch);
                 ch.set(2, r);
                 ch.set(0, SourcePlan::vector(VecOp::CircleTwoPointsRadius, vec![tx1, ty1, tx2, ty2, 2]));
                 ch.set(1, SourcePlan::VecOut(0, 1));
