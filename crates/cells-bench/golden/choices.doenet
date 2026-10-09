@@ -21,3 +21,9 @@
 </select>
 <number name="a">$s[1].v</number>
 <number name="bb">$s[2].v</number>
+<conditionalContent name="logic">
+  <case condition="$n > 0 and $b or $n < -3"><number name="k">1</number></case>
+  <case condition="($n < 0 && not $b) || $n = 0"><number name="k">2</number></case>
+  <case condition="$n > 1 & $n < 9 | !$b"><number name="k">3</number></case>
+  <else><number name="k">4</number></else>
+</conditionalContent>

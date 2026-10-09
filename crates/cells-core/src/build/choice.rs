@@ -298,32 +298,26 @@ impl CondParser<'_> {
     }
 
     fn or(&mut self, cp: &mut Compiler, plan: &mut ElemPlan) -> Result<u8> {
-        let mut lhs = self.and(cp, plan)?;
-        loop {
-            if self.is_word("or") {
-                self.pos += 1;
-            } else if self.is_op(0, '|') {
-                self.pos += if self.is_op(1, '|') { 2 } else { 1 };
-            } else {
-                return Ok(lhs);
-            }
-            let rhs = self.and(cp, plan)?;
-            lhs = plan.hidden(SourcePlan::computed(OpSpec::Max, vec![lhs, rhs]));
-        }
+        self.chain(cp, plan, "or", '|', OpSpec::Max, Self::and)
     }
 
     fn and(&mut self, cp: &mut Compiler, plan: &mut ElemPlan) -> Result<u8> {
-        let mut lhs = self.not(cp, plan)?;
+        self.chain(cp, plan, "and", '&', OpSpec::Min, Self::not)
+    }
+
+    /// `next`s joined by `word`, `c` or `cc`, folded left with `op`.
+    fn chain(&mut self, cp: &mut Compiler, plan: &mut ElemPlan, word: &str, c: char, op: OpSpec, next: fn(&mut Self, &mut Compiler, &mut ElemPlan) -> Result<u8>) -> Result<u8> {
+        let mut lhs = next(self, cp, plan)?;
         loop {
-            if self.is_word("and") {
+            if self.is_word(word) {
                 self.pos += 1;
-            } else if self.is_op(0, '&') {
-                self.pos += if self.is_op(1, '&') { 2 } else { 1 };
+            } else if self.is_op(0, c) {
+                self.pos += if self.is_op(1, c) { 2 } else { 1 };
             } else {
                 return Ok(lhs);
             }
-            let rhs = self.not(cp, plan)?;
-            lhs = plan.hidden(SourcePlan::computed(OpSpec::Min, vec![lhs, rhs]));
+            let rhs = next(self, cp, plan)?;
+            lhs = plan.hidden(SourcePlan::computed(op, vec![lhs, rhs]));
         }
     }
 
