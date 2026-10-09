@@ -31,6 +31,7 @@ impl<'a> Compiler<'a> {
             None => {
                 // Synthesize a root when the DAST was not normalized.
                 let e = cp.add_synthetic(0, ComponentKind::Document, NONE);
+                cp.c.templates[0].elems[e].props = vec![SourcePlan::Fixed(f64::NAN), SourcePlan::computed(OpSpec::Scale { k: 100.0 }, vec![0])];
                 let kids = cp.add_children(0, Some(e), ROOT_SCOPE, dast.children(Dast::ROOT))?;
                 cp.c.templates[0].elems[e].children = kids;
                 vec![Child::Elem(e)]
@@ -381,6 +382,8 @@ impl<'a> Compiler<'a> {
                     }
                 }
                 (None, PropFrom::Derived) => self.plan_op(t, scope, el)?,
+                // Wired once the whole tree exists (`scoring.rs`).
+                (None, PropFrom::Planned) if matches!(kind, ComponentKind::Document | ComponentKind::Section) => SourcePlan::Fixed(f64::NAN),
                 (None, PropFrom::Planned) => unreachable!("planned kinds take plan_geo"),
             };
             props[pi] = Some(plan);
@@ -389,6 +392,9 @@ impl<'a> Compiler<'a> {
         if kind == ComponentKind::MathInput {
             self.plan_math_input(el, &mut props)?;
         }
+        if kind == ComponentKind::Section {
+            self.plan_section_flags(el, &mut props)?;
+        }
         let fix_attrs: &[&str] = if kind == ComponentKind::Graph { &["fixed", "fixAxes"] } else { &["fixed"] };
         match self.plan_fix(t, scope, el, fix_attrs)? {
             Fix::Off => {}
@@ -396,6 +402,30 @@ impl<'a> Compiler<'a> {
             Fix::Dynamic(flags) => gate_slots(&mut props, flags),
         }
         self.c.templates[t].elems[e].props = props.into_iter().map(|p| p.unwrap()).collect();
+        Ok(())
+    }
+
+    /// A section's `aggregateScores`, `includeParentNumber` and `label`:
+    /// literals, defaulted by tag as in the current core, since they decide
+    /// how credit and numbers are wired.
+    fn plan_section_flags(&mut self, el: NodeId, props: &mut [Option<SourcePlan>]) -> Result<()> {
+        let d = self.c.dast;
+        let tag = match d.str(el) {
+            "division" => d.attr(el, "type").and_then(|a| self.attr_text(a)).map(|t| t.trim().to_string()).unwrap_or_default(),
+            tag => tag.to_string(),
+        };
+        let (label, &(_, _, aggregate, parent_number)) =
+            crate::components::SECTION_TAGS.iter().enumerate().find(|(_, s)| s.0 == tag).ok_or_else(|| Error::UnsupportedTag(format!("division type=\"{tag}\"")))?;
+        let flag = |name: &str, default: bool| -> Result<f64> {
+            match d.attr(el, name) {
+                None => Ok(if default { 1.0 } else { 0.0 }),
+                Some(a) if self.attr_text(a).is_some() => Ok(if self.attr_flag(el, name) { 1.0 } else { 0.0 }),
+                Some(_) => Err(Error::Unsupported(format!("'{name}' on a <{tag}> must be a literal: it decides how the section is wired"))),
+            }
+        };
+        props[3] = Some(SourcePlan::Fixed(flag("aggregateScores", aggregate)?));
+        props[5] = Some(SourcePlan::Fixed(flag("includeParentNumber", parent_number)?));
+        props[6] = Some(SourcePlan::Fixed(label as f64));
         Ok(())
     }
 
@@ -463,6 +493,11 @@ impl<'a> Compiler<'a> {
                 plan.set(2, SourcePlan::MathEssential(None));
                 let eq = if self.attr_on(el, "symbolicEquality") { SymKind::EqualsSyntax } else { SymKind::Equals };
                 plan.set(3, SourcePlan::Op(OpSpec::Sym(eq), vec![Arg::Own(2), Arg::Own(1)]));
+                let weight = match d.attr(el, "weight") {
+                    Some(a) => self.plan_value(t, scope, "weight", d.attr_children(a), None)?,
+                    None => SourcePlan::Fixed(1.0),
+                };
+                plan.set(4, weight);
             }
             _ => unreachable!(),
         }

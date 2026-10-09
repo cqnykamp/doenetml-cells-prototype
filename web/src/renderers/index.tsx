@@ -9,7 +9,7 @@ import { Slider } from "./Slider";
 import { BooleanInput } from "./BooleanInput";
 import { MathView } from "./Math";
 import { Circle, Line, Polygon } from "./Shapes";
-import { CaseView, ChoiceView, TextView } from "./Choice";
+import { CaseView, ChoiceView, SectionView, TextView } from "./Choice";
 
 export function Component({ idx, inGraph }: { idx: number; inGraph: boolean }) {
   const store = useStore();
@@ -52,6 +52,8 @@ export function Component({ idx, inGraph }: { idx: number; inGraph: boolean }) {
       return <ChoiceView idx={idx} inGraph={inGraph} />;
     case "case":
       return <CaseView idx={idx} inGraph={inGraph} />;
+    case "section":
+      return <SectionView idx={idx} inGraph={inGraph} />;
     case "setup":
       return null;
     case "evaluate":

@@ -110,6 +110,12 @@ pub enum VecOp {
     /// the output is the active branch's cell (NaN when none is active).
     /// The inverse writes the active branch only.
     Choose { n: u8 },
+    /// Credit over scored items: inputs are `n` weights then `n` credits;
+    /// outputs are the weighted mean and the total weight. The mean is 1
+    /// when the total weight is 0 (nothing scored), as in the current core.
+    /// Means of chunks combine by their totals, so a large section is a
+    /// tree of these. No inverse: credit is not set by a request.
+    WeightedMean { n: u8 },
 }
 
 /// Most inputs a vector operator reads.
@@ -135,6 +141,7 @@ impl VecOp {
             VecOp::ProjectLine => 6,
             VecOp::First { n } => n as usize,
             VecOp::Choose { n } => n as usize + 1,
+            VecOp::WeightedMean { n } => 2 * n as usize,
         }
     }
 
@@ -147,6 +154,7 @@ impl VecOp {
             VecOp::LinePointsFromCoeffs => 4,
             VecOp::ProjectCircle | VecOp::ProjectLine => 2,
             VecOp::First { .. } | VecOp::Choose { .. } => 1,
+            VecOp::WeightedMean { .. } => 2,
         }
     }
 
@@ -163,6 +171,7 @@ impl VecOp {
             VecOp::ProjectLine => "projectLine",
             VecOp::First { .. } => "first",
             VecOp::Choose { .. } => "choose",
+            VecOp::WeightedMean { .. } => "weightedMean",
         }
     }
 
@@ -222,6 +231,12 @@ impl VecOp {
             }
             VecOp::Choose { n } => {
                 out[0] = active_branch(inp[0], n).map_or(f64::NAN, |k| inp[k]);
+            }
+            VecOp::WeightedMean { n } => {
+                let (w, c) = inp[..2 * n as usize].split_at(n as usize);
+                let total: f64 = w.iter().sum();
+                out[0] = if total == 0.0 { 1.0 } else { w.iter().zip(c).map(|(w, c)| w * c).sum::<f64>() / total };
+                out[1] = total;
             }
         }
     }
@@ -324,7 +339,7 @@ impl VecOp {
                 out.write(inputs[1], y);
                 true
             }
-            VecOp::First { .. } => false,
+            VecOp::First { .. } | VecOp::WeightedMean { .. } => false,
             VecOp::Choose { n } => match (active_branch(inp[0], n), desired[0]) {
                 (Some(k), Some(d)) => {
                     out.write(inputs[k], d);

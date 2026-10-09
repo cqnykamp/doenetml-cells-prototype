@@ -94,7 +94,26 @@ pub enum ComponentKind {
     Select = 28,
     /// `<group>`: a rendered container with no props of its own.
     Group = 29,
+    /// `<section>`, `<subsection>`, `<subsubsection>`, `<problem>`,
+    /// `<exercise>`, `<example>`: a rendered container that is numbered
+    /// among its sibling sections and, when it aggregates scores, holds the
+    /// weighted credit of the answers and sections inside it. Both are
+    /// wired after expansion (`build/scoring.rs`).
+    Section = 30,
 }
+
+/// The tags that make a `Section`, in the order of its `label` cell, with
+/// the word a title shows and whether the tag aggregates scores and
+/// includes its parent section's number by default (the current core's
+/// `Sectioning.js`).
+pub const SECTION_TAGS: [(&str, &str, bool, bool); 6] = [
+    ("section", "Section", false, true),
+    ("subsection", "Section", false, true),
+    ("subsubsection", "Section", false, true),
+    ("problem", "Problem", true, false),
+    ("exercise", "Exercise", true, false),
+    ("example", "Example", false, false),
+];
 
 /// Largest polygon the fixed prop layout holds.
 pub const MAX_VERTICES: usize = 16;
@@ -284,7 +303,7 @@ const SEQUENCE_VALUE_PROPS: &[PropDef] = &[
 ];
 
 impl ComponentKind {
-    pub const ALL: [ComponentKind; 30] = [
+    pub const ALL: [ComponentKind; 31] = [
         Self::Document,
         Self::Graph,
         Self::Point,
@@ -315,6 +334,7 @@ impl ComponentKind {
         Self::Case,
         Self::Select,
         Self::Group,
+        Self::Section,
     ];
 
     pub fn from_tag(tag: &str) -> Option<Self> {
@@ -348,7 +368,9 @@ impl ComponentKind {
             "case" => Self::Case,
             "select" => Self::Select,
             // Containers the prototype renders nothing special for.
-            "group" | "section" | "label" => Self::Group,
+            "group" | "label" => Self::Group,
+            // The parser writes `<section>` as `<division type="section">`.
+            "division" | "section" | "subsection" | "subsubsection" | "problem" | "exercise" | "example" => Self::Section,
             _ => return None,
         })
     }
@@ -385,6 +407,7 @@ impl ComponentKind {
             Self::Case => "case",
             Self::Select => "select",
             Self::Group => "group",
+            Self::Section => "section",
         }
     }
 
@@ -426,12 +449,26 @@ impl ComponentKind {
             PropDef { name: "correct", default: f64::NAN, from: PropFrom::Children, attr: None, bind: None, ref_prop: None },
             attr("submitted", f64::NAN),
             planned("credit"),
+            attr("weight", 1.0),
         ];
         const OP: &[PropDef] = &[PropDef { name: "value", default: f64::NAN, from: PropFrom::Derived, attr: None, bind: None, ref_prop: None }];
         const COLLECT: &[PropDef] = &[attr("count", 0.0)];
         const STICKY_GROUP: &[PropDef] = &[attr("threshold", f64::NAN), attr("relativeToGraphScales", 0.0)];
+        // `creditAchieved` and `number` are wired after expansion; the
+        // flags are literals the builder reads, since they decide the wiring.
+        const DOCUMENT: &[PropDef] = &[planned("creditAchieved"), computed("percentCreditAchieved", OpSpec::Scale { k: 100.0 }, &[0])];
+        const SECTION: &[PropDef] = &[
+            planned("creditAchieved"),
+            computed("percentCreditAchieved", OpSpec::Scale { k: 100.0 }, &[0]),
+            attr("weight", 1.0),
+            planned("aggregateScores"),
+            planned("number"),
+            planned("includeParentNumber"),
+            planned("label"),
+        ];
         match self {
-            Self::Document => &[],
+            Self::Document => DOCUMENT,
+            Self::Section => SECTION,
             Self::Graph => GRAPH,
             Self::Point => POINT,
             Self::Number => NUMBER,
@@ -531,18 +568,18 @@ impl ComponentKind {
             Self::Function | Self::Derivative => Some("expr"),
             Self::Answer => Some("credit"),
             Self::Document | Self::Graph | Self::RepeatForSequence | Self::Collect | Self::Circle | Self::Line | Self::LineSegment | Self::Polygon | Self::PointList | Self::P | Self::Setup | Self::StickyGroup => None,
-            Self::ConditionalContent | Self::Case | Self::Select | Self::Group => None,
+            Self::ConditionalContent | Self::Case | Self::Select | Self::Group | Self::Section => None,
         }
     }
 
     /// Whether `$name` as a child may produce a copy of this component.
     pub fn copyable(self) -> bool {
-        !matches!(self, Self::Document | Self::Graph | Self::RepeatForSequence | Self::Collect | Self::PointList | Self::P | Self::Setup | Self::StickyGroup | Self::ConditionalContent | Self::Case | Self::Select | Self::Group)
+        !matches!(self, Self::Document | Self::Graph | Self::RepeatForSequence | Self::Collect | Self::PointList | Self::P | Self::Setup | Self::StickyGroup | Self::ConditionalContent | Self::Case | Self::Select | Self::Group | Self::Section)
     }
 
     /// Containers whose children are rendered; `extend` copies them deeply.
     pub fn container(self) -> bool {
-        matches!(self, Self::Graph | Self::P | Self::Setup | Self::StickyGroup | Self::Group)
+        matches!(self, Self::Graph | Self::P | Self::Setup | Self::StickyGroup | Self::Group | Self::Section)
     }
 
     /// How a member of a sticky group attracts and snaps: its shape, the

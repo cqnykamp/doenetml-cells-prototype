@@ -52,6 +52,7 @@ mod emit;
 mod expand;
 mod geometry;
 mod plan;
+mod scoring;
 
 type SlotId = u32;
 type TemplateId = usize;

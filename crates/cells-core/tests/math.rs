@@ -21,7 +21,7 @@ fn numeric_math_lowers_to_operators_and_inverts_through_them() {
     assert!(!has_evaluate(&doc), "a numeric math is plain operators");
     // Scale then Offset: two instructions, no fixed literal cells.
     assert_eq!(doc.program.len(), 2);
-    assert_eq!(doc.n_fixed, 1, "only the (NaN) expression handle is fixed");
+    assert_eq!(doc.n_fixed, 3, "only the (NaN) expression handle and the document's two credit cells are fixed");
     // Dragging the math's value inverts through the lowered chain.
     doc.request(&[req(&doc, "m", "value", 14.0)]);
     assert_eq!(doc.value("a", "value"), Some(4.0));

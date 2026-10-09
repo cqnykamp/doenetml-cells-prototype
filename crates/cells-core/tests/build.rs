@@ -17,8 +17,10 @@ fn load_ok(src: &str) -> Document {
 
 #[test]
 fn three_cells_for_three_coordinates_plus_one_hide_per_point() {
+    // Every count here includes the document's `creditAchieved` and
+    // `percentCreditAchieved`: two fixed cells when nothing is scored.
     let doc = load_ok(r#"<point name="p1" x="1" y="2"/><point name="p2" x="5" y="$p1.y"/>"#);
-    assert_eq!(doc.cells.len(), 5);
+    assert_eq!(doc.cells.len(), 7);
     assert_eq!(doc.n_essential, 5);
     assert_eq!(doc.cell("p1", "y"), doc.cell("p2", "y"));
     assert_ne!(doc.cell("p1", "x"), doc.cell("p2", "x"));
@@ -29,8 +31,9 @@ fn three_cells_for_three_coordinates_plus_one_hide_per_point() {
 #[test]
 fn bare_component_reference_shares_every_cell() {
     let doc = load_ok(r#"<graph name="g"><point name="p1" x="1" y="2"/>$p1</graph>"#);
-    // four graph bounds plus two coordinates and a hide; the copy adds none
-    assert_eq!(doc.cells.len(), 7);
+    // four graph bounds plus two coordinates and a hide, and the document's
+    // two constant credit cells; the copy adds none
+    assert_eq!(doc.cells.len(), 9);
     let g = doc.component("g").unwrap();
     let kids: Vec<_> = doc.children(g).filter_map(|c| if let Child::Component(i) = c { Some(i) } else { None }).collect();
     assert_eq!(kids.len(), 2);
@@ -42,7 +45,7 @@ fn bare_component_reference_shares_every_cell() {
 #[test]
 fn extend_with_override_shares_only_unoverridden_props() {
     let doc = load_ok(r#"<point name="p1" x="1" y="2"/><point name="p2" extend="$p1" y="3"/>"#);
-    assert_eq!(doc.cells.len(), 4);
+    assert_eq!(doc.cells.len(), 6);
     assert_eq!(doc.cell("p1", "x"), doc.cell("p2", "x"));
     assert_ne!(doc.cell("p1", "y"), doc.cell("p2", "y"));
     assert_eq!(doc.value("p2", "y"), Some(3.0));
@@ -51,7 +54,7 @@ fn extend_with_override_shares_only_unoverridden_props() {
 #[test]
 fn coords_attribute_aliases_both_cells() {
     let doc = load_ok(r#"<point name="p1" x="1" y="2"/><point name="q" coords="$p1"/><point name="r" coords="$p1.coords"/>"#);
-    assert_eq!(doc.cells.len(), 5);
+    assert_eq!(doc.cells.len(), 7);
     assert_eq!(doc.cell("q", "x"), doc.cell("p1", "x"));
     assert_eq!(doc.cell("r", "y"), doc.cell("p1", "y"));
 }
@@ -59,7 +62,7 @@ fn coords_attribute_aliases_both_cells() {
 #[test]
 fn number_input_feeds_point_through_default_prop() {
     let mut doc = load_ok(r#"<numberInput name="n" value="4"/><point name="p" x="$n"/>"#);
-    assert_eq!(doc.cells.len(), 3);
+    assert_eq!(doc.cells.len(), 5);
     assert_eq!(doc.cell("n", "value"), doc.cell("p", "x"));
     assert_eq!(doc.value("p", "x"), Some(4.0));
     let c = doc.cell("n", "value").unwrap();
@@ -81,7 +84,7 @@ fn number_children_literal_reference_and_bare_text_reference() {
         .expect("anonymous number");
     assert_eq!(doc.comp_cells(anon), &[doc.cell("p1", "y").unwrap()]);
     // p1.x, p1.y, a, c
-    assert_eq!(doc.cells.len(), 5);
+    assert_eq!(doc.cells.len(), 7);
 }
 
 #[test]
@@ -97,7 +100,7 @@ fn operators_compute_and_propagate() {
            <point name="p" x="$t" y="$u"/>"#,
     );
     assert_eq!(doc.n_essential, 3);
-    assert_eq!(doc.cells.len(), 11);
+    assert_eq!(doc.cells.len(), 13);
     assert_eq!(doc.value("s", "value"), Some(7.0));
     assert_eq!(doc.value("t", "value"), Some(70.0));
     assert_eq!(doc.value("u", "value"), Some(50.0));
@@ -132,7 +135,7 @@ fn graph_defaults_and_tree() {
     assert_eq!(doc.value("p", "x"), Some(0.0));
     let p = doc.component("p").unwrap();
     assert_eq!(doc.parent(p), doc.component("g"));
-    assert_eq!(doc.cells.len(), 7);
+    assert_eq!(doc.cells.len(), 9);
 }
 
 #[test]
@@ -166,7 +169,7 @@ fn error_cases() {
 fn load_timed_reports_stages() {
     let json = cells_core::test_utils::dast_json(r#"<numberInput name="a" value="2"/><op kind="negate" args="$a"/>"#);
     let (doc, t) = Document::load_timed(json.as_bytes()).unwrap();
-    assert_eq!(doc.cells.len(), 2);
+    assert_eq!(doc.cells.len(), 4);
     assert!(t.deserialize.as_nanos() > 0);
 }
 

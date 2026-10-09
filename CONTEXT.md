@@ -226,6 +226,16 @@ same type from every branch.
 _Avoid_: mirrored branches (the interface is the rule; branches may otherwise
 differ freely)
 
+**Gate** — The product of the `active` cells of the cases around a
+component: 1 while every one of them is chosen. A built branch's content
+exists whether shown or not, so what the current core gets from inactive
+content not existing (credit that skips its answers, section numbers that
+skip its sections) is a gate multiplied in. `hide` is not a gate.
+
+**Scored item** — An answer, or a section that aggregates scores, counted
+in the credit of the nearest document or aggregating section above it. A
+section that does not aggregate is looked through.
+
 **Document seed** — The one random seed a document is loaded with. Each
 load-time choice draws from its own stream derived from the seed and the
 choice's essential key, so a choice draws the same way wherever it is

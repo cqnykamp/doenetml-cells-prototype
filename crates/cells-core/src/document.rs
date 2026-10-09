@@ -344,6 +344,35 @@ impl Document {
         self.request(&[Request { cell: submitted, value }])
     }
 
+    /// A section's full number, such as "2.1": its own `number` cell,
+    /// after its nearest section ancestor's full number when it includes
+    /// its parent's (`build/scoring.rs`). None for other components.
+    pub fn section_number(&self, c: CompIdx) -> Option<String> {
+        if self.kind(c) != ComponentKind::Section {
+            return None;
+        }
+        let cells = self.comp_cells(c);
+        let own = self.cells[cells[4] as usize].to_string();
+        if self.cells[cells[5] as usize] == 0.0 {
+            return Some(own);
+        }
+        let mut p = self.parent(c);
+        while let Some(x) = p {
+            if self.kind(x) == ComponentKind::Section {
+                return Some(format!("{}.{own}", self.section_number(x)?));
+            }
+            p = self.parent(x);
+        }
+        Some(own)
+    }
+
+    /// A section's automatic title, such as "Section 2.1" or "Problem 3".
+    pub fn section_title(&self, c: CompIdx) -> Option<String> {
+        let number = self.section_number(c)?;
+        let label = self.cells[self.comp_cells(c)[6] as usize] as usize;
+        Some(format!("{} {number}", crate::components::SECTION_TAGS[label].1))
+    }
+
     /// Authoring warnings about the loaded document. Today: repeats whose
     /// count reads a cell inside another repeat's iterations, since each
     /// such link costs a full extra build pass and, unlike nesting, is

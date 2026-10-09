@@ -273,6 +273,7 @@ impl<'c, 'a> Builder<'c, 'a> {
             let inst = self.instances[i];
             self.instance_sources(inst)?;
         }
+        self.scoring_sources();
         Ok(())
     }
 
