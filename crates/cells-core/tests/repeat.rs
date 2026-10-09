@@ -216,10 +216,10 @@ fn nested_repeats_scope_names_per_iteration_and_survive_rebuilds() {
 
 #[test]
 fn load_settles_in_two_passes_and_reports_it() {
-    let (doc, t) = Document::load_timed(cells_core::test_utils::dast_json(POINTS).as_bytes()).unwrap();
+    let (doc, t) = Document::load(cells_core::test_utils::dast_json(POINTS).as_bytes(), Default::default()).unwrap();
     assert_eq!(t.passes, 2);
     assert!(doc.structure_settled());
-    let (_, t) = Document::load_timed(cells_core::test_utils::dast_json(r#"<point name="p"/>"#).as_bytes()).unwrap();
+    let (_, t) = Document::load(cells_core::test_utils::dast_json(r#"<point name="p"/>"#).as_bytes(), Default::default()).unwrap();
     assert_eq!(t.passes, 1);
 }
 
@@ -229,25 +229,25 @@ fn structural_depth_counts_cross_iteration_count_dependencies() {
     // settle in the second pass. A nested repeat is one deeper, because its
     // count cannot exist until the enclosing iteration does, but that is
     // not a warning: nesting is ordinary authoring.
-    let (doc, t) = Document::load_timed(cells_core::test_utils::dast_json(
+    let (doc, t) = Document::load(cells_core::test_utils::dast_json(
         r#"<numberInput name="n" value="2"/>
            <repeatForSequence name="a" length="$n"><point/></repeatForSequence>
            <repeatForSequence name="b" length="$a.count" indexName="i">
              <repeatForSequence name="c" length="$i"><point/></repeatForSequence>
            </repeatForSequence>"#,
-    ).as_bytes()).unwrap();
+    ).as_bytes(), Default::default()).unwrap();
     assert_eq!(doc.structure.repeat_depths, vec![1, 2, 2, 1], "a, then c in each of b's iterations (recorded before b), then b");
     assert_eq!(t.passes, 3);
     assert!(doc.warnings().is_empty());
 
     // A count that reads a cell inside another repeat's iterations is one
     // link deeper, costs one more pass, and is reported.
-    let (doc, t) = Document::load_timed(cells_core::test_utils::dast_json(
+    let (doc, t) = Document::load(cells_core::test_utils::dast_json(
         r#"<numberInput name="n" value="3"/>
            <repeatForSequence name="a" length="$n" indexName="i"><number name="k">$i</number></repeatForSequence>
            <repeatForSequence name="b" length="$a[3].k"><point name="q" x="2"/></repeatForSequence>
            <repeatForSequence name="c" length="$b[1].q.x"><point/></repeatForSequence>"#,
-    ).as_bytes()).unwrap();
+    ).as_bytes(), Default::default()).unwrap();
     // b reads inside a, c reads inside b: a chain of two links, so depth 3
     // and one pass per link beyond the two every repeat needs.
     assert_eq!(doc.structure.structural_depth, 3);

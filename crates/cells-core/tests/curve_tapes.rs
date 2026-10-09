@@ -1,11 +1,10 @@
 //! Plan 5, change 1: a curve whose expression has a fixed shape samples a
 //! tape compiled at build time instead of asking the engine on each tick.
-//! The tapes must sample what the engine samples. Its own test binary,
-//! because it flips `CELLS_COMPILE_CURVES` for the process.
+//! The tapes must sample what the engine samples.
 
 use cells_core::ops::{SAMPLES, SymKind};
-use cells_core::test_utils::load;
-use cells_core::{Document, Op, Request};
+use cells_core::test_utils::dast_json;
+use cells_core::{Document, LoadOptions, Op, Request};
 
 const SRC: &str = r#"<numberInput name="a" value="1.5"/><numberInput name="b" value="-2"/><mathInput name="mi" prefill="x^3"/>
 <graph xmin="-3" xmax="4">
@@ -26,11 +25,9 @@ fn tapes(doc: &Document) -> usize {
 
 #[test]
 fn tapes_sample_what_the_engine_samples() {
-    // SAFETY: the only test in this binary; nothing else reads the environment concurrently.
-    unsafe { std::env::set_var("CELLS_COMPILE_CURVES", "0") };
-    let mut slow = load(SRC).unwrap();
-    unsafe { std::env::set_var("CELLS_COMPILE_CURVES", "1") };
-    let mut fast = load(SRC).unwrap();
+    let json = dast_json(SRC);
+    let mut slow = Document::load(json.as_bytes(), LoadOptions { sample_with_engine: true, ..Default::default() }).unwrap().0;
+    let mut fast = Document::from_bytes(json.as_bytes()).unwrap();
     assert_eq!(tapes(&slow), 0);
     // f, df, g, dg, h compile; k and dk depend on a mathInput's expression.
     assert_eq!(tapes(&fast), 5);

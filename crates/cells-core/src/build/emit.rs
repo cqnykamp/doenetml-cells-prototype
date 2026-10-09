@@ -106,8 +106,8 @@ impl<'c, 'a> Builder<'c, 'a> {
         let mut math = vec![false; cells.len()];
         let mut tapes = Vec::new();
         // Compile curves whose expression has a fixed shape (plan 5, change
-        // 1). `CELLS_COMPILE_CURVES=0` turns it off, for measuring.
-        let compile = std::env::var("CELLS_COMPILE_CURVES").map_or(true, |v| v != "0");
+        // 1), unless the load asked for engine sampling.
+        let compile = !self.prior.sample_with_engine;
         let mut fixed_shape: HashMap<SlotId, Option<cells_sym::Handle>> = HashMap::new();
         for &s in &derived_defs {
             let (mut spec, start, count) = match &self.sources[s] {
@@ -188,6 +188,7 @@ impl<'c, 'a> Builder<'c, 'a> {
             repeats: self.repeats,
             counts_used: self.counts_used,
             seed: self.prior.seed,
+            sample_with_engine: self.prior.sample_with_engine,
         };
 
         // Lazy labels for cycle errors.

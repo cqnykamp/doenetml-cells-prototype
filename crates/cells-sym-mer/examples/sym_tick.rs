@@ -19,7 +19,7 @@
 
 use std::time::Instant;
 
-use cells_core::{DirtyClosure, Document, Evaluator, FullRecompute, Request};
+use cells_core::{DirtyClosure, Document, Evaluator, FullRecompute, LoadOptions, Request};
 use cells_sym::SymEngine;
 use cells_sym::flat::Flat;
 use cells_sym_mer::Mer;
@@ -91,7 +91,7 @@ fn main() {
         let bytes = std::fs::read(cells_bench_dir().join(format!("{spec}.cdast"))).unwrap_or_else(|_| panic!("no fixture {spec}; run scripts/gen-fixtures.sh {spec}"));
         for name in ["A", "R"] {
             let t = Instant::now();
-            let base = Document::from_bytes_with(&bytes, engine(name)).unwrap();
+            let base = Document::load(&bytes, LoadOptions { engine: Some(engine(name)), ..Default::default() }).unwrap().0;
             let load = t.elapsed().as_secs_f64() * 1e3;
             let n_sym = base.program.instrs.iter().filter(|i| matches!(i.op, cells_core::Op::Sym(..))).count();
             let mut row = json!({ "spec": spec, "engine": name, "cells": base.cells.len(), "instrs": base.program.len(), "sym_instrs": n_sym, "load_ms": load });
@@ -116,7 +116,7 @@ fn main() {
                         let t = Instant::now();
                         let reqs = make(&mut doc, i);
                         let (start, before) = if timed_setup { (t, before) } else { (Instant::now(), size(&doc)) };
-                        let tick = doc.request_with(ev.as_mut(), &reqs);
+                        let tick = doc.request_with_groups(ev.as_mut(), &reqs, &[]);
                         total += start.elapsed().as_secs_f64() * 1e3;
                         if i + 1 == reps / 2 {
                             first_half = total;

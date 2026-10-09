@@ -2,7 +2,7 @@
 //! over wasm memory (see `cells_ptr`/`cells_len`), receives a one-time render
 //! manifest, and writes with cell-addressed requests. See ADR 0001.
 
-use cells_core::{DirtyClosure, Document, Evaluator, FullRecompute, PointRequest, Request};
+use cells_core::{DirtyClosure, Document, LoadOptions, Evaluator, FullRecompute, PointRequest, Request};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -45,7 +45,7 @@ impl Core {
             "R" => Box::new(cells_sym_mer::Mer::new()),
             other => return Err(JsError::new(&format!("no symbolic engine '{other}' in this build"))),
         };
-        let (doc, timings) = Document::load_timed_seeded(dast, engine, seed as u64).map_err(|e| JsError::new(&e.to_string()))?;
+        let (doc, timings) = Document::load(dast, LoadOptions { engine: Some(engine), seed: seed as u64, ..Default::default() }).map_err(|e| JsError::new(&e.to_string()))?;
         let evaluator: Box<dyn Evaluator> = Box::new(DirtyClosure::new(&doc.program, doc.cells.len()));
         Ok(Core { doc, evaluator, timings, last_dropped: 0, last_rebuilt: false, last_rebuild_error: None, last_rebuild_ms: 0.0 })
     }

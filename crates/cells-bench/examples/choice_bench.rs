@@ -25,7 +25,7 @@ fn main() {
         let mut passes = 0;
         for _ in 0..reps.clamp(3, 7) {
             let t = Instant::now();
-            let (doc, timings) = Document::load_timed(&bytes).unwrap();
+            let (doc, timings) = Document::load(&bytes, Default::default()).unwrap();
             loads.push(t.elapsed().as_secs_f64() * 1e3);
             passes = timings.passes;
             std::hint::black_box(doc);

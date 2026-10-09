@@ -162,7 +162,7 @@ fn fingerprint(doc: &Document) -> u64 {
 fn run(source: &str, programs: &mut String, name: &str) -> String {
     let mut out = String::new();
     let json = cells_core::test_utils::dast_json(source);
-    let mut doc = match Document::from_dast_json(&json) {
+    let mut doc = match Document::from_bytes(json.as_bytes()) {
         Ok(d) => d,
         Err(e) => return format!("load error: {e}\n"),
     };

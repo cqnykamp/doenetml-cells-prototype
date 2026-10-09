@@ -4,7 +4,7 @@ use cells_core::Document;
 
 fn main() {
     for (spec, json) in cells_bench::fixtures() {
-        let (doc, t) = Document::load_timed(json.as_bytes()).unwrap();
+        let (doc, t) = Document::load(json.as_bytes(), Default::default()).unwrap();
         let m = doc.memory_estimate();
         let bin_bytes = cells_bench::fixture_binary(&spec).map_or(0, |b| b.len());
         println!(

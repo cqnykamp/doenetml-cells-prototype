@@ -12,7 +12,7 @@ fn main() {
     for spec in specs {
         let json = cells_bench::fixture_json(&spec);
         let t = Instant::now();
-        let base = Document::from_dast_json(&json).unwrap();
+        let base = Document::from_bytes(json.as_bytes()).unwrap();
         let load = t.elapsed();
         let n = base.value("p0", "numVertices").unwrap() as usize;
         let cells: Vec<[u32; 2]> = (1..=n).map(|k| [base.cell("p0", &format!("x{k}")).unwrap(), base.cell("p0", &format!("y{k}")).unwrap()]).collect();
@@ -38,7 +38,7 @@ fn main() {
             let mut dc = DirtyClosure::new(&doc.program, doc.cells.len());
             let mut one = |d: f64| {
                 let r = [Request { cell: cells[0][0], value: at[0][0] + d }, Request { cell: cells[0][1], value: at[0][1] + d }];
-                if closure { doc.request_with(&mut dc, &r) } else { doc.request_with(&mut FullRecompute, &r) };
+                if closure { doc.request_with_groups(&mut dc, &r, &[]) } else { doc.request_with_groups(&mut FullRecompute, &r, &[]) };
             };
             let o = time(&mut one);
             row += &format!("  {}: shape {:>9.2?} vertex {:>9.2?}", if closure { "closure" } else { "full" }, w, o);

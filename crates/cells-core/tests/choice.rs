@@ -245,7 +245,7 @@ const SELECT: &str = r#"
 "#;
 
 fn load_seeded(src: &str, seed: u64) -> Document {
-    Document::from_bytes_seeded(dast_json(src).as_bytes(), seed).unwrap()
+    Document::load(dast_json(src).as_bytes(), cells_core::LoadOptions { seed, ..Default::default() }).unwrap().0
 }
 
 #[test]

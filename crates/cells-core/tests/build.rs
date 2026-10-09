@@ -166,9 +166,9 @@ fn error_cases() {
 }
 
 #[test]
-fn load_timed_reports_stages() {
+fn load_reports_stages() {
     let json = cells_core::test_utils::dast_json(r#"<numberInput name="a" value="2"/><op kind="negate" args="$a"/>"#);
-    let (doc, t) = Document::load_timed(json.as_bytes()).unwrap();
+    let (doc, t) = Document::load(json.as_bytes(), Default::default()).unwrap();
     assert_eq!(doc.cells.len(), 4);
     assert!(t.deserialize.as_nanos() > 0);
 }

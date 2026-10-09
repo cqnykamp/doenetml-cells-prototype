@@ -28,7 +28,7 @@ pub fn dast_json(source: &str) -> String {
 
 /// Parse and load a document from DoenetML source.
 pub fn load(source: &str) -> crate::Result<crate::Document> {
-    crate::Document::from_dast_json(&dast_json(source))
+    crate::Document::from_bytes(dast_json(source).as_bytes())
 }
 
 /// Parse to DAST JSON, convert to the binary wire format in Rust, and load

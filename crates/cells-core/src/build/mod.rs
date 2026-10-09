@@ -417,6 +417,8 @@ pub struct Prior {
     counts: HashMap<(ScopeId, NodeId), u32>,
     /// The document seed load-time choices draw from (plan 6).
     pub seed: u64,
+    /// See `LoadOptions::sample_with_engine`.
+    pub sample_with_engine: bool,
     /// `values[scope][template slot]`
     values: Vec<Vec<Option<f64>>>,
 }
@@ -435,7 +437,7 @@ impl Prior {
             }
             row[slot as usize] = Some(v);
         }
-        Prior { scopes: doc.structure.scopes.clone(), scope_index: doc.structure.scope_index.clone(), counts, values, seed: doc.structure.seed }
+        Prior { scopes: doc.structure.scopes.clone(), scope_index: doc.structure.scope_index.clone(), counts, values, seed: doc.structure.seed, sample_with_engine: doc.structure.sample_with_engine }
     }
 
     pub fn restore(self, doc: &mut Document) {
@@ -524,7 +526,7 @@ pub fn build(dast: &Dast, prior: &Prior, engine: &mut dyn SymEngine) -> Result<U
 }
 
 /// One build pass with nothing carried over: every repeat has zero
-/// iterations. `Document::load_timed` iterates this to a fixed point.
+/// iterations. `Document::load` iterates this to a fixed point.
 pub fn build_once(dast: &Dast, engine: &mut dyn SymEngine) -> Result<Unscheduled> {
     build(dast, &Prior::default(), engine)
 }

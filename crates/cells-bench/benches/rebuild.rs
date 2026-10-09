@@ -9,7 +9,7 @@ fn rebuild(c: &mut Criterion) {
         if !spec.starts_with("repeat-") && !spec.starts_with("recur-") {
             continue;
         }
-        let base = Document::from_dast_json(&json).unwrap();
+        let base = Document::from_bytes(json.as_bytes()).unwrap();
         let n = base.value("n", "value").unwrap();
         let mut g = c.benchmark_group("rebuild");
         g.sample_size(20).throughput(Throughput::Elements(base.n_components() as u64));
@@ -21,7 +21,7 @@ fn rebuild(c: &mut Criterion) {
                 let target = doc.cell("n", "value").unwrap();
                 let value = if down { n - 1.0 } else { n };
                 down = !down;
-                let tick = doc.request_with(&mut ev, &[Request { cell: target, value }]);
+                let tick = doc.request_with_groups(&mut ev, &[Request { cell: target, value }], &[]);
                 assert!(tick.rebuilt, "{spec}: tick did not rebuild");
                 // The evaluator's tables belong to the old program.
                 ev = DirtyClosure::new(&doc.program, doc.cells.len());

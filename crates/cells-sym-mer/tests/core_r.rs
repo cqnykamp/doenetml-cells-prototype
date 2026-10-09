@@ -4,11 +4,11 @@
 //! a new handle so nothing downstream is cut off.
 
 use cells_core::test_utils::dast_json;
-use cells_core::{Document, Request};
+use cells_core::{Document, LoadOptions, Request};
 use cells_sym_mer::Mer;
 
 fn load(source: &str) -> Document {
-    Document::from_bytes_with(dast_json(source).as_bytes(), Box::new(Mer::new())).unwrap()
+    Document::load(dast_json(source).as_bytes(), LoadOptions { engine: Some(Box::new(Mer::new())), ..Default::default() }).unwrap().0
 }
 
 fn req(doc: &Document, name: &str, prop: &str, value: f64) -> Request {
@@ -76,7 +76,7 @@ fn symchain_matches_the_current_core() {
     let src = cells_docgen::symchain(10);
     for engine in ["A", "R"] {
         let e: Box<dyn cells_sym::SymEngine> = if engine == "A" { Box::new(cells_sym::flat::Flat::new()) } else { Box::new(Mer::new()) };
-        let mut doc = Document::from_bytes_with(dast_json(&src).as_bytes(), e).unwrap();
+        let mut doc = Document::load(dast_json(&src).as_bytes(), LoadOptions { engine: Some(e), ..Default::default() }).unwrap().0;
         let h = doc.parse_math("x^2+20").unwrap();
         doc.request(&[req(&doc, "mi", "expr", h), req(&doc, "t", "value", 1.002)]);
         assert!((doc.value("e2", "value").unwrap() - 20.002004).abs() < 1e-9, "{engine}");

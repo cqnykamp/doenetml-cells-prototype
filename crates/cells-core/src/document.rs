@@ -65,6 +65,9 @@ pub struct Structure {
     pub structural_depth: u32,
     /// The document seed load-time choices draw from (plan 6).
     pub seed: u64,
+    /// Curves sample through the engine, not compiled tapes (see
+    /// `LoadOptions`).
+    pub sample_with_engine: bool,
 }
 
 /// Upper bound on build passes before the structure must have settled.
@@ -198,6 +201,19 @@ pub struct Tick {
     pub rebuild_error: Option<String>,
 }
 
+/// How to load a document. The default: engine A, seed 0, curves compiled.
+#[derive(Default)]
+pub struct LoadOptions {
+    /// The symbolic engine; engine A when None.
+    pub engine: Option<Box<dyn SymEngine>>,
+    /// The document seed load-time choices draw from (plan 6): one seed
+    /// gives one variant of the document.
+    pub seed: u64,
+    /// Sample curves through the engine instead of tapes compiled at build
+    /// time (plan 5, change 1); for checking the tapes and for measuring.
+    pub sample_with_engine: bool,
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub struct LoadTimings {
     pub deserialize: Duration,
@@ -229,56 +245,30 @@ impl Document {
         doc
     }
 
-    /// Load from DAST JSON and compute initial values.
-    pub fn from_dast_json(json: &str) -> crate::Result<Document> {
-        Ok(Self::load_timed(json.as_bytes())?.0)
-    }
-
-    /// Load from either wire format (JSON or binary), detected by content.
+    /// Load from either wire format (JSON or binary), detected by content,
+    /// with the default options.
     pub fn from_bytes(bytes: &[u8]) -> crate::Result<Document> {
-        Ok(Self::load_timed(bytes)?.0)
+        Ok(Self::load(bytes, LoadOptions::default())?.0)
     }
 
     /// Load from either wire format, timing each stage separately. Build,
     /// schedule and compute repeat until every repeat's iteration count
     /// matches its `count` cell; the timings sum over passes.
-    pub fn load_timed(bytes: &[u8]) -> crate::Result<(Document, LoadTimings)> {
-        Self::load_timed_with(bytes, Box::new(cells_sym::flat::Flat::new()))
-    }
-
-    /// `load_timed` with a chosen symbolic engine (engine A by default).
-    pub fn load_timed_with(bytes: &[u8], engine: Box<dyn SymEngine>) -> crate::Result<(Document, LoadTimings)> {
-        Self::load_timed_seeded(bytes, engine, 0)
-    }
-
-    /// `load_timed_with` and the document seed that load-time choices draw
-    /// from (plan 6): one seed gives one variant of the document.
-    pub fn load_timed_seeded(bytes: &[u8], engine: Box<dyn SymEngine>, seed: u64) -> crate::Result<(Document, LoadTimings)> {
+    pub fn load(bytes: &[u8], options: LoadOptions) -> crate::Result<(Document, LoadTimings)> {
         let mut t = LoadTimings::default();
         let clock = web_time::Instant::now();
         let dast = Arc::new(crate::dast::load(bytes)?);
         t.deserialize = clock.elapsed();
-        let doc = Self::build_settled(dast, &mut t, engine, seed)?;
+        let doc = Self::load_dast(dast, options, &mut t)?;
         Ok((doc, t))
     }
 
-    /// Load with a document seed.
-    pub fn from_bytes_seeded(bytes: &[u8], seed: u64) -> crate::Result<Document> {
-        Ok(Self::load_timed_seeded(bytes, Box::new(cells_sym::flat::Flat::new()), seed)?.0)
-    }
-
-    /// Load with a chosen symbolic engine.
-    pub fn from_bytes_with(bytes: &[u8], engine: Box<dyn SymEngine>) -> crate::Result<Document> {
-        Ok(Self::load_timed_with(bytes, engine)?.0)
-    }
-
-    pub fn from_dast(dast: Arc<Dast>) -> crate::Result<Document> {
-        Self::build_settled(dast, &mut LoadTimings::default(), Box::new(cells_sym::flat::Flat::new()), 0)
-    }
-
-    fn build_settled(dast: Arc<Dast>, t: &mut LoadTimings, mut engine: Box<dyn SymEngine>, seed: u64) -> crate::Result<Document> {
+    /// `load` from a deserialized DAST.
+    pub fn load_dast(dast: Arc<Dast>, options: LoadOptions, t: &mut LoadTimings) -> crate::Result<Document> {
+        let mut engine = options.engine.unwrap_or_else(|| Box::new(cells_sym::flat::Flat::new()));
         let mut prior = crate::build::Prior::default();
-        prior.seed = seed;
+        prior.seed = options.seed;
+        prior.sample_with_engine = options.sample_with_engine;
         for _ in 0..MAX_PASSES {
             let clock = web_time::Instant::now();
             let unscheduled = crate::build::build(&dast, &prior, &mut *engine)?;
@@ -480,18 +470,13 @@ impl Document {
     /// Apply requests: invert each to an essential cell (later requests win
     /// when two land on one cell), recompute, and report what changed.
     pub fn request(&mut self, requests: &[Request]) -> Tick {
-        self.request_with(&mut crate::eval::FullRecompute, requests)
+        self.request_with_groups(&mut crate::eval::FullRecompute, requests, &[])
     }
 
     /// Apply a point group: points dragged together, which keep their shape
     /// when one of them is constrained (ADR 0006).
     pub fn request_points(&mut self, points: &[PointRequest]) -> Tick {
         self.request_with_groups(&mut crate::eval::FullRecompute, &[], &[points.to_vec()])
-    }
-
-    /// `request` with an explicit recompute strategy.
-    pub fn request_with(&mut self, evaluator: &mut (impl crate::eval::Evaluator + ?Sized), requests: &[Request]) -> Tick {
-        self.request_with_groups(evaluator, requests, &[])
     }
 
     /// Scalar requests and point groups in one tick.

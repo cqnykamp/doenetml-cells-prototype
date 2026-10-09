@@ -7,7 +7,7 @@
 
 use std::time::Instant;
 
-use cells_core::{Document, Request};
+use cells_core::{Document, LoadOptions, Request};
 use cells_sym::SymEngine;
 use cells_sym::flat::Flat;
 use cells_sym_mer::Mer;
@@ -19,7 +19,7 @@ fn main() {
     let bytes = std::fs::read(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!("../../fixtures/{spec}.cdast"))).unwrap();
     for name in ["A", "R"] {
         let engine: Box<dyn SymEngine> = if name == "A" { Box::new(Flat::new()) } else { Box::new(Mer::new()) };
-        let mut doc = Document::from_bytes_with(&bytes, engine).unwrap();
+        let mut doc = Document::load(&bytes, LoadOptions { engine: Some(engine), ..Default::default() }).unwrap().0;
         let (mi, t) = (doc.cell("mi", "expr").unwrap(), doc.cell("t", "value").unwrap());
         let report = |doc: &Document, what: &str, ms: f64| {
             let e = doc.program.sym.engine.borrow();
