@@ -63,7 +63,7 @@ impl<'c, 'a> Builder<'c, 'a> {
                     essential_slots.push((scope, tslot));
                 }
                 Source::Fixed(_) => fixed_defs.push(s),
-                Source::Op(..) | Source::Vec(..) => derived_defs.push(s),
+                Source::Op(..) => derived_defs.push(s),
                 Source::VecOut(..) => outputs.push(s),
                 _ => unreachable!(),
             }
@@ -82,7 +82,6 @@ impl<'c, 'a> Builder<'c, 'a> {
             let root = roots[s] as usize;
             slot_cell[root] = cells.len() as CellIdx;
             let n_out = match self.sources[s] {
-                Source::Vec(v, ..) => v.n_out(),
                 Source::Op(spec, ..) => spec.n_out(),
                 _ => 1,
             };
@@ -113,7 +112,6 @@ impl<'c, 'a> Builder<'c, 'a> {
         for &s in &derived_defs {
             let (mut spec, start, count) = match &self.sources[s] {
                 Source::Op(spec, start, count) => (*spec, *start, *count),
-                Source::Vec(v, start, count) => (OpSpec::Vec(*v), *start, *count),
                 _ => unreachable!(),
             };
             bound.clear();
@@ -319,7 +317,7 @@ impl<'c, 'a> Builder<'c, 'a> {
                 }
                 match &self.sources[sl as usize] {
                     Source::Alias(t) => stack.push(*t),
-                    Source::Op(_, start, n) | Source::Vec(_, start, n) => stack.extend_from_slice(&self.op_inputs[*start as usize..*start as usize + *n as usize]),
+                    Source::Op(_, start, n) => stack.extend_from_slice(&self.op_inputs[*start as usize..*start as usize + *n as usize]),
                     Source::VecOut(head, _) => stack.push(*head),
                     _ => {}
                 }

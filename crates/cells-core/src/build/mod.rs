@@ -119,10 +119,8 @@ enum SourcePlan {
     /// An essential math cell (an unbound mathInput's `expr`, an answer's
     /// `submitted`) holding this expression, or blank (NaN).
     MathEssential(Option<Tree>),
-    /// Head of a vector instruction; this slot is output 0, the next
-    /// `n_out - 1` slots are `VecOut`.
-    Vec(VecOp, Vec<Arg>),
-    /// Output `k` of the vector instruction headed at own slot `head`.
+    /// Output `k` of the vector instruction headed at own slot `head`
+    /// (an `Op(OpSpec::Vec(..))`, which is output 0).
     VecOut(u8, u8),
 }
 
@@ -143,8 +141,10 @@ impl SourcePlan {
     fn computed(op: OpSpec, args: Vec<u8>) -> Self {
         SourcePlan::Op(op, args.into_iter().map(Arg::Own).collect())
     }
+    /// Head of a vector instruction over own slots; this slot is output 0,
+    /// the next `n_out - 1` slots are `VecOut`.
     fn vector(op: VecOp, args: Vec<u8>) -> Self {
-        SourcePlan::Vec(op, args.into_iter().map(Arg::Own).collect())
+        SourcePlan::computed(OpSpec::Vec(op), args)
     }
 }
 
@@ -438,10 +438,9 @@ enum Source {
     /// count, a math handle, the shared missing-referent cell.
     Fixed(f64),
     Alias(SlotId),
-    /// Operator over `op_inputs[start..start + n]`.
+    /// Operator over `op_inputs[start..start + n]`; for a vector operator,
+    /// the head (output 0).
     Op(OpSpec, u32, u8),
-    /// Head (output 0) of a vector instruction over `op_inputs[start..start + n]`.
-    Vec(VecOp, u32, u8),
     /// Output `k` of the vector instruction headed at `head`.
     VecOut(SlotId, u8),
 }

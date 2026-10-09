@@ -494,9 +494,8 @@ impl<'c, 'a> Builder<'c, 'a> {
                 }
                 SourcePlan::MathValue(expr) => {
                     if self.is_symbolic(comp) {
-                        let start = self.op_inputs.len() as u32;
-                        self.op_inputs.push(self.slot(comp, 0));
-                        Source::Op(OpSpec::Sym(SymKind::Evaluate), start, 1)
+                        let expr = self.slot(comp, 0);
+                        self.op_source(OpSpec::Sym(SymKind::Evaluate), &[expr])
                     } else {
                         let id = self.instantiate_expr(*expr, inst.scope)?;
                         if let Expr::Num(v) = *self.arena.get(id) {
@@ -515,14 +514,6 @@ impl<'c, 'a> Builder<'c, 'a> {
                         Some(tree) => Source::Literal(self.engine.import(tree) as f64),
                         None => Source::Literal(f64::NAN),
                     }
-                }
-                SourcePlan::Vec(op, args) => {
-                    let start = self.op_inputs.len() as u32;
-                    for &a in args {
-                        let slot = self.arg_slot(a, comp, inst.scope, kind, pi)?;
-                        self.op_inputs.push(slot);
-                    }
-                    Source::Vec(*op, start, args.len() as u8)
                 }
                 SourcePlan::VecOut(head, k) => Source::VecOut(self.slot(comp, *head as usize), *k),
             };
@@ -560,10 +551,8 @@ impl<'c, 'a> Builder<'c, 'a> {
         }
         let template = self.sym_templates.len() as u32;
         self.sym_templates.push(tree);
-        let start = self.op_inputs.len() as u32;
-        let n = u8::try_from(leaves.len()).map_err(|_| Error::BadMath { text: text.clone(), reason: "more than 255 references".into() })?;
-        self.op_inputs.extend_from_slice(&leaves);
-        Ok(Source::Op(OpSpec::Sym(SymKind::Instantiate { template, post }), start, n))
+        u8::try_from(leaves.len()).map_err(|_| Error::BadMath { text: text.clone(), reason: "more than 255 references".into() })?;
+        Ok(self.op_source(OpSpec::Sym(SymKind::Instantiate { template, post }), &leaves))
     }
 
     /// Rebind a parsed template's `#plan` leaves to slots: a math leaf where
@@ -801,10 +790,25 @@ impl<'c, 'a> Builder<'c, 'a> {
         }
     }
 
-    pub(super) fn op_slot(&mut self, spec: OpSpec, inputs: &[SlotId]) -> SlotId {
+    /// An operator source over `inputs` (at most 255).
+    pub(super) fn op_source(&mut self, spec: OpSpec, inputs: &[SlotId]) -> Source {
         let start = self.op_inputs.len() as u32;
         self.op_inputs.extend_from_slice(inputs);
-        self.anon_slot(Source::Op(spec, start, inputs.len() as u8))
+        Source::Op(spec, start, inputs.len() as u8)
+    }
+
+    pub(super) fn op_slot(&mut self, spec: OpSpec, inputs: &[SlotId]) -> SlotId {
+        let source = self.op_source(spec, inputs);
+        self.anon_slot(source)
+    }
+
+    /// `x`, times `gate` when there is one (the product of the enclosing
+    /// cases' `active` cells).
+    pub(super) fn gated(&mut self, gate: Option<SlotId>, x: SlotId) -> SlotId {
+        match gate {
+            None => x,
+            Some(g) => self.op_slot(OpSpec::Mul, &[g, x]),
+        }
     }
 
     // ---- reference resolution at expansion time ------------------------------

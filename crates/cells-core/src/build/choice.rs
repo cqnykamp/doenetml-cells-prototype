@@ -461,10 +461,8 @@ impl<'c, 'a> Builder<'c, 'a> {
                 let s = self.scope_for(scope, node, k as u32);
                 let case = self.new_component(ComponentKind::Case, NONE, comp, NONE, scope, 1);
                 let pos = self.anon_slot(Source::Fixed(k as f64));
-                let start = self.op_inputs.len() as u32;
-                self.op_inputs.extend_from_slice(&[choice, pos]);
                 let active_slot = self.slot(case, 0);
-                self.sources[active_slot as usize] = Source::Op(OpSpec::Eq, start, 2);
+                self.sources[active_slot as usize] = self.op_source(OpSpec::Eq, &[choice, pos]);
                 self.enter_scope(s, def.branches[k - 1]);
                 let these = self.expand(def.branches[k - 1], s, case)?;
                 self.set_children(case, &these);
@@ -555,14 +553,9 @@ impl<'c, 'a> Builder<'c, 'a> {
                 self.symbolic[ic as usize] = if symbolic { 2 } else { 1 };
                 let n = members.len() as u8;
                 for pi in 0..kind.prop_defs().len() {
-                    let start = self.op_inputs.len() as u32;
-                    self.op_inputs.push(choice);
-                    for &m in &members {
-                        let s = self.slot(m, pi);
-                        self.op_inputs.push(s);
-                    }
+                    let inputs: Vec<SlotId> = std::iter::once(choice).chain(members.iter().map(|&m| self.slot(m, pi))).collect();
                     let s = self.slot(ic, pi);
-                    self.sources[s as usize] = Source::Vec(VecOp::Choose { n }, start, n + 1);
+                    self.sources[s as usize] = self.op_source(OpSpec::Vec(VecOp::Choose { n }), &inputs);
                 }
                 if symbolic && let Some(pi) = kind.prop_index("expr") {
                     let s = self.slot(ic, pi);

@@ -83,10 +83,7 @@ impl<'c, 'a> Builder<'c, 'a> {
     /// `gate` times a case's `active` cell.
     fn gate_through(&mut self, gate: Option<SlotId>, case: CompIdx) -> Option<SlotId> {
         let active = self.slot(case, 0);
-        Some(match gate {
-            None => active,
-            Some(g) => self.op_slot(OpSpec::Mul, &[g, active]),
-        })
+        Some(self.gated(gate, active))
     }
 
     /// The weighted mean of the scored items inside `c`; None when there
@@ -102,11 +99,9 @@ impl<'c, 'a> Builder<'c, 'a> {
         loop {
             let mut next = Vec::with_capacity(items.len().div_ceil(CHUNK));
             for chunk in items.chunks(CHUNK) {
-                let start = self.op_inputs.len() as u32;
-                self.op_inputs.extend(chunk.iter().map(|&(w, _)| w));
-                self.op_inputs.extend(chunk.iter().map(|&(_, c)| c));
-                let n = chunk.len() as u8;
-                let mean = self.anon_slot(Source::Vec(VecOp::WeightedMean { n }, start, 2 * n));
+                let inputs: Vec<SlotId> = chunk.iter().map(|&(w, _)| w).chain(chunk.iter().map(|&(_, c)| c)).collect();
+                let source = self.op_source(OpSpec::Vec(VecOp::WeightedMean { n: chunk.len() as u8 }), &inputs);
+                let mean = self.anon_slot(source);
                 let total = self.anon_slot(Source::VecOut(mean, 1));
                 next.push((total, mean));
             }
@@ -141,10 +136,7 @@ impl<'c, 'a> Builder<'c, 'a> {
                     continue;
                 }
             };
-            let weight = match gate {
-                None => weight,
-                Some(g) => self.op_slot(OpSpec::Mul, &[g, weight]),
-            };
+            let weight = self.gated(gate, weight);
             out.push((weight, credit));
         }
     }
@@ -166,7 +158,7 @@ impl<'c, 'a> Builder<'c, 'a> {
                 ComponentKind::Section => {
                     let number = match counter.before {
                         None => Source::Fixed(counter.fixed + 1.0),
-                        Some(b) => Source::Op(OpSpec::Offset { k: counter.fixed + 1.0 }, self.push_inputs(&[b]), 1),
+                        Some(b) => self.op_source(OpSpec::Offset { k: counter.fixed + 1.0 }, &[b]),
                     };
                     let s = self.slot(k, NUMBER);
                     self.sources[s as usize] = number;
@@ -182,12 +174,6 @@ impl<'c, 'a> Builder<'c, 'a> {
                 _ => self.number_sections(k, None, &mut Counter::default()),
             }
         }
-    }
-
-    fn push_inputs(&mut self, inputs: &[SlotId]) -> u32 {
-        let start = self.op_inputs.len() as u32;
-        self.op_inputs.extend_from_slice(inputs);
-        start
     }
 }
 
