@@ -8,9 +8,9 @@ a glossary only; design decisions live in `docs/adr/`.
 
 **Cell** — A single double-precision value in the document's state. Cells are
 the nodes of the dependency graph. Every cell is essential, fixed or derived.
-A cell's number may stand for an integer, a boolean (0 or 1) or a handle into
-the expression arena; the meaning is a property of the operators around it,
-not of the storage.
+A cell's number may stand for an integer, a boolean (0 or 1), a string id or
+a handle into the symbolic engine; the meaning is a property of the operators
+around it, not of the storage.
 
 **Essential cell** — A cell with no dependencies. Its value is part of the
 minimum independent data needed to recreate the document state. Initialized
@@ -25,6 +25,10 @@ until it reaches essential cells.
 input cells. Every operator may carry an inverse. Identity references are not
 operators: they alias. In the prototype, operators appear in a document as the
 prototype-only `<op>` tag.
+
+**Instruction** — An operator bound to its input cells and the cell (or
+consecutive cells) it writes. The program is the list of instructions in
+schedule order.
 
 **Literal parameter** — A constant written in the document that an operator
 uses (a scale factor, clamp bounds). Literal parameters are document text, not
@@ -87,13 +91,15 @@ the *other* members within a threshold. A dragged member never attracts
 itself. Snapping acts only on requests: it never moves a member that nobody
 asked to move, so it is not a document invariant.
 
-**Rigid inverse** — The inverse of the one identity instruction a `rigid`
-polygon owns: it projects the requested change onto a rigid motion or
-similarity. The document asked for the coupling, so it lives in the graph.
+**Rigid inverse** — The inverse of the one identity vector operator (`Shape`)
+a `rigid` polygon owns: it projects the requested change onto a rigid motion
+or similarity. The document asked for the coupling, so it lives in the graph.
 
-**Multi-output instruction** — An instruction that produces several cells.
+**Vector operator** — An operator with several inputs and possibly several
+outputs (a circle from its through points, a choice's interface name).
 Requests in one tick on its outputs are gathered into one vector, with
 unspecified outputs at their current values, and inverted once.
+_Avoid_: multi-output instruction
 
 **Lookahead** — Asking, during inversion, what value a cell would actually
 take if a given value were requested of it: the request is inverted on a
@@ -122,7 +128,7 @@ and the result is requested of the input. See ADR 0003.
 has: the floor of its driving value, clamped to zero and the repeat's cap, with
 a non-number counting as zero.
 
-**Math cell** — A cell whose value is a handle into the expression arena rather
+**Math cell** — A cell whose value is a handle into the symbolic engine rather
 than a number. A math cell may be essential (a `mathInput`'s expression),
 fixed (an expression written in the document) or derived (the result of a
 symbolic instruction). Operators on math cells live in the same program and
@@ -133,18 +139,47 @@ from other math cells (simplify, expand, substitute, derivative), or whose
 output is a number computed from math cells (evaluate, equals). Symbolic
 instructions run inside a tick, like any other instruction.
 
-**Expression arena** — The core's store of symbolic expressions. Math cells
-point into it; the core treats expressions as opaque and reaches them only
-through the operations the symbolic engine offers.
+**Symbolic engine** — The store of symbolic expressions, behind one trait
+(`SymEngine`, ADR 0008). Math cells hold handles into it; the core treats
+expressions as opaque and reaches them only through the operations the engine
+offers.
+
+**Parse arena** — The build's arena of math text parsed into expressions
+whose leaves are references. It decides lowering and gives a line equation
+its coefficients; it is never used during a tick.
+_Avoid_: expression arena (it named both of the above)
+
+**Tape** — A curve's expression compiled at build time to a sequence of
+numeric steps, when its shape cannot change, so sampling it skips the
+symbolic engine.
 
 **Lowering** — Replacing a `<math>` whose leaves are all number literals or
 number-typed components with numeric operators at build time, so it never
 becomes a math cell. Decided at build time, never from runtime values.
 
 **Fixed cell** — A cell that holds a constant which is not state: an
-iteration's index, a collect's count, the shared missing-referent NaN. Fixed
-cells have no producer and no essential key; a request that reaches one is
-dropped.
+iteration's index, a collect's count, the shared missing-referent NaN, an
+expression written in the document (a math handle), and the essential values
+of an element under a literal `fixed`. Fixed cells have no producer and no
+essential key; a request that reaches one is dropped.
+
+**Hold** — The instruction that puts a dynamic `fixed` (or `fixAxes`) on a
+cell: forward it is the identity, and its inverse drops the request while the
+flag is nonzero. Not to be confused with a gate.
+
+**Slot** — At build time, one prop of one component instance (or a hidden
+value a planned kind needs), before aliases merge slots into cells. A
+*template slot* is the same position within a template, shared by every
+instance; essential keys use it.
+
+**Plan** — What the compile phase records per template: each prop's *source
+plan* (a literal, an alias, an operator over other props, a math) and each
+reference's *reference plan* (a path through names and indices). Expansion
+turns plans into slots per scope.
+
+**Prior** — What one build hands the next: the structure of the last build
+(its scope table, every essential value by key, the seed) and each repeat's
+iteration count.
 
 **Template** — The body of a repeat (or the document itself) as compiled
 once from the DAST: its elements, their props' sources, and their references
@@ -156,6 +191,10 @@ repeat is a scope. A name inside a repeat template exists once per scope, so
 `p` in iteration 3 is `$r[3].p`. A bare `$p` resolves from the referencing
 component's scope outward. Scope ids are stable for the life of a document.
 
+**Point list** — A `<pointList>` that extends an array prop of points (a
+line's `points`, a polygon's `vertices`): one point per item, each aliasing
+the item's cells.
+
 **Missing referent** — An indexed reference that names no component
 (`$r[32]` when there are ten iterations). It resolves to the shared fixed
 NaN cell; after a rebuild that creates iteration 32 it aliases the real cell.
@@ -165,6 +204,10 @@ values. It changes nothing and is reported back with the tick.
 
 **Schedule** — The topological order in which derived cells are recomputed
 after essential cells change. Fixed once the document is loaded.
+
+**Evaluator** — The strategy that recomputes derived cells in a tick: every
+instruction in schedule order, or only the downstream closure of the cells
+that changed. Both give the same values.
 
 **Component table** — The columnar description of components (kind, name,
 parent, children, prop cell indices) that the renderer reads directly, the

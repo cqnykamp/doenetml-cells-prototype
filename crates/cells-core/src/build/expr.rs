@@ -1,4 +1,4 @@
-//! The builder's expression arena: math text parsed at build time, cell
+//! The parse arena: math text parsed at build time, cell
 //! leaves holding plan ids or slots. It decides whether a math is numeric and
 //! lowers it to operators (ADR 0005), and gives geometry its linear
 //! coefficients. It is not used at tick time: a symbolic math becomes a math

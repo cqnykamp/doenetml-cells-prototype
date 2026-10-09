@@ -6,21 +6,31 @@ vocabulary, and `docs/adr/` for recorded decisions.
 
 ## Layout
 
-- `crates/cells-core` — the core: flat columnar DAST (JSON or binary `CDST`
-  wire format, ADR 0002), templates compiled once and stamped per repeat
-  iteration with indexed references (`$r[3].p.x`) resolved through dense
-  scope tables, whole-document rebuild on structural change (ADR 0004),
-  alias merging, columnar component tables, operator program with projection
-  inverses (ADR 0003), scheduler, and an expression arena for `<math>`
-  (numeric expressions lower to operators; symbolic ones are handles).
-- `crates/cells-wasm` — wasm-bindgen binding: zero-copy cell view, render
-  manifest, cell-addressed requests (see `docs/adr/0001-*`).
+- `crates/cells-core` — the core. `dast.rs` reads the DAST (JSON or the
+  binary `CDST` wire format, ADR 0002); `components.rs` describes each kind
+  (one `KINDS` row: tags, props, flags) and names prop positions
+  (`components::prop`); `build/` compiles templates once (`compile.rs`,
+  `attrs.rs`, `refs.rs`, `geometry.rs`, `choice.rs`), stamps them per scope
+  (`expand.rs`, `resolve.rs`, `expand_math.rs`, `scoring.rs`) and emits cells
+  and the program (`emit.rs`), rebuilding the whole document on structural
+  change (ADR 0004); `ops.rs` and `geo.rs` hold the operators and their
+  inverses (ADR 0003, 0006), `program.rs` the scheduled program, `eval.rs`
+  the evaluators and `invert.rs` the request engine; `document/` loads the
+  document (`load.rs`), runs ticks (`document.rs`, with the sticky pre-pass
+  in `sticky.rs` over `snap.rs`) and answers questions about it (`table.rs`,
+  `sections.rs`, `paths.rs`). Math cells are handles into a symbolic engine
+  (`cells-sym`, behind the `SymEngine` trait; ADR 0008).
+- `crates/cells-sym` — the symbolic engine (engine A) and curve tapes;
+  `crates/cells-sym-mer` wraps math-expressions-rs (engine R) as its oracle.
+- `crates/cells-wasm` — wasm-bindgen binding: zero-copy views of the cells and
+  the component table, cell-addressed requests (see `docs/adr/0001-*`).
 - `crates/cells-docgen` — synthetic DoenetML generator (points, chain, fanout,
   aliases, grid; plan 2 adds sliderchain, sliderstack, repeat, recur,
   intchain, mathchain, hidden) used for all benchmarks, plus the
   current-core counterparts for the baseline (`--legacy`).
-- `crates/cells-bench` — criterion benches (`startup`, `tick`) and a `stats`
-  binary for structure and memory.
+- `crates/cells-bench` — criterion benches (`startup`, `tick`, `rebuild`), a
+  `stats` binary for structure and memory, and examples: `regress` (quick
+  perf), `golden` (behavior dump) and a few measurement tools.
 - `web/` — Vite + React renderers (SVG graph with draggable points, number,
   numberInput, slider, booleanInput, math, repeat and collect) and the
   Playwright end-to-end measurement, including structural ticks (rebuilds).
