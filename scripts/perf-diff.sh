@@ -13,6 +13,8 @@ trap 'git -C $repo worktree remove --force $wt' EXIT
 # The base binary reads fixtures from its own tree; the generated ones are gitignored.
 rm -rf $wt/fixtures && ln -s $repo/fixtures $wt/fixtures
 cp crates/cells-bench/src/lib.rs $wt/crates/cells-bench/src/lib.rs
+# Build both sides with the same flags.
+if [ -d .cargo ]; then rm -rf $wt/.cargo && cp -r .cargo $wt/.cargo; fi
 cp crates/cells-bench/examples/regress.rs $wt/crates/cells-bench/examples/regress.rs
 (cd $wt && CARGO_TARGET_DIR=$repo/target/perf-base cargo build --release -q -p cells-bench --example regress)
 cargo build --release -q -p cells-bench --example regress
