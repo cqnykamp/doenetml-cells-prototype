@@ -346,3 +346,78 @@ None is a choice mechanism failing. The adapter changes did not move the earlier
 - **Deviations.** A case that becomes active again keeps its answers' submitted credit (ADR 0009); the current core recreates them, so their credit resets. `aggregateScores` and `includeParentNumber` must be literals, since they decide the wiring. Out of scope: `<title>`, `includeAutoNumber`/`includeAutoName`, `initializeCounters`, list numbering (`asList`, `<part>`), `sectionWideCheckWork`, `creditAchievedIfSubmit` and the other credit variants, and division types other than section, subsection and subsubsection.
 - **Parser note.** The parser writes `<section>` as `<division type="section">`, so before this change a section did not load at all; `division` is now read through its `type`.
 - **Cost.** Each counted cell in a case costs one multiply per enclosing case, and each section after a case one add. Numbers are read as a chain of cells (`Document::section_number`), so a flip early in a long document changes every later section's cell; the cells involved are one per section.
+
+## Simplification pass (October 2026)
+
+A pass over the core, the wasm binding, the web app, the docgen and the
+benches to simplify without changing behavior or slowing the tick, in four
+avenues, each audited and agreed before it was applied: logic that need not
+be there, logic that can be combined, seams against combinatorial growth,
+and files and types. The math engines (`cells-sym`, `cells-sym-mer`) were
+out of scope; they sit behind the `SymEngine` trait. 9a2ce12..HEAD on main.
+
+**Checks.** `scripts/golden-diff.sh` dumps every component's props by tree
+path (math cells as text, `<text>` as its string) after load and after a
+fixed script of drags, inputs, toggles, typing, submits, a case flip and a
+rebuild, on 11 hand-written documents and the smallest fixture of each
+shape, and diffs a base commit against the working tree; it also reports
+whether the built programs are identical. `scripts/perf-diff.sh` runs the
+`regress` example on 10 fixtures, interleaved with a base commit. Every
+refactor commit left the dump identical, and all but renames left the
+programs identical.
+
+**Bugs found and fixed**, each in its own commit:
+
+- A circle emitted its hidden `r²` cell and area operator once per prop
+  definition instead of once (9e40169). circles3-10000: heap 22.8 → 15.5 MB,
+  load 240 → 185 ms, drag tick 1.79 → 0.81 ms. Plan 3's circle numbers
+  above predate the fix.
+- A copy's own `hide="false"` did not reveal a hidden point (59b0251).
+- Sticky groups did not count points inside a `<select>` or an active
+  `<conditionalContent>` case as members; the current core does, and drops
+  members of an inactive case (62635ed; checked with a probe on the
+  current core).
+- The tick bench and `regress` had no drag target for the plan 4–6
+  shapes, so the full sweep had not completed since plan 6 (18c33fc,
+  9ba653a, 6d73985, 599a85e).
+
+**Removed:** dead functions and wasm exports, `Tick::latex` (a LaTeX string
+per changed math cell per tick that nothing read: symchain-1000 tick ×0.29,
+curves-1000 ×0.59), the `DirtyScan` evaluator, four one-off bench examples,
+and the `CELLS_COMPILE_CURVES` environment variable (now
+`LoadOptions::sample_with_engine`, which also survives rebuilds).
+
+**Combined and reorganized:** one `Document::load(bytes, LoadOptions)`
+instead of eight constructors; a `KINDS` table, one row per component kind,
+instead of thirteen per-kind matches (`copyable` was a negative list, so a
+new container defaulted to copyable); `components::prop` constants checked
+against the kind tables when compiled, instead of hard-coded prop
+positions; `ScopeTable`, and a `Prior` that carries the last build's
+`Structure`; `build/plan.rs`, `build/expand.rs` and `document.rs` split by
+concern; `OpSpec::Gate` renamed `Hold` (CONTEXT's gate is something else);
+CONTEXT.md brought up to date. In-scope code went from 15,918 to 15,644
+lines; the gain is mostly in structure, since the prop constants and new
+documentation added lines back.
+
+**The tick's speed depends on code layout.** With the program identical
+(same instructions, inputs and cells), repeat-10000's tick moved between
+about 0.09 and 0.12 ms as unrelated code was edited or moved, with the
+default codegen units and with `codegen-units = 1` alike (the two settings
+flip at different commits). `-C llvm-args=-align-loops=64` put every commit
+in the fast mode; it was used during the pass to keep comparisons honest and
+then removed. Two merges were reverted because they cost speed through this
+effect: the projection arms of `VecOp::eval` (wording-10000 tick +8%) and an
+early-return merge in `invert::walk` (chain-100000 +10%). Earlier, removing
+a loop after the inlined full recompute made repeat-10000's tick ×1.34;
+`run_all_tracking` is now `#[inline(never)]`. A tick difference of up to
+about 30% between two builds is therefore not evidence of a change in work
+unless the programs differ.
+
+**Speed at the end.** Against the start of the pass (9a2ce12), the drag
+tick is ×0.93–0.97 on chain-100000, chain-1000, aliases-1000 and
+points-10000 (`perf-diff.sh 9a2ce12`), with memory identical. RESULTS.md
+is regenerated from a full sweep at the end of the pass; it was last
+generated at 692f7b6 (plan 2). Between the two, during plans 3–6, the
+tick grew: chain-100000's full recompute 637 → 1,542 µs (criterion mean),
+an aliases document's tick 0.02 → 0.18 µs. That growth is not from this
+pass and was not investigated; it is an open item.

@@ -67,7 +67,7 @@ cargo test                      # needs `node` on PATH and a built DoenetML pars
 echo '<point name="p" x="1"/>' | node scripts/parse-dast.mjs
 
 scripts/gen-fixtures.sh         # ~1 minute; writes fixtures/*.{doenet,json,cdast}
-cargo bench -p cells-bench      # ~30 minutes for the full sweep (startup, tick, rebuild)
+cargo bench -p cells-bench      # ~2.5 hours for the full sweep over 93 fixtures (startup, tick, rebuild)
 cargo run --release -p cells-bench --bin stats > results/raw/stats.jsonl
 CELLS_BUILD_PROFILE=1 cargo run --release -p cells-bench --example rebuild_loop -- repeat-10000 3   # per-phase build timings
 
