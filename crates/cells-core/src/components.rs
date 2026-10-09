@@ -490,7 +490,7 @@ pub struct KindInfo {
     /// How a member of a sticky group attracts and snaps: its shape, the
     /// prop of its first coordinate, and how many points it has at most (a
     /// polygon's live count is its `numVertices` cell).
-    pub sticky: Option<(crate::sticky::Shape, usize, usize)>,
+    pub sticky: Option<(crate::snap::Shape, usize, usize)>,
 }
 
 /// An array prop of points, such as a polygon's `vertices`: the names it
@@ -537,7 +537,7 @@ impl KindInfo {
         self.aliases = aliases;
         self
     }
-    const fn sticky(mut self, shape: crate::sticky::Shape, first: usize, max: usize) -> Self {
+    const fn sticky(mut self, shape: crate::snap::Shape, first: usize, max: usize) -> Self {
         self.sticky = Some((shape, first, max));
         self
     }
@@ -546,7 +546,7 @@ impl KindInfo {
 const LINE_POINTS: &[ArrayProp] = &[ArrayProp { names: &["points", "endpoints"], item: "point", items: &[["x1", "y1"], ["x2", "y2"]] }];
 
 pub const KINDS: [KindInfo; 31] = {
-    use crate::sticky::Shape;
+    use crate::snap::Shape;
     use ComponentKind as K;
     [
         row(K::Document, &["document"], DOCUMENT_PROPS, 0),
@@ -703,7 +703,7 @@ impl ComponentKind {
         self.info().flags & SYMBOLIC != 0
     }
 
-    pub fn sticky_layout(self) -> Option<(crate::sticky::Shape, usize, usize)> {
+    pub fn sticky_layout(self) -> Option<(crate::snap::Shape, usize, usize)> {
         self.info().sticky
     }
 }

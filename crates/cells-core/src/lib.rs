@@ -16,7 +16,7 @@ pub mod invert;
 pub mod ops;
 pub mod program;
 pub mod reference;
-pub mod sticky;
+pub mod snap;
 pub mod test_utils;
 
 pub use document::{CellIdx, Child, CompIdx, ComponentTable, Document, LoadOptions, LoadTimings, NONE, Repeat, Request, ScopeId, Structure, TEXT_BIT, Tick};

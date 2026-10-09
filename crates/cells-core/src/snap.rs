@@ -1,9 +1,9 @@
-//! Sticky groups (plan 4): the snapping rule, shared by both wirings. A
-//! member a request moves is pulled onto the vertices and edges of the
-//! group's other members when it comes within the threshold. This file is
-//! the rule only: a pure function of the dragged member's requested
-//! vertices and the other members' current ones. Which cells it reads and
-//! where its result goes is the wiring's business.
+//! Sticky groups (plan 4): the snapping rule. A member a request moves is
+//! pulled onto the vertices and edges of the group's other members when it
+//! comes within the threshold. This file is the rule only: a pure function
+//! of the dragged member's requested vertices and the other members'
+//! current ones. Which cells it reads and where its result goes is the
+//! request pre-pass's business (`document/sticky.rs`, ADR 0007).
 //!
 //! The rule is the current core's (`StickyGroup.js`, `constraints.js`,
 //! `constraintUtils.js`), ported line for line, including its quirks, so the

@@ -12,7 +12,7 @@ use std::collections::HashSet;
 use super::*;
 use crate::geo::VecOp;
 use crate::ops::Op;
-use crate::sticky::{Member, Params, Pt, snap_group};
+use crate::snap::{Member, Params, Pt, snap_group};
 
 /// One group as cells.
 #[derive(Debug, Clone)]
