@@ -391,3 +391,27 @@ fn cell_leaves(t: &Tree, out: &mut Vec<CellIdx>) {
         Tree::Neg(a) | Tree::Apply(_, a) => cell_leaves(a, out),
     }
 }
+
+struct UnionFind {
+    parent: Vec<u32>,
+}
+
+impl UnionFind {
+    fn new(n: usize) -> Self {
+        UnionFind { parent: (0..n as u32).collect() }
+    }
+    fn find(&mut self, mut x: u32) -> u32 {
+        while self.parent[x as usize] != x {
+            let p = self.parent[x as usize];
+            self.parent[x as usize] = self.parent[p as usize];
+            x = p;
+        }
+        x
+    }
+    fn union(&mut self, a: u32, b: u32) {
+        let (ra, rb) = (self.find(a), self.find(b));
+        if ra != rb {
+            self.parent[ra as usize] = rb;
+        }
+    }
+}

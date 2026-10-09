@@ -433,22 +433,4 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    /// `fixed`-like attributes of an element. A literal true fixes it at
-    /// build time; a reference is a flag cell, so the element is gated
-    /// while the flag is nonzero. Several references gate on any of them.
-    pub(super) fn plan_fix(&mut self, t: TemplateId, scope: ElemId, el: NodeId, names: &[&str]) -> Result<Fix> {
-        let d = self.c.dast;
-        let mut flags = Vec::new();
-        for &name in names {
-            let Some(a) = d.attr(el, name) else { continue };
-            if self.attr_text(a).is_some() {
-                if self.attr_flag(el, name) {
-                    return Ok(Fix::Literal);
-                }
-                continue;
-            }
-            flags.push(self.plan_value(t, scope, name, d.attr_children(a), None)?);
-        }
-        Ok(if flags.is_empty() { Fix::Off } else { Fix::Dynamic(flags) })
-    }
 }

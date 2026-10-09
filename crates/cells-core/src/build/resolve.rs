@@ -165,3 +165,11 @@ impl<'c, 'a> Builder<'c, 'a> {
         Ok(self.slot(comp, pi))
     }
 }
+
+/// Fill in the kind and prop of an arity error raised by `resolve_one`.
+fn arity_error(e: Error, kind: ComponentKind, prop: &str) -> Error {
+    match e {
+        Error::ArityMismatch { expected, got, .. } => Error::ArityMismatch { kind: kind.tag().into(), prop: prop.into(), expected, got },
+        other => other,
+    }
+}
