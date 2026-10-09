@@ -2,12 +2,11 @@
 //! through `stateValues`, expressed as operator chains whose extra values are
 //! forward inputs. Each test names the current-core inverse it stands for.
 
-use cells_core::test_utils::load;
-use cells_core::{Document, Request};
+mod common;
 
-fn req(doc: &Document, name: &str, prop: &str, value: f64) -> Request {
-    Request { cell: doc.cell(name, prop).unwrap(), value }
-}
+use cells_core::test_utils::load;
+use cells_core::Document;
+use common::req;
 
 fn v(doc: &Document, name: &str) -> f64 {
     doc.value(name, "value").unwrap()

@@ -1,23 +1,17 @@
 //! Choices (plan 6, ADR 0009): `<conditionalContent>` under both
 //! mechanisms, the branch interface, conditions, and `<select>` picks.
 
+mod common;
+
 use cells_core::reference;
 use cells_core::test_utils::{dast_json, load};
-use cells_core::{Document, Error, Request};
-
-fn set(doc: &mut Document, name: &str, prop: &str, value: f64) -> cells_core::Tick {
-    let cell = doc.cell(name, prop).unwrap_or_else(|| panic!("no {name}.{prop}"));
-    doc.request(&[Request { cell, value }])
-}
-
-fn val(doc: &Document, name: &str, prop: &str) -> f64 {
-    doc.value(name, prop).unwrap_or_else(|| panic!("no {name}.{prop}"))
-}
+use cells_core::{Document, Error};
+use common::{set, v};
 
 /// The value of `$path` as a number, through a `<number>` the document
 /// defines for the purpose.
 fn num(doc: &Document, probe: &str) -> f64 {
-    val(doc, probe, "value")
+    v(doc, probe, "value")
 }
 
 const SIGN: &str = r#"
@@ -35,12 +29,12 @@ const SIGN: &str = r#"
 fn interface_names_follow_the_active_case() {
     let mut doc = load(SIGN).unwrap();
     assert_eq!(reference::check(&doc), None);
-    assert_eq!(val(&doc, "cc", "choice"), 1.0);
+    assert_eq!(v(&doc, "cc", "choice"), 1.0);
     assert_eq!(num(&doc, "sx"), 1.0);
     assert_eq!(num(&doc, "sw"), 10.0);
     let tick = set(&mut doc, "n", "value", -3.0);
     assert!(!tick.rebuilt, "a flip is an ordinary tick");
-    assert_eq!(val(&doc, "cc", "choice"), 2.0);
+    assert_eq!(v(&doc, "cc", "choice"), 2.0);
     assert_eq!(num(&doc, "sx"), -1.0);
     assert_eq!(num(&doc, "sw"), 20.0);
     set(&mut doc, "n", "value", 0.0);
@@ -71,7 +65,7 @@ fn a_request_cannot_flip_a_branch() {
     let mut doc = load(SIGN).unwrap();
     let tick = set(&mut doc, "cc", "choice", 3.0);
     assert_eq!(tick.dropped.len(), 1);
-    assert_eq!(val(&doc, "cc", "choice"), 1.0);
+    assert_eq!(v(&doc, "cc", "choice"), 1.0);
 }
 
 #[test]
@@ -168,7 +162,7 @@ fn conditions_parse_connectives_parentheses_and_entities() {
     assert_eq!(at(&mut doc, 1.0, 0.0), 3.0);
     assert_eq!(at(&mut doc, 3.0, 1.0), 3.0);
     assert_eq!(at(&mut doc, -1.0, 0.0), 4.0);
-    assert_eq!(val(&doc, "pos", "choice"), 0.0);
+    assert_eq!(v(&doc, "pos", "choice"), 0.0);
 }
 
 #[test]
@@ -215,7 +209,7 @@ fn texts_choose_like_numbers() {
 <text name="copy">$cc.t</text>
 "#;
     let mut doc = load(src).unwrap();
-    let s = |doc: &Document| doc.strings.get(val(doc, "copy", "value") as u32).trim().to_string();
+    let s = |doc: &Document| doc.strings.get(v(doc, "copy", "value") as u32).trim().to_string();
     assert_eq!(s(&doc), "cat");
     set(&mut doc, "b", "value", 1.0);
     assert_eq!(s(&doc), "dog");
@@ -321,9 +315,9 @@ fn group_rendered_is_a_single_case() {
 <group name="g" rendered="$b"><number name="k">7</number></group>
 "#;
     let mut doc = load(src).unwrap();
-    assert_eq!(val(&doc, "g", "choice"), 0.0);
+    assert_eq!(v(&doc, "g", "choice"), 0.0);
     set(&mut doc, "b", "value", 1.0);
-    assert_eq!(val(&doc, "g", "choice"), 1.0);
+    assert_eq!(v(&doc, "g", "choice"), 1.0);
     assert!(doc.resolve_path("g.k").is_some());
 }
 

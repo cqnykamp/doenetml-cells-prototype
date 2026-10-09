@@ -1,10 +1,9 @@
+mod common;
+
 use cells_core::reference;
 use cells_core::test_utils::load;
-use cells_core::{Document, Request, Tick};
-
-fn req(doc: &Document, name: &str, prop: &str, value: f64) -> Request {
-    Request { cell: doc.cell(name, prop).unwrap(), value }
-}
+use cells_core::{Document, Tick};
+use common::req;
 
 /// Request `value` on `name.prop` and assert the forward pass reproduces it.
 fn round_trip(doc: &mut Document, name: &str, prop: &str, value: f64) {

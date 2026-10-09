@@ -6,14 +6,8 @@ mod common;
 
 use cells_core::reference;
 use cells_core::test_utils::load;
-use cells_core::{CompIdx, Document, Request};
-use common::close;
-
-fn type_into(doc: &mut Document, name: &str, s: &str) {
-    let h = doc.parse_math(s).unwrap();
-    let cell = doc.cell(name, "expr").unwrap();
-    doc.request(&[Request { cell, value: h }]);
-}
+use cells_core::{CompIdx, Document};
+use common::{close, set, type_into};
 
 /// Type into `input` and submit `answer`.
 fn answer(doc: &mut Document, input: &str, answer: &str, s: &str) {
@@ -28,11 +22,6 @@ fn doc_credit(doc: &Document) -> f64 {
 
 fn credit(doc: &Document, name: &str) -> f64 {
     doc.value(name, "creditAchieved").unwrap()
-}
-
-fn set(doc: &mut Document, name: &str, prop: &str, value: f64) -> cells_core::Tick {
-    let cell = doc.cell(name, prop).unwrap();
-    doc.request(&[Request { cell, value }])
 }
 
 fn number(doc: &Document, name: &str) -> String {

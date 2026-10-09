@@ -1,17 +1,29 @@
-//! Helpers shared by the plan 3 geometry tests (`circle.rs`, `line.rs`,
-//! `polygon.rs`): the scenarios mirror the current core's vitest suites,
-//! which the adapter runs verbatim; these are the core-level checks.
+//! Helpers shared by the integration tests. The plan 3 geometry tests'
+//! scenarios mirror the current core's vitest suites, which the adapter
+//! runs verbatim; these are the core-level checks.
 #![allow(dead_code)]
 
 use cells_core::reference;
-use cells_core::{Document, PointRequest, Request};
+use cells_core::{Document, PointRequest, Request, Tick};
 
 pub fn req(doc: &Document, name: &str, prop: &str, value: f64) -> Request {
     Request { cell: doc.cell(name, prop).unwrap(), value }
 }
 
 pub fn v(doc: &Document, name: &str, prop: &str) -> f64 {
-    doc.value(name, prop).unwrap()
+    doc.value(name, prop).unwrap_or_else(|| panic!("no {name}.{prop}"))
+}
+
+/// Request `value` on `name.prop`.
+pub fn set(doc: &mut Document, name: &str, prop: &str, value: f64) -> Tick {
+    let cell = doc.cell(name, prop).unwrap_or_else(|| panic!("no {name}.{prop}"));
+    doc.request(&[Request { cell, value }])
+}
+
+/// Type math text into a mathInput: a request on its `expr` cell.
+pub fn type_into(doc: &mut Document, name: &str, s: &str) -> Tick {
+    let h = doc.parse_math(s).unwrap();
+    doc.request(&[req(doc, name, "expr", h)])
 }
 
 pub fn close(a: f64, b: f64) -> bool {

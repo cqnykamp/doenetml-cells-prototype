@@ -2,13 +2,12 @@
 //! ones are math cells holding engine handles, instantiated and evaluated by
 //! symbolic instructions (ADR 0008).
 
+mod common;
+
 use cells_core::reference;
 use cells_core::test_utils::load;
-use cells_core::{Document, Op, Request};
-
-fn req(doc: &Document, name: &str, prop: &str, value: f64) -> Request {
-    Request { cell: doc.cell(name, prop).unwrap(), value }
-}
+use cells_core::{Document, Op};
+use common::req;
 
 fn has_evaluate(doc: &Document) -> bool {
     doc.program.instrs.iter().any(|i| matches!(i.op, Op::Sym(..)))

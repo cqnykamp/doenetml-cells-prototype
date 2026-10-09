@@ -2,24 +2,18 @@
 //! changes, mathInputs as essential math cells, answers, function curves,
 //! gating, and the equal-handle cutoff of engine A.
 
+mod common;
+
 use cells_core::reference;
 use cells_core::test_utils::load;
-use cells_core::{Document, Request};
-
-fn req(doc: &Document, name: &str, prop: &str, value: f64) -> Request {
-    Request { cell: doc.cell(name, prop).unwrap(), value }
-}
+use cells_core::Document;
+use common::{req, type_into};
 
 fn text(doc: &Document, name: &str) -> String {
     doc.math_text(doc.cell(name, "expr").unwrap())
 }
 
 /// Type `s` into a mathInput.
-fn type_into(doc: &mut Document, name: &str, s: &str) -> cells_core::Tick {
-    let h = doc.parse_math(s).unwrap();
-    doc.request(&[req(doc, name, "expr", h)])
-}
-
 fn runs(doc: &Document) -> u64 {
     doc.program.sym.stats.get().runs
 }
