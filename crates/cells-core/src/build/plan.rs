@@ -592,14 +592,19 @@ impl<'a> Compiler<'a> {
     /// leaves are plan ids.
     pub(super) fn plan_math(&mut self, t: TemplateId, scope: ElemId, nodes: &[NodeId]) -> Result<ExprId> {
         let (toks, text) = self.math_tokens(t, scope, nodes)?;
-        Parser::parse(&toks, &mut self.c.arena).map_err(|reason| Error::BadMath { text, reason })
+        self.parse_tokens(&toks, &text)
+    }
+
+    /// Parse math tokens into the arena; `text` is for the error.
+    pub(super) fn parse_tokens(&mut self, toks: &[Token], text: &str) -> Result<ExprId> {
+        Parser::parse(toks, &mut self.c.arena).map_err(|reason| Error::BadMath { text: text.to_string(), reason })
     }
 
     /// Math text and `$ref` children to an expression template, recording
     /// the text for the symbolic engine in case the math turns out symbolic.
     pub(super) fn plan_sym_math(&mut self, t: TemplateId, scope: ElemId, nodes: &[NodeId]) -> Result<ExprId> {
         let (toks, text, sym) = self.math_tokens_sym(t, scope, nodes)?;
-        let id = Parser::parse(&toks, &mut self.c.arena).map_err(|reason| Error::BadMath { text, reason })?;
+        let id = self.parse_tokens(&toks, &text)?;
         self.c.sym_text.insert(id, sym);
         Ok(id)
     }
@@ -708,8 +713,7 @@ impl<'a> Compiler<'a> {
         match self.plan_value(t, scope, attr, nodes, None) {
             Ok(p) => Ok(p),
             Err(Error::BadValue { .. }) => {
-                let (toks, text) = self.math_tokens(t, scope, nodes)?;
-                let id = Parser::parse(&toks, &mut self.c.arena).map_err(|reason| Error::BadMath { text, reason })?;
+                let id = self.plan_math(t, scope, nodes)?;
                 Ok(self.plan_from_expr(id))
             }
             Err(e) => Err(e),
@@ -738,14 +742,17 @@ impl<'a> Compiler<'a> {
         }
         let (toks, text) = self.math_tokens(t, scope, nodes)?;
         let inner = crate::expr::unwrap_parens(&toks).ok_or_else(|| Error::BadMath { text: text.clone(), reason: "expected a tuple like (x, y)".into() })?;
+        self.tuple_from_tokens(inner, &text)
+    }
+
+    /// The inside of `(a, b)`, as two scalar plans.
+    pub(super) fn tuple_from_tokens(&mut self, inner: &[Token], text: &str) -> Result<[SourcePlan; 2]> {
         let parts = crate::expr::split_top(inner, &Token::Comma);
         let [x, y] = parts.as_slice() else {
-            return Err(Error::BadMath { text, reason: format!("expected 2 coordinates, got {}", parts.len()) });
+            return Err(Error::BadMath { text: text.to_string(), reason: format!("expected 2 coordinates, got {}", parts.len()) });
         };
-        let x = Parser::parse(x, &mut self.c.arena).map_err(|reason| Error::BadMath { text: text.clone(), reason })?;
-        let x = self.plan_from_expr(x);
-        let y = Parser::parse(y, &mut self.c.arena).map_err(|reason| Error::BadMath { text: text.clone(), reason })?;
-        Ok([x, self.plan_from_expr(y)])
+        let (x, y) = (self.parse_tokens(x, text)?, self.parse_tokens(y, text)?);
+        Ok([self.plan_from_expr(x), self.plan_from_expr(y)])
     }
 
     /// A point-valued attribute: a reference (`center="$p"`) or a tuple.

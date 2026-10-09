@@ -291,13 +291,7 @@ impl<'a> Compiler<'a> {
                         }
                     }
                     let inner = crate::expr::unwrap_parens(&toks[start..i]).unwrap();
-                    let parts = crate::expr::split_top(inner, &Token::Comma);
-                    if parts.len() != 2 {
-                        return Err(Error::BadMath { text, reason: format!("expected 2 coordinates, got {}", parts.len()) });
-                    }
-                    let x = Parser::parse(&parts[0], &mut self.c.arena).map_err(|reason| Error::BadMath { text: text.clone(), reason })?;
-                    let y = Parser::parse(&parts[1], &mut self.c.arena).map_err(|reason| Error::BadMath { text: text.clone(), reason })?;
-                    out.push(PointPlan::Tuple([self.plan_from_expr(x), self.plan_from_expr(y)]));
+                    out.push(PointPlan::Tuple(self.tuple_from_tokens(inner, &text)?));
                 }
                 Token::Comma => i += 1,
                 // A symbol (`through="A"`) is not a point here: NaN, as the
@@ -589,8 +583,7 @@ impl<'a> Compiler<'a> {
             if sides.len() != 2 {
                 return Err(Error::BadMath { text, reason: "a line equation needs one '='".into() });
             }
-            let lhs = Parser::parse(&sides[0], &mut self.c.arena).map_err(|reason| Error::BadMath { text: text.clone(), reason })?;
-            let rhs = Parser::parse(&sides[1], &mut self.c.arena).map_err(|reason| Error::BadMath { text: text.clone(), reason })?;
+            let (lhs, rhs) = (self.parse_tokens(&sides[0], &text)?, self.parse_tokens(&sides[1], &text)?);
             let diff = self.c.arena.push(Expr::Sub(lhs, rhs));
             // A referenced <math> whose expression carries the variables
             // (`$m` standing for `2x`) is inlined, so it takes part in the
