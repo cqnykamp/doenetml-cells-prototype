@@ -148,7 +148,7 @@ impl<'a> Compiler<'a> {
                     let mut props = vec![SourcePlan::reference(from), SourcePlan::reference(step), SourcePlan::IterIndex];
                     for def in ComponentKind::SequenceValue.prop_defs().iter().skip(3) {
                         let PropFrom::Computed { op, args } = def.from else { unreachable!() };
-                        props.push(SourcePlan::computed(op, args.to_vec()));
+                        props.push(SourcePlan::from_def(op, args));
                     }
                     self.c.templates[sub].elems[v].props = props;
                 }
@@ -343,9 +343,9 @@ impl<'a> Compiler<'a> {
                 },
                 (None, PropFrom::AttributeOr { alias }) => match d.attr(el, def.attr_name()) {
                     Some(a) => self.plan_value(t, scope, def.attr_name(), d.attr_children(a), None)?,
-                    None => SourcePlan::own(alias),
+                    None => SourcePlan::own(alias as usize),
                 },
-                (None, PropFrom::Computed { op, args }) => SourcePlan::computed(op, args.to_vec()),
+                (None, PropFrom::Computed { op, args }) => SourcePlan::from_def(op, args),
                 (None, PropFrom::Children) => {
                     let blank = d.children(el).iter().all(|&n| self.is_blank(n));
                     // A mathInput's `prefill` stands in for blank children.
@@ -456,7 +456,7 @@ impl<'a> Compiler<'a> {
                     plan.set(0, SourcePlan::SymExpr(id, Post::None));
                 } else {
                     let of = plan.hidden(SourcePlan::SymExpr(id, Post::None));
-                    plan.set(0, SourcePlan::Op(OpSpec::Sym(SymKind::Derivative), vec![Arg::Own(of)]));
+                    plan.set(0, SourcePlan::Op(OpSpec::Sym(SymKind::Derivative), vec![Arg::Own(own_slot(of))]));
                 }
                 let graph = (scope != ROOT_SCOPE && self.c.templates[t].elems[scope].kind == ComponentKind::Graph).then_some(scope);
                 match graph {

@@ -153,7 +153,7 @@ impl<'a> Compiler<'a> {
     /// 1 or 0. Comparisons (`< <= > >= = !=`), `and`/`&&`, `or`/`||`,
     /// `not`/`!`, parentheses, `true`, `false`, and numeric math operands;
     /// a bare operand holds when it is nonzero.
-    fn plan_condition(&mut self, t: TemplateId, e: ElemId, plan: &mut ElemPlan, nodes: &[NodeId]) -> Result<u8> {
+    fn plan_condition(&mut self, t: TemplateId, e: ElemId, plan: &mut ElemPlan, nodes: &[NodeId]) -> Result<usize> {
         let (toks, text) = self.math_tokens(t, e, nodes)?;
         let mut p = CondParser { toks: &toks, pos: 0, text: &text };
         let slot = p.or(self, plan)?;
@@ -297,16 +297,16 @@ impl CondParser<'_> {
         matches!(self.peek(k), Some(Token::Op(x)) if *x == c)
     }
 
-    fn or(&mut self, cp: &mut Compiler, plan: &mut ElemPlan) -> Result<u8> {
+    fn or(&mut self, cp: &mut Compiler, plan: &mut ElemPlan) -> Result<usize> {
         self.chain(cp, plan, "or", '|', OpSpec::Max, Self::and)
     }
 
-    fn and(&mut self, cp: &mut Compiler, plan: &mut ElemPlan) -> Result<u8> {
+    fn and(&mut self, cp: &mut Compiler, plan: &mut ElemPlan) -> Result<usize> {
         self.chain(cp, plan, "and", '&', OpSpec::Min, Self::not)
     }
 
     /// `next`s joined by `word`, `c` or `cc`, folded left with `op`.
-    fn chain(&mut self, cp: &mut Compiler, plan: &mut ElemPlan, word: &str, c: char, op: OpSpec, next: fn(&mut Self, &mut Compiler, &mut ElemPlan) -> Result<u8>) -> Result<u8> {
+    fn chain(&mut self, cp: &mut Compiler, plan: &mut ElemPlan, word: &str, c: char, op: OpSpec, next: fn(&mut Self, &mut Compiler, &mut ElemPlan) -> Result<usize>) -> Result<usize> {
         let mut lhs = next(self, cp, plan)?;
         loop {
             if self.is_word(word) {
@@ -321,7 +321,7 @@ impl CondParser<'_> {
         }
     }
 
-    fn not(&mut self, cp: &mut Compiler, plan: &mut ElemPlan) -> Result<u8> {
+    fn not(&mut self, cp: &mut Compiler, plan: &mut ElemPlan) -> Result<usize> {
         if self.is_word("not") || (self.is_op(0, '!') && !matches!(self.peek(1), Some(Token::Eq))) {
             self.pos += 1;
             let a = self.not(cp, plan)?;
@@ -332,7 +332,7 @@ impl CondParser<'_> {
 
     /// A parenthesized condition, or a comparison of two operands, or a
     /// lone operand.
-    fn cmp(&mut self, cp: &mut Compiler, plan: &mut ElemPlan) -> Result<u8> {
+    fn cmp(&mut self, cp: &mut Compiler, plan: &mut ElemPlan) -> Result<usize> {
         if let Some(Token::LParen) = self.peek(0) {
             let close = self.matching(self.pos)?;
             if self.toks[self.pos + 1..close].iter().any(is_condition_token) {
@@ -375,7 +375,7 @@ impl CondParser<'_> {
     }
 
     /// Math up to the next comparison or connective outside parentheses.
-    fn operand(&mut self, cp: &mut Compiler, plan: &mut ElemPlan) -> Result<u8> {
+    fn operand(&mut self, cp: &mut Compiler, plan: &mut ElemPlan) -> Result<usize> {
         let start = self.pos;
         let mut depth = 0i32;
         while let Some(t) = self.peek(0) {

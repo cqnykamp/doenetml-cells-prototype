@@ -88,7 +88,7 @@ impl<'a> Compiler<'a> {
         // The raw coordinates are the essential state now; keep their roles.
         for role in ["x", "y"] {
             if let Some(slot) = ch.roles.get_mut(role) {
-                *slot = if role == "x" { raw_x } else { raw_y };
+                *slot = own_slot(if role == "x" { raw_x } else { raw_y });
             }
         }
         match d.str(c) {
@@ -101,7 +101,7 @@ impl<'a> Compiler<'a> {
                 };
                 let (dx, dy) = (num(self, "dx", 1.0)?, num(self, "dy", 1.0)?);
                 let (xo, yo) = (num(self, "xoffset", 0.0)?, num(self, "yoffset", 0.0)?);
-                let snap = |ch: &mut ElemPlan, raw: u8, step: f64, offset: f64| -> SourcePlan {
+                let snap = |ch: &mut ElemPlan, raw: usize, step: f64, offset: f64| -> SourcePlan {
                     let mut cur = raw;
                     if offset != 0.0 {
                         cur = ch.hidden(SourcePlan::computed(OpSpec::Offset { k: -offset }, vec![cur]));
@@ -127,7 +127,7 @@ impl<'a> Compiler<'a> {
                 let m = d.children(c).iter().copied().find(|&n| d.kind(n) == NodeKind::Macro).ok_or_else(|| Error::Unsupported("<constrainTo> without a reference".into()))?;
                 let p = self.plan_ref(t, scope, m)?;
                 let target = self.plan_elem_target(t, p).ok_or_else(|| Error::Unsupported("<constrainTo> must name a component in the same scope".into()))?;
-                let refs = |me: &mut Self, ch: &mut ElemPlan, props: &[&str]| -> Vec<u8> { props.iter().map(|pr| ch.hidden(SourcePlan::reference(me.plan_with_prop(p, pr)))).collect() };
+                let refs = |me: &mut Self, ch: &mut ElemPlan, props: &[&str]| -> Vec<usize> { props.iter().map(|pr| ch.hidden(SourcePlan::reference(me.plan_with_prop(p, pr)))).collect() };
                 match self.c.templates[t].elems[target].kind {
                     ComponentKind::Circle => {
                         let c = refs(self, ch, &["cx", "cy", "radius"]);
@@ -212,7 +212,7 @@ impl<'a> Compiler<'a> {
 
     /// Two hidden slots holding a point. A literal coordinate is essential
     /// state and gets a role from `roles`, so a copy with overrides shares it.
-    pub(super) fn point_slots(ch: &mut ElemPlan, p: &PointPlan) -> [u8; 2] {
+    pub(super) fn point_slots(ch: &mut ElemPlan, p: &PointPlan) -> [usize; 2] {
         [ch.hidden(p.coord(0)), ch.hidden(p.coord(1))]
     }
 
@@ -243,8 +243,8 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    pub(super) fn point_slots_with_roles(ch: &mut ElemPlan, p: &PointPlan, roles: [&'static str; 2], attr: &'static str) -> [u8; 2] {
-        let mut out = [0u8; 2];
+    pub(super) fn point_slots_with_roles(ch: &mut ElemPlan, p: &PointPlan, roles: [&'static str; 2], attr: &'static str) -> [usize; 2] {
+        let mut out = [0; 2];
         for j in 0..2 {
             out[j] = match p.coord(j) {
                 SourcePlan::Literal(v) => {
@@ -402,7 +402,7 @@ impl<'a> Compiler<'a> {
         // area goes through a hidden square.
         for (i, def) in kind.prop_defs().iter().enumerate() {
             if let PropFrom::Computed { op, args } = def.from {
-                ch.set(i, SourcePlan::computed(op, args.to_vec()));
+                ch.set(i, SourcePlan::from_def(op, args));
             }
         }
         let r2 = ch.hidden(SourcePlan::computed(OpSpec::Mul, vec![2, 2]));
@@ -435,7 +435,7 @@ impl<'a> Compiler<'a> {
         }
         ch.set(kind.prop_index("numThroughPoints").unwrap(), SourcePlan::Fixed(n as f64));
         let (center_x, center_y) = (kind.prop_index("centerX").unwrap(), kind.prop_index("centerY").unwrap());
-        let (tx1, ty1, tx2, ty2) = (through_slot(0, 0) as u8, through_slot(0, 1) as u8, through_slot(1, 0) as u8, through_slot(1, 1) as u8);
+        let (tx1, ty1, tx2, ty2) = (through_slot(0, 0), through_slot(0, 1), through_slot(1, 0), through_slot(1, 1));
         // The prescribed center lives on `centerX`/`centerY` and the cases
         // read it from there; without one they alias the derived center.
         match &center {
@@ -445,7 +445,6 @@ impl<'a> Compiler<'a> {
                 ch.set(center_y, SourcePlan::own(1));
             }
         }
-        let (center_x, center_y) = (center_x as u8, center_y as u8);
         match (hc, hr, n) {
             // The current core warns and gives up on over-determined circles.
             (_, _, n) if n > 3 || (hc && hr && n >= 1) || (hc && n >= 2) || (hr && n >= 3) => {
@@ -480,7 +479,7 @@ impl<'a> Compiler<'a> {
                 ch.set_vec(0, VecOp::CircleTwoPointsRadius, vec![tx1, ty1, tx2, ty2, 2]);
             }
             (false, false, n) => {
-                let args: Vec<u8> = (0..2 * n as u8).map(|k| tx1 + k).collect();
+                let args: Vec<usize> = (0..2 * n).map(|k| tx1 + k).collect();
                 ch.set_vec(0, VecOp::CirclePoints { n: n as u8 }, args);
             }
             _ => unreachable!(),
@@ -651,7 +650,7 @@ impl<'a> Compiler<'a> {
 
     /// Two hidden slots holding a direction: a point or tuple's coordinates,
     /// or another line's `point2 - point1`.
-    pub(super) fn plan_direction(&mut self, t: TemplateId, scope: ElemId, a: u32, ch: &mut ElemPlan) -> Result<[u8; 2]> {
+    pub(super) fn plan_direction(&mut self, t: TemplateId, scope: ElemId, a: u32, ch: &mut ElemPlan) -> Result<[usize; 2]> {
         match self.plan_point_attr(t, scope, a)? {
             PointPlan::Ref(p) => {
                 let target_kind = self.plan_elem_target(t, p).map(|e| self.c.templates[t].elems[e].kind);

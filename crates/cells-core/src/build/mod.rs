@@ -134,16 +134,20 @@ impl SourcePlan {
     fn item(p: PlanId, i: usize, j: usize) -> Self {
         SourcePlan::Alias(Arg::Ref(p, Sel::Item(i as u8, j as u8)))
     }
-    fn own(slot: u8) -> Self {
-        SourcePlan::Alias(Arg::Own(slot))
+    fn own(slot: usize) -> Self {
+        SourcePlan::Alias(Arg::Own(own_slot(slot)))
     }
     /// Operator over the element's own slots.
-    fn computed(op: OpSpec, args: Vec<u8>) -> Self {
-        SourcePlan::Op(op, args.into_iter().map(Arg::Own).collect())
+    fn computed(op: OpSpec, args: Vec<usize>) -> Self {
+        SourcePlan::Op(op, args.into_iter().map(|a| Arg::Own(own_slot(a))).collect())
+    }
+    /// A kind's `PropFrom::Computed` prop.
+    fn from_def(op: OpSpec, args: &[u8]) -> Self {
+        SourcePlan::Op(op, args.iter().map(|&a| Arg::Own(a)).collect())
     }
     /// Head of a vector instruction over own slots; this slot is output 0,
     /// the next `n_out - 1` slots are `VecOut`.
-    fn vector(op: VecOp, args: Vec<u8>) -> Self {
+    fn vector(op: VecOp, args: Vec<usize>) -> Self {
         SourcePlan::computed(OpSpec::Vec(op), args)
     }
 }
@@ -279,6 +283,11 @@ struct RefPlan {
     display: String,
 }
 
+/// An element's own slot as `Arg::Own` stores it.
+fn own_slot(i: usize) -> u8 {
+    u8::try_from(i).expect("fewer than 256 slots per element")
+}
+
 /// A planned element's prop list under construction: public slots set by
 /// index, hidden slots appended after them and referenced by index like any
 /// own prop.
@@ -299,26 +308,27 @@ impl ElemPlan {
     }
     /// A vector instruction over own slots, its head at public slot `head`
     /// and its other outputs at the slots after it.
-    fn set_vec(&mut self, head: usize, op: VecOp, args: Vec<u8>) {
+    fn set_vec(&mut self, head: usize, op: VecOp, args: Vec<usize>) {
         for k in 1..op.n_out() {
-            self.set(head + k, SourcePlan::VecOut(head as u8, k as u8));
+            self.set(head + k, SourcePlan::VecOut(own_slot(head), k as u8));
         }
         self.set(head, SourcePlan::vector(op, args));
     }
-    fn hidden(&mut self, plan: SourcePlan) -> u8 {
+    fn hidden(&mut self, plan: SourcePlan) -> usize {
         self.props.push(Some(plan));
-        u8::try_from(self.props.len() - 1).expect("fewer than 256 slots per element")
+        own_slot(self.props.len() - 1);
+        self.props.len() - 1
     }
     /// A hidden essential slot with a role name (see `Elem::roles`).
-    fn essential(&mut self, role: &'static str, value: f64) -> u8 {
+    fn essential(&mut self, role: &'static str, value: f64) -> usize {
         let i = self.hidden(SourcePlan::Literal(value));
-        self.roles.insert(role, i);
+        self.roles.insert(role, own_slot(i));
         i
     }
     /// A public essential slot with a role name.
     fn set_essential(&mut self, i: usize, role: &'static str, value: f64) {
         self.set(i, SourcePlan::Literal(value));
-        self.roles.insert(role, i as u8);
+        self.roles.insert(role, own_slot(i));
     }
     /// Record that `role` came from attribute `attr`.
     fn from_attr(&mut self, role: &'static str, attr: &'static str) {
