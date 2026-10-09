@@ -27,6 +27,7 @@
 //! polygon has no instruction at all: its point cells alias the points.
 
 use crate::document::CellIdx;
+use crate::invert::PointRequest;
 
 /// The point a rigid shape rotates or dilates about.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -55,15 +56,12 @@ impl RigidOpts {
     pub const RIGID: RigidOpts = RigidOpts { dilate: false, rotate: true, translate: true, min_shrink: 0.1, pivot: Pivot::Centroid };
 }
 
-/// Two cells of one point with the values asked of them.
-pub type PointWrite = [(CellIdx, f64); 2];
-
 /// What an inverse produces: scalar input requests, and point groups that
 /// the engine moves together (see `Program::invert_requests`).
 #[derive(Debug, Default)]
 pub struct Produced {
     pub writes: Vec<(CellIdx, f64)>,
-    pub groups: Vec<Vec<PointWrite>>,
+    pub groups: Vec<Vec<PointRequest>>,
 }
 
 impl Produced {
@@ -74,7 +72,7 @@ impl Produced {
     pub fn write(&mut self, cell: CellIdx, value: f64) {
         self.writes.push((cell, value));
     }
-    pub fn group(&mut self, points: Vec<PointWrite>) {
+    pub fn group(&mut self, points: Vec<PointRequest>) {
         self.groups.push(points);
     }
 }
@@ -233,7 +231,7 @@ impl VecOp {
     /// requests and point groups to `out`. Returns false to drop the request.
     pub fn invert(&self, inputs: &[CellIdx], inp: &[f64], cur: &[f64], desired: &[Option<f64>], out: &mut Produced) -> bool {
         let want = |k: usize| desired[k].unwrap_or(cur[k]);
-        let point = |i: usize, x: f64, y: f64| -> PointWrite { [(inputs[2 * i], x), (inputs[2 * i + 1], y)] };
+        let point = |i: usize, x: f64, y: f64| PointRequest { cells: [inputs[2 * i], inputs[2 * i + 1]], values: [x, y] };
         match *self {
             VecOp::Shape { n, opts } => invert_rigid(n as usize, opts, inputs, inp, desired, out),
             VecOp::CircleCenterPoint => {

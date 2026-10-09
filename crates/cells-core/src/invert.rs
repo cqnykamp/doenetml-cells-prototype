@@ -28,7 +28,7 @@ type HashMap<K, V> = std::collections::HashMap<K, V, BuildHasherDefault<IndexHas
 type HashSet<K> = std::collections::HashSet<K, BuildHasherDefault<IndexHasher>>;
 
 use crate::document::{CellIdx, Request};
-use crate::geo::{PointWrite, Produced};
+use crate::geo::Produced;
 use crate::ops::{Op, SymKind};
 use crate::program::Program;
 
@@ -79,9 +79,8 @@ impl Program {
             }
         }
         for g in groups {
-            let pts: Vec<PointWrite> = g.iter().map(|p| [(p.cells[0], p.values[0]), (p.cells[1], p.values[1])]).collect();
             let origin = g.first().map(|p| Request { cell: p.cells[0], value: p.values[0] }).unwrap_or(Request { cell: 0, value: f64::NAN });
-            engine.push_group(pts, origin);
+            engine.push_group(g.clone(), origin);
         }
         engine.run();
         engine.inversion
@@ -180,16 +179,16 @@ impl RequestEngine<'_> {
     }
 
     /// Queue a point group after the equal-shift rule (see `invert_requests`).
-    fn push_group(&mut self, mut pts: Vec<PointWrite>, origin: Request) {
+    fn push_group(&mut self, mut pts: Vec<PointRequest>, origin: Request) {
         if pts.len() >= 2 {
-            let reqs: Vec<(CellIdx, f64)> = pts.iter().flatten().copied().collect();
+            let reqs: Vec<(CellIdx, f64)> = pts.iter().flat_map(|p| p.cells.into_iter().zip(p.values)).collect();
             let mut realized = Vec::with_capacity(reqs.len());
             self.program.realize(self.cells, self.n_essential, &reqs, &mut realized);
             let mut shift: Option<(f64, f64)> = None;
             let mut n_held = 0;
             let mut consistent = true;
             for (i, p) in pts.iter().enumerate() {
-                let (sx, sy) = (realized[2 * i] - p[0].1, realized[2 * i + 1] - p[1].1);
+                let (sx, sy) = (realized[2 * i] - p.values[0], realized[2 * i + 1] - p.values[1]);
                 if sx.abs() > REALIZED_TOL || sy.abs() > REALIZED_TOL {
                     n_held += 1;
                     match shift {
@@ -202,15 +201,15 @@ impl RequestEngine<'_> {
             if let Some((sx, sy)) = shift {
                 if consistent && n_held < pts.len() && sx.is_finite() && sy.is_finite() {
                     for p in &mut pts {
-                        p[0].1 += sx;
-                        p[1].1 += sy;
+                        p.values[0] += sx;
+                        p.values[1] += sy;
                     }
                 }
             }
         }
         for p in pts {
-            self.push(p[0].0, p[0].1, origin);
-            self.push(p[1].0, p[1].1, origin);
+            self.push(p.cells[0], p.values[0], origin);
+            self.push(p.cells[1], p.values[1], origin);
         }
     }
 
