@@ -27,41 +27,6 @@ impl Evaluator for FullRecompute {
     }
 }
 
-/// Scan every instruction in schedule order but evaluate only those with a
-/// dirty input. Linear in the program, no evaluation of clean cells.
-pub struct DirtyScan {
-    dirty: Vec<bool>,
-}
-
-impl DirtyScan {
-    pub fn new(n_cells: usize) -> Self {
-        DirtyScan { dirty: vec![false; n_cells] }
-    }
-}
-
-impl Evaluator for DirtyScan {
-    fn name(&self) -> &'static str {
-        "dirty-scan"
-    }
-    fn recompute(&mut self, program: &Program, cells: &mut [f64], changed: &mut Vec<CellIdx>) {
-        for &c in changed.iter() {
-            self.dirty[c as usize] = true;
-        }
-        for ins in &program.instrs {
-            if ins.op.inputs(&program.extra).any(|c| self.dirty[c as usize]) {
-                let before = changed.len();
-                program.step(ins, cells, Some(changed));
-                for &c in &changed[before..] {
-                    self.dirty[c as usize] = true;
-                }
-            }
-        }
-        for &c in changed.iter() {
-            self.dirty[c as usize] = false;
-        }
-    }
-}
-
 /// Walk only the downstream closure of the seeds, in schedule order, using a
 /// min-heap over instruction positions. Work is proportional to the closure.
 pub struct DirtyClosure {

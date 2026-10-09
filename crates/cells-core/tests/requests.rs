@@ -159,7 +159,7 @@ fn unchanged_values_are_not_reported() {
 
 #[test]
 fn evaluators_agree() {
-    use cells_core::{DirtyClosure, DirtyScan, Evaluator, FullRecompute};
+    use cells_core::{DirtyClosure, Evaluator, FullRecompute};
     let src = r#"<numberInput name="a" value="2"/><numberInput name="b" value="5"/>
         <op name="s" kind="add" args="$a $b"/><op name="t" kind="scale" k="3" args="$s"/>
         <op name="u" kind="negate" args="$b"/><op name="v" kind="clamp" lo="0" hi="100" args="$t"/>
@@ -169,7 +169,6 @@ fn evaluators_agree() {
     let reqs = [req(&base, "s", "value", 20.0), req(&base, "u", "value", -1.0)];
     let mut evs: Vec<Box<dyn Evaluator>> = vec![
         Box::new(FullRecompute),
-        Box::new(DirtyScan::new(base.cells.len())),
         Box::new(DirtyClosure::new(&base.program, base.cells.len())),
     ];
     let mut results = Vec::new();
@@ -189,7 +188,6 @@ fn evaluators_agree() {
         results.push((doc.cells.clone(), changed));
     }
     assert_eq!(results[0], results[1]);
-    assert_eq!(results[0], results[2]);
     // x depends only on c, which did not change: it must not be reported.
     assert!(!results[0].1.contains(&base.cell("x", "value").unwrap()));
 }

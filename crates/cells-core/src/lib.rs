@@ -21,7 +21,7 @@ pub mod test_utils;
 
 pub use document::{CellIdx, Child, CompIdx, Components, Document, LoadTimings, NONE, Repeat, Request, ScopeId, Structure, TEXT_BIT, Tick};
 pub use error::{Error, Result};
-pub use eval::{DirtyClosure, DirtyScan, Evaluator, FullRecompute};
+pub use eval::{DirtyClosure, Evaluator, FullRecompute};
 pub use geo::{Pivot, Produced, RigidOpts, VecOp};
 pub use ops::{Instr, Op, OpSpec};
 pub use invert::{Inversion, PointRequest};

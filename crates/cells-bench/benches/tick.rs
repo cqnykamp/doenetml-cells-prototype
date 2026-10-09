@@ -1,4 +1,4 @@
-use cells_core::{DirtyClosure, DirtyScan, Document, Evaluator, FullRecompute, Request};
+use cells_core::{DirtyClosure, Document, Evaluator, FullRecompute, Request};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 
 /// One drag step: request a new value on the drag target, invert, recompute.
@@ -11,7 +11,6 @@ fn tick(c: &mut Criterion) {
 
         let mut evaluators: Vec<Box<dyn Evaluator>> = vec![
             Box::new(FullRecompute),
-            Box::new(DirtyScan::new(base.cells.len())),
             Box::new(DirtyClosure::new(&base.program, base.cells.len())),
         ];
         for ev in evaluators.iter_mut() {

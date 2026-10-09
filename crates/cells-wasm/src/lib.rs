@@ -2,7 +2,7 @@
 //! over wasm memory (see `cells_ptr`/`cells_len`), receives a one-time render
 //! manifest, and writes with cell-addressed requests. See ADR 0001.
 
-use cells_core::{DirtyClosure, DirtyScan, Document, Evaluator, FullRecompute, PointRequest, Request};
+use cells_core::{DirtyClosure, Document, Evaluator, FullRecompute, PointRequest, Request};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -281,11 +281,10 @@ impl Core {
         serde_json::to_string(&self.doc.warnings()).unwrap()
     }
 
-    /// Choose the recompute strategy: "full", "dirty-scan" or "dirty-closure".
+    /// Choose the recompute strategy: "full" or "dirty-closure".
     pub fn set_evaluator(&mut self, name: &str) -> Result<(), JsError> {
         self.evaluator = match name {
             "full" => Box::new(FullRecompute),
-            "dirty-scan" => Box::new(DirtyScan::new(self.doc.cells.len())),
             "dirty-closure" => Box::new(DirtyClosure::new(&self.doc.program, self.doc.cells.len())),
             other => return Err(JsError::new(&format!("unknown evaluator {other}"))),
         };

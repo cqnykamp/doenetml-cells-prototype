@@ -123,7 +123,7 @@ def main():
     if tk:
         md.append("## Drag tick (µs per request, criterion mean)\n")
         md.append("One request on the drag target (chain end, fan-out root, or first point), inverted to its essential cell, then recompute with each strategy.\n")
-        evs = ["full", "dirty-scan", "dirty-closure"]
+        evs = ["full", "dirty-closure"]
         md.append("| fixture | derived cells | " + " | ".join(evs) + " |")
         md.append("|---|---:|" + "---:|" * len(evs))
         for s in specs:

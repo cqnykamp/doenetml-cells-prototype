@@ -123,7 +123,6 @@ export function App() {
           Evaluator:{" "}
           <select value={evaluator} onChange={(e) => { setEvaluator(e.target.value); store?.setEvaluator(e.target.value); }}>
             <option>dirty-closure</option>
-            <option>dirty-scan</option>
             <option>full</option>
           </select>
         </label>

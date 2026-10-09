@@ -425,12 +425,6 @@ impl Prior {
         Prior { scopes: doc.structure.scopes.clone(), scope_index: doc.structure.scope_index.clone(), counts, values, seed: doc.structure.seed }
     }
 
-    /// Non-destructive variant for callers that keep the document.
-    pub fn from_document(doc: &Document) -> Prior {
-        let mut copy = doc.clone();
-        Prior::take_from(&mut copy)
-    }
-
     pub fn restore(self, doc: &mut Document) {
         doc.structure.values = self.values;
     }
