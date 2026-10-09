@@ -95,12 +95,8 @@ impl Document {
                     p[k as usize] = value;
                 }
             };
-            for r in requests.iter() {
-                ask(r.cell, r.value);
-            }
-            for p in groups.iter().flatten() {
-                ask(p.cells[0], p.values[0]);
-                ask(p.cells[1], p.values[1]);
+            for (cell, value) in asked(requests, groups) {
+                ask(cell, *value);
             }
             if requested.iter().all(Option::is_none) {
                 continue;
@@ -114,19 +110,20 @@ impl Document {
                 snapped.insert(cx, x);
                 snapped.insert(cy, y);
             }
-            for r in requests.iter_mut() {
-                if let Some(v) = snapped.remove(&r.cell) {
-                    r.value = v;
-                }
-            }
-            for p in groups.iter_mut().flatten() {
-                for k in 0..2 {
-                    if let Some(v) = snapped.remove(&p.cells[k]) {
-                        p.values[k] = v;
-                    }
+            for (cell, value) in asked(requests, groups) {
+                if let Some(v) = snapped.remove(&cell) {
+                    *value = v;
                 }
             }
             requests.extend(snapped.into_iter().map(|(cell, value)| Request { cell, value }));
         }
     }
+}
+
+/// Every (cell, requested value) of a tick: the scalar requests, then each
+/// point group's coordinates.
+fn asked<'r>(requests: &'r mut [Request], groups: &'r mut [Vec<PointRequest>]) -> impl Iterator<Item = (CellIdx, &'r mut f64)> {
+    let scalar = requests.iter_mut().map(|r| (r.cell, &mut r.value));
+    let points = groups.iter_mut().flatten().flat_map(|p| p.cells.into_iter().zip(p.values.iter_mut()));
+    scalar.chain(points)
 }

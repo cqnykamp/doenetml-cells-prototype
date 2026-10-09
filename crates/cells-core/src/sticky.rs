@@ -183,9 +183,11 @@ fn dist2(a: Pt, b: Pt) -> f64 {
     (a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2)
 }
 
-fn closest_point(v: Pt, points: &[Pt], s: Pt) -> (Pt, f64) {
+/// The candidate nearest `v` in scaled distance, and that distance; `v`
+/// and infinity when there is none.
+fn closest(v: Pt, candidates: impl Iterator<Item = Pt>, s: Pt) -> (Pt, f64) {
     let (mut best, mut d2) = (v, f64::INFINITY);
-    for &q in points {
+    for q in candidates {
         let d = scaled_dist2(v, q, s);
         if d < d2 {
             best = q;
@@ -195,18 +197,12 @@ fn closest_point(v: Pt, points: &[Pt], s: Pt) -> (Pt, f64) {
     (best, d2)
 }
 
+fn closest_point(v: Pt, points: &[Pt], s: Pt) -> (Pt, f64) {
+    closest(v, points.iter().copied(), s)
+}
+
 fn closest_on_segments(v: Pt, segments: &[[Pt; 2]], s: Pt) -> (Pt, f64) {
-    let (mut best, mut d2) = (v, f64::INFINITY);
-    for seg in segments {
-        if let Some(q) = nearest_on_segment(v, seg, s) {
-            let d = scaled_dist2(v, q, s);
-            if d < d2 {
-                best = q;
-                d2 = d;
-            }
-        }
-    }
-    (best, d2)
+    closest(v, segments.iter().filter_map(|seg| nearest_on_segment(v, seg, s)), s)
 }
 
 /// Nearest point of a segment (`nearestPointForSegment`); None for a
