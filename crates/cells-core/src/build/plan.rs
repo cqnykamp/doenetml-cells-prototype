@@ -235,10 +235,10 @@ impl<'a> Compiler<'a> {
                 if let Some(inner) = crate::expr::unwrap_parens(&toks)
                     && crate::expr::split_top(inner, &Token::Comma).len() == 2
                 {
-                    let xy = self.plan_tuple(t, scope, &nodes)?;
+                    let [x, y] = self.plan_tuple(t, scope, &nodes)?;
                     let hide = ComponentKind::Point.prop_defs()[2].default;
                     self.c.templates[t].elems[e].kind = ComponentKind::Point;
-                    self.c.templates[t].elems[e].props = vec![xy[0].clone(), xy[1].clone(), SourcePlan::Default(hide)];
+                    self.c.templates[t].elems[e].props = vec![x, y, SourcePlan::Default(hide)];
                     return Ok(());
                 }
                 let id = self.plan_sym_math(t, scope, &nodes)?;
@@ -727,27 +727,33 @@ impl<'a> Compiler<'a> {
     }
 
     /// `(a, b)`: two scalar plans from tuple text, with `$ref` leaves.
-    pub(super) fn plan_tuple(&mut self, t: TemplateId, scope: ElemId, nodes: &[NodeId]) -> Result<Vec<SourcePlan>> {
+    pub(super) fn plan_tuple(&mut self, t: TemplateId, scope: ElemId, nodes: &[NodeId]) -> Result<[SourcePlan; 2]> {
         let d = self.c.dast;
         let macros: Vec<NodeId> = nodes.iter().copied().filter(|&n| d.kind(n) == NodeKind::Macro).collect();
         let text_blank = nodes.iter().all(|&n| d.kind(n) != NodeKind::Text || d.str(n).trim().is_empty());
         if macros.len() == 1 && text_blank {
             // `<point>$q</point>`: alias the referent's coordinates.
             let p = self.plan_ref(t, scope, macros[0])?;
-            return Ok(vec![SourcePlan::coord(p, 0), SourcePlan::coord(p, 1)]);
+            return Ok([SourcePlan::coord(p, 0), SourcePlan::coord(p, 1)]);
         }
         let (toks, text) = self.math_tokens(t, scope, nodes)?;
         let inner = crate::expr::unwrap_parens(&toks).ok_or_else(|| Error::BadMath { text: text.clone(), reason: "expected a tuple like (x, y)".into() })?;
         let parts = crate::expr::split_top(inner, &Token::Comma);
-        if parts.len() != 2 {
+        let [x, y] = parts.as_slice() else {
             return Err(Error::BadMath { text, reason: format!("expected 2 coordinates, got {}", parts.len()) });
+        };
+        let x = Parser::parse(x, &mut self.c.arena).map_err(|reason| Error::BadMath { text: text.clone(), reason })?;
+        let x = self.plan_from_expr(x);
+        let y = Parser::parse(y, &mut self.c.arena).map_err(|reason| Error::BadMath { text: text.clone(), reason })?;
+        Ok([x, self.plan_from_expr(y)])
+    }
+
+    /// A point-valued attribute: a reference (`center="$p"`) or a tuple.
+    pub(super) fn plan_point_attr(&mut self, t: TemplateId, scope: ElemId, a: u32) -> Result<PointPlan> {
+        match self.single_macro(a) {
+            Some(m) => Ok(PointPlan::Ref(self.plan_ref(t, scope, m)?)),
+            None => Ok(PointPlan::Tuple(self.plan_tuple(t, scope, self.c.dast.attr_children(a))?)),
         }
-        let mut out = Vec::with_capacity(2);
-        for part in parts {
-            let id = Parser::parse(&part, &mut self.c.arena).map_err(|reason| Error::BadMath { text: text.clone(), reason })?;
-            out.push(self.plan_from_expr(id));
-        }
-        Ok(out)
     }
 
     /// Find a name as the current core's resolver does: from the

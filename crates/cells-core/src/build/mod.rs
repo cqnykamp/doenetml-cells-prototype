@@ -321,11 +321,6 @@ impl ElemPlan {
     }
 }
 
-enum CenterPlan {
-    Ref(PlanId),
-    Tuple(Vec<SourcePlan>),
-}
-
 /// Role names of the k-th literal point of a point list (k < 16).
 const POINT_ROLES: [[&str; 2]; 16] = [
     ["pt1x", "pt1y"],

@@ -16,17 +16,8 @@ impl<'a> Compiler<'a> {
         let own_children = math_children(self, el);
         let base_children = base.map(|b| math_children(self, b)).unwrap_or_default();
         if let Some(a) = self.attr_or_inherited(el, base, "coords") {
-            let xy = match self.single_macro(a) {
-                Some(m) => {
-                    let p = self.plan_ref(t, scope, m)?;
-                    [SourcePlan::coord(p, 0), SourcePlan::coord(p, 1)]
-                }
-                None => {
-                    let xy = self.plan_tuple(t, scope, d.attr_children(a))?;
-                    [xy[0].clone(), xy[1].clone()]
-                }
-            };
-            Self::set_point_with_roles(&mut ch, [0, 1], &PointPlan::Tuple(xy), ["x", "y"], "coords");
+            let p = self.plan_point_attr(t, scope, a)?;
+            Self::set_point_with_roles(&mut ch, [0, 1], &p, ["x", "y"], "coords");
         } else if self.attr_or_inherited(el, base, "x").is_some() || self.attr_or_inherited(el, base, "y").is_some() || (own_children.is_empty() && base_children.is_empty()) {
             for (i, name) in ["x", "y"].into_iter().enumerate() {
                 match self.attr_or_inherited(el, base, name) {
@@ -44,8 +35,8 @@ impl<'a> Compiler<'a> {
             }
         } else {
             let nodes = if own_children.is_empty() { base_children } else { own_children };
-            let xy = self.plan_tuple(t, scope, &nodes)?;
-            Self::set_point_with_roles(&mut ch, [0, 1], &PointPlan::Tuple([xy[0].clone(), xy[1].clone()]), ["x", "y"], "children");
+            let p = PointPlan::Tuple(self.plan_tuple(t, scope, &nodes)?);
+            Self::set_point_with_roles(&mut ch, [0, 1], &p, ["x", "y"], "children");
         }
         // `hide` is a 0/1 cell: a bare or literal flag, or a bound cell; a
         // copy inherits the original's.
@@ -379,15 +370,11 @@ impl<'a> Compiler<'a> {
         let Elem { node: el, name_scope: scope, .. } = self.c.templates[t].elems[e];
         let kind = ComponentKind::Circle;
         let center = match self.attr_or_inherited(el, base, "center") {
-            Some(a) => Some(match self.single_macro(a) {
-                Some(m) => CenterPlan::Ref(self.plan_ref(t, scope, m)?),
-                None => match self.plan_tuple(t, scope, d.attr_children(a)) {
-                    Ok(xy) => CenterPlan::Tuple(xy),
-                    // Not a point (`center="A"`): no center, as the current
-                    // core's warning case.
-                    Err(Error::BadMath { .. }) => CenterPlan::Tuple(vec![SourcePlan::Fixed(f64::NAN), SourcePlan::Fixed(f64::NAN)]),
-                    Err(e) => return Err(e),
-                },
+            Some(a) => Some(match self.plan_point_attr(t, scope, a) {
+                // Not a point (`center="A"`): no center, as the current
+                // core's warning case.
+                Err(Error::BadMath { .. }) if self.single_macro(a).is_none() => PointPlan::Tuple([SourcePlan::Fixed(f64::NAN), SourcePlan::Fixed(f64::NAN)]),
+                r => r?,
             }),
             None => None,
         };
@@ -411,15 +398,6 @@ impl<'a> Compiler<'a> {
         let r2 = ch.hidden(SourcePlan::computed(OpSpec::Mul, vec![2, 2]));
         ch.set(5, SourcePlan::computed(OpSpec::Scale { k: std::f64::consts::PI }, vec![r2]));
         let (hc, hr) = (center.is_some(), radius.is_some());
-        let center_slots = |ch: &mut ElemPlan, c: &CenterPlan| -> [SourcePlan; 2] {
-            match c {
-                CenterPlan::Ref(p) => {
-                    let _ = ch;
-                    [SourcePlan::coord(*p, 0), SourcePlan::coord(*p, 1)]
-                }
-                CenterPlan::Tuple(v) => [v[0].clone(), v[1].clone()],
-            }
-        };
         // The radius shown is never negative; the prescribed or essential
         // radius behind it receives the clamped value (projection, ADR 0003).
         let clamped_radius = |ch: &mut ElemPlan, r: &SourcePlan| -> SourcePlan {
@@ -453,10 +431,7 @@ impl<'a> Compiler<'a> {
         // The prescribed center lives on `centerX`/`centerY` and the cases
         // read it from there; without one they alias the derived center.
         match &center {
-            Some(c) => {
-                let [cx, cy] = center_slots(&mut ch, c);
-                Self::set_point_with_roles(&mut ch, [center_x, center_y], &PointPlan::Tuple([cx, cy]), ["cx", "cy"], "center");
-            }
+            Some(c) => Self::set_point_with_roles(&mut ch, [center_x, center_y], c, ["cx", "cy"], "center"),
             None => {
                 ch.set(center_x, SourcePlan::own(0));
                 ch.set(center_y, SourcePlan::own(1));
@@ -725,10 +700,8 @@ impl<'a> Compiler<'a> {
     /// Two hidden slots holding a direction: a point or tuple's coordinates,
     /// or another line's `point2 - point1`.
     pub(super) fn plan_direction(&mut self, t: TemplateId, scope: ElemId, a: u32, ch: &mut ElemPlan) -> Result<[u8; 2]> {
-        let d = self.c.dast;
-        match self.single_macro(a) {
-            Some(m) => {
-                let p = self.plan_ref(t, scope, m)?;
+        match self.plan_point_attr(t, scope, a)? {
+            PointPlan::Ref(p) => {
                 let target_kind = self.plan_elem_target(t, p).map(|e| self.c.templates[t].elems[e].kind);
                 match target_kind {
                     Some(ComponentKind::Line | ComponentKind::LineSegment) => {
@@ -743,10 +716,7 @@ impl<'a> Compiler<'a> {
                     _ => Ok(Self::point_slots(ch, &PointPlan::Ref(p))),
                 }
             }
-            None => {
-                let xy = self.plan_tuple(t, scope, d.attr_children(a))?;
-                Ok([ch.hidden(xy[0].clone()), ch.hidden(xy[1].clone())])
-            }
+            p => Ok(Self::point_slots(ch, &p)),
         }
     }
 
@@ -770,7 +740,6 @@ impl<'a> Compiler<'a> {
     }
 
     pub(super) fn plan_polygon(&mut self, t: TemplateId, e: ElemId, base: Option<NodeId>) -> Result<ElemPlan> {
-        let d = self.c.dast;
         let Elem { node: el, name_scope: scope, .. } = self.c.templates[t].elems[e];
         let kind = ComponentKind::Polygon;
         let mut ch = ElemPlan::new(kind.prop_defs().len());
@@ -795,13 +764,7 @@ impl<'a> Compiler<'a> {
         let rigid = flag(self, "rigid", false);
         let similar = flag(self, "preserveSimilarity", false);
         let pivot_point = match self.attr_or_inherited(el, base, "rotationCenter") {
-            Some(a) if flag(self, "rotateAround", false) || self.attr_or_inherited(el, base, "rotateAround").and_then(|r| self.attr_text(r)).is_some_and(|r| r.trim() == "point") => match self.single_macro(a) {
-                Some(m) => Some(PointPlan::Ref(self.plan_ref(t, scope, m)?)),
-                None => {
-                    let xy = self.plan_tuple(t, scope, d.attr_children(a))?;
-                    Some(PointPlan::Tuple([xy[0].clone(), xy[1].clone()]))
-                }
-            },
+            Some(a) if flag(self, "rotateAround", false) || self.attr_or_inherited(el, base, "rotateAround").and_then(|r| self.attr_text(r)).is_some_and(|r| r.trim() == "point") => Some(self.plan_point_attr(t, scope, a)?),
             _ => None,
         };
         let rigid_opts = if rigid || similar {
