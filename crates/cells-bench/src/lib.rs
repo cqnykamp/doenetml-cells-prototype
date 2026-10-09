@@ -92,7 +92,7 @@ pub fn drag_target(doc: &cells_core::Document, spec: &str) -> Option<cells_core:
         "sticky" => doc.cell("sg.p0", "x1").unwrap(),
         "stickyfree" => doc.cell("p0", "x1").unwrap(),
         // The shared coefficient: every curve resamples.
-        "curves" | "choicecurves" => doc.cell("a", "value").unwrap(),
+        "curves" => doc.cell("a", "value").unwrap(),
         // The evaluation point the chain's evaluates read.
         "symchain" => doc.cell("t", "value").unwrap(),
         // Shapes with nothing to drag (load-time choices, answers) have no p0.
