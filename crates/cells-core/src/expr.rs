@@ -23,6 +23,20 @@ pub enum Expr {
     Neg(ExprId),
 }
 
+impl Expr {
+    /// The same binary operator over new operands.
+    pub fn with_operands(&self, a: ExprId, b: ExprId) -> Expr {
+        match self {
+            Expr::Add(..) => Expr::Add(a, b),
+            Expr::Sub(..) => Expr::Sub(a, b),
+            Expr::Mul(..) => Expr::Mul(a, b),
+            Expr::Div(..) => Expr::Div(a, b),
+            Expr::Pow(..) => Expr::Pow(a, b),
+            _ => unreachable!("not a binary operator: {self:?}"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Arena {
     pub nodes: Vec<Expr>,

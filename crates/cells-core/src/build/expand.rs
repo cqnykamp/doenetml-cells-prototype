@@ -703,11 +703,7 @@ impl<'c, 'a> Builder<'c, 'a> {
                 })?;
                 Expr::Cell(slot)
             }
-            Expr::Add(a, b) => Expr::Add(self.instantiate_expr(a, scope)?, self.instantiate_expr(b, scope)?),
-            Expr::Sub(a, b) => Expr::Sub(self.instantiate_expr(a, scope)?, self.instantiate_expr(b, scope)?),
-            Expr::Mul(a, b) => Expr::Mul(self.instantiate_expr(a, scope)?, self.instantiate_expr(b, scope)?),
-            Expr::Div(a, b) => Expr::Div(self.instantiate_expr(a, scope)?, self.instantiate_expr(b, scope)?),
-            Expr::Pow(a, b) => Expr::Pow(self.instantiate_expr(a, scope)?, self.instantiate_expr(b, scope)?),
+            Expr::Add(a, b) | Expr::Sub(a, b) | Expr::Mul(a, b) | Expr::Div(a, b) | Expr::Pow(a, b) => e.with_operands(self.instantiate_expr(a, scope)?, self.instantiate_expr(b, scope)?),
             Expr::Neg(a) => Expr::Neg(self.instantiate_expr(a, scope)?),
         };
         Ok(self.arena.push(out))
@@ -730,20 +726,23 @@ impl<'c, 'a> Builder<'c, 'a> {
                 let a = self.lower(a);
                 self.op_slot(OpSpec::Negate, &[a])
             }
-            Expr::Add(a, b) => match (num(&self.arena, a), num(&self.arena, b)) {
-                (_, Some(k)) => {
-                    let a = self.lower(a);
-                    self.op_slot(OpSpec::Offset { k }, &[a])
+            // Commutative: a literal on either side folds into the operator.
+            Expr::Add(a, b) | Expr::Mul(a, b) => {
+                let (with_k, both): (fn(f64) -> OpSpec, _) = match e {
+                    Expr::Add(..) => (|k| OpSpec::Offset { k }, OpSpec::Add),
+                    _ => (|k| OpSpec::Scale { k }, OpSpec::Mul),
+                };
+                match num(&self.arena, b).map(|k| (a, k)).or_else(|| num(&self.arena, a).map(|k| (b, k))) {
+                    Some((x, k)) => {
+                        let x = self.lower(x);
+                        self.op_slot(with_k(k), &[x])
+                    }
+                    None => {
+                        let (a, b) = (self.lower(a), self.lower(b));
+                        self.op_slot(both, &[a, b])
+                    }
                 }
-                (Some(k), _) => {
-                    let b = self.lower(b);
-                    self.op_slot(OpSpec::Offset { k }, &[b])
-                }
-                _ => {
-                    let (a, b) = (self.lower(a), self.lower(b));
-                    self.op_slot(OpSpec::Add, &[a, b])
-                }
-            },
+            }
             Expr::Sub(a, b) => match (num(&self.arena, a), num(&self.arena, b)) {
                 (_, Some(k)) => {
                     let a = self.lower(a);
@@ -757,20 +756,6 @@ impl<'c, 'a> Builder<'c, 'a> {
                 _ => {
                     let (a, b) = (self.lower(a), self.lower(b));
                     self.op_slot(OpSpec::Sub, &[a, b])
-                }
-            },
-            Expr::Mul(a, b) => match (num(&self.arena, a), num(&self.arena, b)) {
-                (_, Some(k)) => {
-                    let a = self.lower(a);
-                    self.op_slot(OpSpec::Scale { k }, &[a])
-                }
-                (Some(k), _) => {
-                    let b = self.lower(b);
-                    self.op_slot(OpSpec::Scale { k }, &[b])
-                }
-                _ => {
-                    let (a, b) = (self.lower(a), self.lower(b));
-                    self.op_slot(OpSpec::Mul, &[a, b])
                 }
             },
             Expr::Div(a, b) => match num(&self.arena, b) {

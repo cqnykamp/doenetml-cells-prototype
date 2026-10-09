@@ -523,13 +523,7 @@ impl<'a> Compiler<'a> {
             }
             Expr::Add(a, b) | Expr::Sub(a, b) | Expr::Mul(a, b) | Expr::Div(a, b) | Expr::Pow(a, b) => {
                 let (na, nb) = (self.inline_symbolic_maths(t, a), self.inline_symbolic_maths(t, b));
-                self.c.arena.push(match e {
-                    Expr::Add(..) => Expr::Add(na, nb),
-                    Expr::Sub(..) => Expr::Sub(na, nb),
-                    Expr::Mul(..) => Expr::Mul(na, nb),
-                    Expr::Div(..) => Expr::Div(na, nb),
-                    _ => Expr::Pow(na, nb),
-                })
+                self.c.arena.push(e.with_operands(na, nb))
             }
         }
     }
