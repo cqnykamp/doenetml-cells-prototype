@@ -815,26 +815,23 @@ impl<'a> Compiler<'a> {
             cur_t = self.c.templates[cur_t].parent.unwrap().0;
         }
         let mut steps = vec![Step::Elem(e0)];
-        // The element the path stands at, or None right after an index step
-        // into a repeat (inside an iteration, before a name picks an element).
-        let mut cur_elem = Some(e0);
+        let mut at = At::Elem(e0);
         let mut prop = None;
-        // Right after `$s[k]` on a select: the next name is an interface name.
-        let mut in_select: Option<ChoiceId> = None;
         // Past an interface name only props may follow.
         let mut after_iface = false;
         for (i, &part) in parts.iter().enumerate() {
             if i > 0 {
                 let name = d.strings.get(names[i]);
-                let choice_here = match cur_elem {
-                    Some(e) if !after_iface => match self.c.templates[cur_t].elems[e].body {
+                let choice_here = match at {
+                    At::Elem(e) if !after_iface => match self.c.templates[cur_t].elems[e].body {
                         Body::Choice(cid) if self.c.templates[cur_t].elems[e].kind.prop_index(name).is_none() => Some(cid),
                         _ => None,
                     },
-                    _ => in_select.take(),
+                    At::SelectPick(cid) => Some(cid),
+                    _ => None,
                 };
                 if let Some(cid) = choice_here {
-                    if cur_elem.is_some() && !self.c.choices[cid].reactive {
+                    if matches!(at, At::Elem(_)) && !self.c.choices[cid].reactive {
                         // `$s.x` is `$s[1].x` when the select picks one option.
                         if self.c.choices[cid].num_to_select != 1 {
                             return Err(Error::Banned(format!("'${display}' needs an index: the select picks {} options", self.c.choices[cid].num_to_select)));
@@ -844,26 +841,27 @@ impl<'a> Compiler<'a> {
                     let (step, tpl, x) = self.iface_step(cid, name, &display)?;
                     steps.push(step);
                     cur_t = tpl;
-                    cur_elem = Some(x);
+                    at = At::Elem(x);
                     after_iface = true;
                     if d.part_indices(part).next().is_some() {
                         return Err(Error::Banned(format!("'${display}': an index after an interface name")));
                     }
                     continue;
                 }
-                match cur_elem {
-                    None => {
+                match at {
+                    // A select's pick always takes the choice branch above.
+                    At::Iteration | At::SelectPick(_) => {
                         let e = self.child_named(cur_t, ROOT_SCOPE, name)?.ok_or_else(|| Error::UnknownName(display.clone()))?;
                         steps.push(Step::Elem(e));
-                        cur_elem = Some(e);
+                        at = At::Elem(e);
                     }
                     // A descendant of the component: `$g.p`.
-                    Some(e) if !after_iface && self.child_named(cur_t, e, name)?.is_some() => {
+                    At::Elem(e) if !after_iface && self.child_named(cur_t, e, name)?.is_some() => {
                         let child = self.child_named(cur_t, e, name)?.unwrap();
                         steps.push(Step::Elem(child));
-                        cur_elem = Some(child);
+                        at = At::Elem(child);
                     }
-                    Some(e) => {
+                    At::Elem(e) => {
                         let kind = self.c.templates[cur_t].elems[e].kind;
                         let kind = match self.c.templates[cur_t].elems[e].body {
                             // After `$c[k]` the component is a collected copy.
@@ -941,8 +939,8 @@ impl<'a> Compiler<'a> {
                 }
             }
             for expr in d.part_indices(part) {
-                let Some(e) = cur_elem else {
-                    if in_select.is_some() {
+                let At::Elem(e) = at else {
+                    if matches!(at, At::SelectPick(_)) {
                         return Err(Error::Banned(format!("'${display}' reaches into a select's option by position; name the content and use $s[k].name")));
                     }
                     return Err(Error::NotIndexable(display));
@@ -965,30 +963,28 @@ impl<'a> Compiler<'a> {
                         let ip = self.plan_index(t, expr, &display)?;
                         steps.push(Step::Index(ip));
                         cur_t = template;
-                        cur_elem = None;
+                        at = At::Iteration;
                     }
+                    // A collect's or point list's item: still that component.
                     Body::Collect { .. } => {
                         let ip = self.plan_index(t, expr, &display)?;
                         steps.push(Step::Index(ip));
-                        cur_elem = Some(e);
                     }
                     Body::Choice(cid) if !self.c.choices[cid].reactive && !after_iface => {
                         let ip = self.plan_index(t, expr, &display)?;
                         steps.push(Step::Index(ip));
-                        cur_elem = None;
-                        in_select = Some(cid);
+                        at = At::SelectPick(cid);
                     }
                     _ if self.c.templates[cur_t].elems[e].kind == ComponentKind::PointList => {
                         let ip = self.plan_index(t, expr, &display)?;
                         steps.push(Step::Index(ip));
-                        cur_elem = Some(e);
                     }
                     _ => return Err(Error::NotIndexable(display)),
                 }
             }
         }
         // A bare `$s` names the one option a select picks.
-        if let (Some(e), None, false) = (cur_elem, &prop, after_iface)
+        if let (At::Elem(e), None, false) = (at, &prop, after_iface)
             && let Body::Choice(cid) = self.c.templates[cur_t].elems[e].body
             && !self.c.choices[cid].reactive
         {
@@ -1092,4 +1088,16 @@ impl<'a> Compiler<'a> {
             _ => false,
         }
     }
+}
+
+/// Where a reference path stands while `plan_ref` walks it.
+#[derive(Clone, Copy)]
+enum At {
+    /// At an element of the current template.
+    Elem(ElemId),
+    /// Right after an index into a repeat: inside an iteration, before a
+    /// name picks an element.
+    Iteration,
+    /// Right after `$s[k]` on a select: the next name is an interface name.
+    SelectPick(ChoiceId),
 }
