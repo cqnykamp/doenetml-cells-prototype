@@ -1,6 +1,0 @@
-# Temporary, for the simplification pass (2026-10): align hot loops so a
-# refactor that leaves the program identical cannot move the tick by code
-# layout alone (repeat-10000 flipped between 0.09 and 0.12 ms). Native only.
-# Remove when the pass is done.
-[target.x86_64-unknown-linux-gnu]
-rustflags = ["-C", "llvm-args=-align-loops=64"]
