@@ -29,9 +29,11 @@
 //! instruction list is scheduled, with a fast path when creation order is
 //! already a valid evaluation order.
 //!
-//! The phases live in `plan.rs` (with `geometry.rs` for the planned kinds
-//! and `copies.rs` for `extend`), `expand.rs` and `emit.rs`; this file holds
-//! the types they share.
+//! Compile lives in `compile.rs` (the walk and each element's shape),
+//! `attrs.rs` (attribute and math sources), `refs.rs` (names and reference
+//! paths), `geometry.rs` (the planned kinds), `choice.rs` and `copies.rs`
+//! (`extend`); then `expand.rs` and `emit.rs`. This file holds the types
+//! they share.
 
 use std::collections::HashMap;
 
@@ -51,7 +53,9 @@ mod copies;
 mod emit;
 mod expand;
 mod geometry;
-mod plan;
+mod attrs;
+mod compile;
+mod refs;
 mod scoring;
 
 type SlotId = u32;
