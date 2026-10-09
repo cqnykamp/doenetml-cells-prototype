@@ -317,11 +317,11 @@ impl<'c, 'a> Builder<'c, 'a> {
         if !def.with_replacement && def.num_to_select as usize > n {
             return Err(Error::Unsupported(format!("numToSelect={} is more than the {n} options of a <select> without replacement", def.num_to_select)));
         }
-        let mut h = splitmix(self.prior.seed ^ 0x5eed_5e1e_c7ed_0001);
+        let mut h = splitmix(self.prior.structure.seed ^ 0x5eed_5e1e_c7ed_0001);
         h = splitmix(h ^ node as u64);
         let mut s = scope;
         while s != 0 {
-            let (parent, n, k) = self.scopes[s as usize];
+            let (parent, n, k) = self.scopes[s];
             h = splitmix(h ^ ((n as u64) << 32 | k as u64));
             s = parent;
         }

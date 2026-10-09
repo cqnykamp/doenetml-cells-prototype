@@ -56,7 +56,7 @@ impl<'c, 'a> Builder<'c, 'a> {
             match &self.sources[s] {
                 Source::Literal(v) | Source::Default(v) => {
                     let (scope, tslot) = self.template_slot(s as SlotId);
-                    let value = self.prior.values.get(scope as usize).and_then(|row| row.get(tslot as usize).copied().flatten()).unwrap_or(*v);
+                    let value = self.prior.structure.values.get(scope as usize).and_then(|row| row.get(tslot as usize).copied().flatten()).unwrap_or(*v);
                     slot_cell[root] = cells.len() as CellIdx;
                     cells.push(value);
                     cell_def_slot.push(s as SlotId);
@@ -107,7 +107,7 @@ impl<'c, 'a> Builder<'c, 'a> {
         let mut tapes = Vec::new();
         // Compile curves whose expression has a fixed shape (plan 5, change
         // 1), unless the load asked for engine sampling.
-        let compile = !self.prior.sample_with_engine;
+        let compile = !self.prior.structure.sample_with_engine;
         let mut fixed_shape: HashMap<SlotId, Option<cells_sym::Handle>> = HashMap::new();
         for &s in &derived_defs {
             let (mut spec, start, count) = match &self.sources[s] {
@@ -174,12 +174,11 @@ impl<'c, 'a> Builder<'c, 'a> {
         lap("structural depth");
 
         // The value store grows with the scope table; rows fill lazily.
-        let mut values = self.prior.values.clone();
+        let mut values = self.prior.structure.values.clone();
         values.resize(self.scopes.len(), Vec::new());
 
         let structure = Structure {
             scopes: self.scopes,
-            scope_index: self.scope_index,
             essential_slots,
             values,
             structural_depth: depths.iter().copied().max().unwrap_or(0),
@@ -187,8 +186,8 @@ impl<'c, 'a> Builder<'c, 'a> {
             repeat_cross_reads: cross_reads,
             repeats: self.repeats,
             counts_used: self.counts_used,
-            seed: self.prior.seed,
-            sample_with_engine: self.prior.sample_with_engine,
+            seed: self.prior.structure.seed,
+            sample_with_engine: self.prior.structure.sample_with_engine,
         };
 
         // Lazy labels for cycle errors.
@@ -281,7 +280,7 @@ impl<'c, 'a> Builder<'c, 'a> {
                 if cur == 0 {
                     return false;
                 }
-                cur = self.scopes[cur as usize].0;
+                cur = self.scopes[cur].0;
             }
         };
         let mut reads: Vec<Vec<usize>> = vec![Vec::new(); self.repeats.len()];

@@ -7,7 +7,7 @@ use super::*;
 impl<'c, 'a> Builder<'c, 'a> {
     pub(super) fn new(c: &'c Compiled<'a>, prior: &'c Prior, engine: &'c mut dyn SymEngine) -> Self {
         // Size the columns from the previous build when there was one.
-        let guess = prior.values.iter().map(|v| v.len()).sum::<usize>().max(c.templates.iter().map(|t| t.elems.len()).sum::<usize>() * 2);
+        let guess = prior.structure.values.iter().map(|v| v.len()).sum::<usize>().max(c.templates.iter().map(|t| t.elems.len()).sum::<usize>() * 2);
         Builder {
             c,
             prior,
@@ -31,8 +31,7 @@ impl<'c, 'a> Builder<'c, 'a> {
             sources: Vec::with_capacity(guess * 2),
             slot_comp: Vec::with_capacity(guess * 2),
             op_inputs: Vec::with_capacity(guess),
-            scopes: if prior.scopes.is_empty() { vec![(NONE, NONE, 0)] } else { prior.scopes.clone() },
-            scope_index: prior.scope_index.clone(),
+            scopes: prior.structure.scopes.clone(),
             scope_comps: Vec::new(),
             comp_instance: Vec::with_capacity(guess),
             instances: Vec::with_capacity(guess),
@@ -128,13 +127,7 @@ impl<'c, 'a> Builder<'c, 'a> {
     /// The stable id of iteration `k` of repeat element `node` under
     /// `parent`, created on first use.
     pub(super) fn scope_for(&mut self, parent: ScopeId, node: NodeId, k: u32) -> ScopeId {
-        if let Some(&s) = self.scope_index.get(&(parent, node, k)) {
-            return s;
-        }
-        self.scopes.push((parent, node, k));
-        let s = (self.scopes.len() - 1) as ScopeId;
-        self.scope_index.insert((parent, node, k), s);
-        s
+        self.scopes.get_or_insert(parent, node, k)
     }
 
     pub(super) fn enter_scope(&mut self, scope: ScopeId, template: TemplateId) {
@@ -479,7 +472,7 @@ impl<'c, 'a> Builder<'c, 'a> {
                     }
                     Source::Op(*spec, start, args.len() as u8)
                 }
-                SourcePlan::IterIndex => Source::Fixed(self.scopes[inst.scope as usize].2 as f64),
+                SourcePlan::IterIndex => Source::Fixed(self.scopes[inst.scope].2 as f64),
                 SourcePlan::Math(expr) => {
                     let id = self.instantiate_expr(*expr, inst.scope)?;
                     if self.arena.is_numeric(id) { Source::Alias(self.lower(id)) } else { Source::Fixed(f64::NAN) }

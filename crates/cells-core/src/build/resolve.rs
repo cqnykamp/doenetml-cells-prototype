@@ -36,7 +36,7 @@ impl<'c, 'a> Builder<'c, 'a> {
         let p = &self.c.refs[plan];
         let mut sc = scope;
         for _ in 0..p.hops {
-            sc = self.scopes[sc as usize].0;
+            sc = self.scopes[sc].0;
         }
         let mut cur = Resolved::Iter(NONE, sc);
         for step in &p.steps {
@@ -97,9 +97,9 @@ impl<'c, 'a> Builder<'c, 'a> {
                 IndexTerm::Iter(hops) => {
                     let mut s = scope;
                     for _ in 0..*hops {
-                        s = self.scopes[s as usize].0;
+                        s = self.scopes[s].0;
                     }
-                    self.scopes[s as usize].2 as i64
+                    self.scopes[s].2 as i64
                 }
             };
         }

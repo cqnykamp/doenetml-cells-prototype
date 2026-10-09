@@ -41,14 +41,59 @@ pub struct Repeat {
     pub n: u32,
 }
 
+/// Every scope a build has made: (parent scope, repeat or choice element,
+/// 1-based position) per scope, indexed by `ScopeId`; entry 0 is the
+/// document. Ids are stable across rebuilds: the table only grows.
+#[derive(Debug, Clone)]
+pub struct ScopeTable {
+    entries: Vec<(ScopeId, NodeId, u32)>,
+    index: HashMap<(ScopeId, NodeId, u32), ScopeId>,
+}
+
+impl Default for ScopeTable {
+    fn default() -> Self {
+        ScopeTable { entries: vec![(NONE, NONE, 0)], index: HashMap::new() }
+    }
+}
+
+impl ScopeTable {
+    /// The id of position `k` of element `node` under `parent`, created on
+    /// first use.
+    pub fn get_or_insert(&mut self, parent: ScopeId, node: NodeId, k: u32) -> ScopeId {
+        if let Some(&s) = self.index.get(&(parent, node, k)) {
+            return s;
+        }
+        self.entries.push((parent, node, k));
+        let s = (self.entries.len() - 1) as ScopeId;
+        self.index.insert((parent, node, k), s);
+        s
+    }
+
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    pub fn heap_bytes(&self) -> usize {
+        self.entries.capacity() * 12 + self.index.capacity() * 16
+    }
+}
+
+impl std::ops::Index<ScopeId> for ScopeTable {
+    type Output = (ScopeId, NodeId, u32);
+    fn index(&self, s: ScopeId) -> &Self::Output {
+        &self.entries[s as usize]
+    }
+}
+
 /// What a build knew about the document's shape, carried into the next
 /// build so iteration counts and essential values survive.
 #[derive(Debug, Clone, Default)]
 pub struct Structure {
-    /// (parent scope, repeat element, 1-based position) per scope; entry 0
-    /// is the document. Ids are stable across rebuilds: the table only grows.
-    pub scopes: Vec<(ScopeId, NodeId, u32)>,
-    pub scope_index: HashMap<(ScopeId, NodeId, u32), ScopeId>,
+    pub scopes: ScopeTable,
     /// Per essential cell, in cell order: its essential key as (scope,
     /// template slot). The template slot identifies the element and prop
     /// within the scope's template. See `CONTEXT.md`, essential key.

@@ -50,9 +50,7 @@ impl Document {
     /// `load` from a deserialized DAST.
     pub fn load_dast(dast: Arc<Dast>, options: LoadOptions, t: &mut LoadTimings) -> crate::Result<Document> {
         let mut engine = options.engine.unwrap_or_else(|| Box::new(cells_sym::flat::Flat::new()));
-        let mut prior = crate::build::Prior::default();
-        prior.seed = options.seed;
-        prior.sample_with_engine = options.sample_with_engine;
+        let mut prior = crate::build::Prior::new(options.seed, options.sample_with_engine);
         for _ in 0..MAX_PASSES {
             let clock = web_time::Instant::now();
             let unscheduled = crate::build::build(&dast, &prior, &mut *engine)?;

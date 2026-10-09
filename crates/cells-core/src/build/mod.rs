@@ -44,7 +44,7 @@ use cells_sym::{SymEngine, Tree};
 
 use crate::components::{ComponentKind, PropFrom, prop};
 use crate::dast::{Dast, NodeId, NodeKind, StrId, StringTable};
-use crate::document::{CellIdx, CompIdx, ComponentTable, Document, NONE, Repeat, ScopeId, Structure, TEXT_BIT};
+use crate::document::{CellIdx, CompIdx, ComponentTable, Document, NONE, Repeat, ScopeId, ScopeTable, Structure, TEXT_BIT};
 use crate::error::{Error, Result};
 use expr::{Arena, Expr, ExprId, Parser, Token};
 use crate::geo::{Pivot, RigidOpts, VecOp};
@@ -435,36 +435,36 @@ struct Compiler<'a> {
 /// and reappears comes back as it was left.
 #[derive(Debug, Clone, Default)]
 pub struct Prior {
-    scopes: Vec<(ScopeId, NodeId, u32)>,
-    scope_index: HashMap<(ScopeId, NodeId, u32), ScopeId>,
+    /// The last build's structure: its scope table, seed and options, and in
+    /// `values` every essential value it held.
+    structure: Structure,
     counts: HashMap<(ScopeId, NodeId), u32>,
-    /// The document seed load-time choices draw from (plan 6).
-    pub seed: u64,
-    /// See `LoadOptions::sample_with_engine`.
-    pub sample_with_engine: bool,
-    /// `values[scope][template slot]`
-    values: Vec<Vec<Option<f64>>>,
 }
 
 impl Prior {
-    /// Build a prior from a document, moving its value store out (the
+    /// The prior of a first build.
+    pub fn new(seed: u64, sample_with_engine: bool) -> Prior {
+        Prior { structure: Structure { seed, sample_with_engine, ..Structure::default() }, counts: HashMap::new() }
+    }
+
+    /// Build a prior from a document, moving its structure out (the
     /// document is about to be replaced). `restore` puts it back on error.
     pub fn take_from(doc: &mut Document) -> Prior {
         let counts = doc.structure.repeats.iter().map(|r| ((r.scope, r.node), doc.repeat_count(r))).collect();
-        let mut values = std::mem::take(&mut doc.structure.values);
-        values.resize(doc.structure.scopes.len(), Vec::new());
-        for (&(scope, slot), &v) in doc.structure.essential_slots.iter().zip(&doc.cells[..doc.n_essential]) {
-            let row = &mut values[scope as usize];
+        let mut structure = std::mem::take(&mut doc.structure);
+        structure.values.resize(structure.scopes.len(), Vec::new());
+        for (&(scope, slot), &v) in structure.essential_slots.iter().zip(&doc.cells[..doc.n_essential]) {
+            let row = &mut structure.values[scope as usize];
             if row.len() <= slot as usize {
                 row.resize(slot as usize + 1, None);
             }
             row[slot as usize] = Some(v);
         }
-        Prior { scopes: doc.structure.scopes.clone(), scope_index: doc.structure.scope_index.clone(), counts, values, seed: doc.structure.seed, sample_with_engine: doc.structure.sample_with_engine }
+        Prior { structure, counts }
     }
 
     pub fn restore(self, doc: &mut Document) {
-        doc.structure.values = self.values;
+        doc.structure = self.structure;
     }
 }
 
@@ -605,9 +605,8 @@ struct Builder<'c, 'a> {
     /// Owning component of each slot (prop index = slot - slot_base[comp]).
     slot_comp: Vec<CompIdx>,
     op_inputs: Vec<SlotId>,
-    /// Scope table: (parent, repeat element, position); carried over and extended.
-    scopes: Vec<(ScopeId, NodeId, u32)>,
-    scope_index: HashMap<(ScopeId, NodeId, u32), ScopeId>,
+    /// Carried over from the prior build and extended.
+    scopes: ScopeTable,
     /// Per scope: element -> component, for the scope's template.
     scope_comps: Vec<Vec<CompIdx>>,
     /// Per component: index into `instances`, or NONE for synthesized ones.

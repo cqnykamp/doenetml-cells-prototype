@@ -18,7 +18,7 @@ pub mod reference;
 pub mod snap;
 pub mod test_utils;
 
-pub use document::{CellIdx, Child, CompIdx, ComponentTable, Document, LoadOptions, LoadTimings, NONE, Repeat, Request, ScopeId, Structure, TEXT_BIT, Tick};
+pub use document::{CellIdx, Child, CompIdx, ComponentTable, Document, LoadOptions, LoadTimings, NONE, Repeat, Request, ScopeId, ScopeTable, Structure, TEXT_BIT, Tick};
 pub use error::{Error, Result};
 pub use eval::{DirtyClosure, Evaluator, FullRecompute};
 pub use geo::{Pivot, Produced, RigidOpts, VecOp};
