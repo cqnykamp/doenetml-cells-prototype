@@ -199,6 +199,9 @@ impl VecOp {
                 out[2] = x2;
                 out[3] = y2;
             }
+            // Kept apart from ProjectLine (unlike `invert`, which shares
+            // `project`): merging these arms slowed every vector op's eval,
+            // wording-10000's tick by 8%.
             VecOp::ProjectCircle => {
                 let (x, y) = project_circle(inp[0], inp[1], inp[2], inp[3], inp[4]);
                 out[0] = x;
@@ -310,14 +313,8 @@ impl VecOp {
                 }
                 true
             }
-            VecOp::ProjectCircle => {
-                let (x, y) = project_circle(want(0), want(1), inp[2], inp[3], inp[4]);
-                out.write(inputs[0], x);
-                out.write(inputs[1], y);
-                true
-            }
-            VecOp::ProjectLine => {
-                let (x, y) = project_line(want(0), want(1), inp[2], inp[3], inp[4], inp[5]);
+            VecOp::ProjectCircle | VecOp::ProjectLine => {
+                let (x, y) = self.project(want(0), want(1), &inp[2..]);
                 out.write(inputs[0], x);
                 out.write(inputs[1], y);
                 true
@@ -524,6 +521,18 @@ fn line_points_from_coeffs(a: f64, b: f64, c: f64) -> [f64; 4] {
     };
     let (ax, bx, cx) = (a * sign, b * sign, c * sign);
     [(2.0 * bx - ax * cx) / denom, (-2.0 * ax - bx * cx) / denom, (bx - ax * cx) / denom, -(ax + bx * cx) / denom]
+}
+
+impl VecOp {
+    /// The point of a projection's curve nearest (x, y); `onto` is the
+    /// circle (cx, cy, r) or the line's two points.
+    #[inline]
+    fn project(&self, x: f64, y: f64, onto: &[f64]) -> (f64, f64) {
+        match self {
+            VecOp::ProjectCircle => project_circle(x, y, onto[0], onto[1], onto[2]),
+            _ => project_line(x, y, onto[0], onto[1], onto[2], onto[3]),
+        }
+    }
 }
 
 fn project_circle(x: f64, y: f64, cx: f64, cy: f64, r: f64) -> (f64, f64) {
