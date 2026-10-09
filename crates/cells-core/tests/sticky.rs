@@ -182,3 +182,27 @@ fn a_member_computed_from_another_member() {
     drag(&mut doc, "pg", &from, [1.0, 1.0]);
     assert_eq!((v(&doc, "A", "x"), v(&doc, "A", "y")), (1.0, 1.0));
 }
+
+/// The current core's members are the group's children after composites
+/// expand: a select's chosen contents and a conditionalContent's active
+/// case, not an inactive one (checked against the current core).
+#[test]
+fn members_inside_choices_follow_the_active_case() {
+    let mut doc = load(
+        r#"<booleanInput name="b" value="true"/>
+        <graph name="g"><stickyGroup name="sg">
+          <point name="A">(0,0)</point>
+          <conditionalContent name="cc"><case condition="$b"><point name="B">(5,5)</point></case></conditionalContent>
+          <select name="s"><option><point name="C">(-5,-5)</point></option></select>
+        </stickyGroup></graph>"#,
+    )
+    .unwrap();
+    let a = |doc: &cells_core::Document| (v(doc, "g.sg.A", "x"), v(doc, "g.sg.A", "y"));
+    move_point(&mut doc, "g.sg.A", 4.8, 4.9);
+    assert_eq!(a(&doc), (5.0, 5.0));
+    move_point(&mut doc, "g.sg.A", -4.8, -4.9);
+    assert_eq!(a(&doc), (-5.0, -5.0));
+    set(&mut doc, "b", "value", 0.0);
+    move_point(&mut doc, "g.sg.A", 4.8, 4.9);
+    assert_eq!(a(&doc), (4.8, 4.9));
+}

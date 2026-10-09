@@ -105,13 +105,14 @@ impl Components {
         self.kind.is_empty()
     }
 
-    /// A sticky group's members: its children that take part, with repeats
-    /// and collects replaced by what they expanded to, as the current core's
-    /// composites are.
-    pub fn sticky_members(&self, group: CompIdx) -> Vec<CompIdx> {
+    /// A sticky group's members: its children that take part, with repeats,
+    /// collects, groups and choices replaced by what they expanded to, as
+    /// the current core's composites are. Each comes with the `active`
+    /// cells of the cases it sits in: it is a member while they are all 1.
+    pub fn sticky_members(&self, group: CompIdx) -> Vec<(CompIdx, Vec<CellIdx>)> {
         let mut out = Vec::new();
-        let mut stack = vec![group];
-        while let Some(c) = stack.pop() {
+        let mut stack = vec![(group, Vec::new())];
+        while let Some((c, gates)) = stack.pop() {
             let start = self.child_start[c as usize] as usize;
             let kids = &self.child_list[start..start + self.child_count[c as usize] as usize];
             for &k in kids.iter().rev() {
@@ -119,8 +120,12 @@ impl Components {
                     continue;
                 }
                 match self.kind[k as usize] {
-                    ComponentKind::RepeatForSequence | ComponentKind::Collect => stack.push(k),
-                    kind if kind.sticky_layout().is_some() => out.push(k),
+                    ComponentKind::RepeatForSequence | ComponentKind::Collect | ComponentKind::Group | ComponentKind::Select | ComponentKind::ConditionalContent => stack.push((k, gates.clone())),
+                    ComponentKind::Case => {
+                        let active = self.prop_cells[self.prop_base[k as usize] as usize];
+                        stack.push((k, [gates.as_slice(), &[active]].concat()));
+                    }
+                    kind if kind.sticky_layout().is_some() => out.push((k, gates.clone())),
                     _ => {}
                 }
             }

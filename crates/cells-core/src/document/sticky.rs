@@ -6,6 +6,7 @@
 //! response to a drag, and the pre-pass sees drags as the renderer sends
 //! them.
 
+use std::borrow::Cow;
 use std::collections::HashSet;
 
 use super::*;
@@ -26,6 +27,8 @@ pub struct StickyTable {
     points: Vec<[CellIdx; 2]>,
     /// Member cell -> (point, coordinate).
     index: HashMap<CellIdx, (u32, u8)>,
+    /// Per member, the `active` cells of the cases it sits in.
+    gates: Vec<Vec<CellIdx>>,
 }
 
 impl Document {
@@ -39,12 +42,12 @@ impl Document {
             if self.kind(g) != ComponentKind::StickyGroup {
                 continue;
             }
-            let mut t = StickyTable { threshold: self.comp_cells(g)[0], relative: self.comp_cells(g)[1], bounds: None, members: Vec::new(), points: Vec::new(), index: HashMap::new() };
+            let mut t = StickyTable { threshold: self.comp_cells(g)[0], relative: self.comp_cells(g)[1], bounds: None, members: Vec::new(), points: Vec::new(), index: HashMap::new(), gates: Vec::new() };
             if let Some(p) = self.parent(g).filter(|&p| self.kind(p) == ComponentKind::Graph) {
                 let c = self.comp_cells(p);
                 t.bounds = Some([c[0], c[1], c[2], c[3]]);
             }
-            for m in self.comps.sticky_members(g) {
+            for (m, gates) in self.comps.sticky_members(g) {
                 let kind = self.kind(m);
                 let (shape, first, max) = kind.sticky_layout().unwrap();
                 let cells = self.comp_cells(m);
@@ -66,6 +69,7 @@ impl Document {
                     ids.push(id);
                 }
                 t.members.push(Member { shape, rigid, points: ids });
+                t.gates.push(gates);
             }
             let mut key: Vec<CellIdx> = t.points.iter().map(|p| p[0]).collect();
             key.sort_unstable();
@@ -105,7 +109,13 @@ impl Document {
             let bounds = t.bounds.map(|b| b.map(cur)).unwrap_or([f64::NAN; 4]);
             let params = Params::new(cur(t.threshold), cur(t.relative) != 0.0, bounds);
             let mut snapped: HashMap<CellIdx, f64> = HashMap::new();
-            for (id, [x, y]) in snap_group(&t.members, &current, &requested, &params).into_iter().flatten() {
+            // Members in an inactive case are not there, in the current core.
+            let members: Cow<[Member]> = if t.gates.iter().all(Vec::is_empty) {
+                Cow::Borrowed(&t.members)
+            } else {
+                Cow::Owned(t.members.iter().zip(&t.gates).filter(|(_, g)| g.iter().all(|&c| cur(c) == 1.0)).map(|(m, _)| m.clone()).collect())
+            };
+            for (id, [x, y]) in snap_group(&members, &current, &requested, &params).into_iter().flatten() {
                 let [cx, cy] = t.points[id as usize];
                 snapped.insert(cx, x);
                 snapped.insert(cy, y);
