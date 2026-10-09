@@ -1,7 +1,86 @@
 //! The component table as a renderer or a test reads it: kinds, names,
-//! children, prop cells, and resolution of dotted paths to components.
+//! children and prop cells.
 
 use super::*;
+
+/// The component table as parallel arrays indexed by `CompIdx`. Props are implicit:
+/// component `c` of kind `k` owns `prop_cells[prop_base[c] + i]` for each
+/// `i` in `k.prop_defs()`.
+#[derive(Debug, Clone, Default)]
+pub struct ComponentTable {
+    pub kind: Vec<ComponentKind>,
+    /// String id of the name, or `NONE`.
+    pub name: Vec<StrId>,
+    pub parent: Vec<CompIdx>,
+    pub prop_base: Vec<u32>,
+    pub prop_cells: Vec<CellIdx>,
+    pub child_start: Vec<u32>,
+    pub child_count: Vec<u32>,
+    /// Component indices, or `TEXT_BIT | string id` for text children.
+    pub child_list: Vec<u32>,
+    /// DAST element each component came from (NONE if synthesized) and the
+    /// scope it was created in. Together they identify a component across
+    /// rebuilds, which lets a renderer keep its tree keyed by identity.
+    pub node: Vec<u32>,
+    pub scope: Vec<ScopeId>,
+}
+
+impl ComponentTable {
+    pub fn len(&self) -> usize {
+        self.kind.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.kind.is_empty()
+    }
+
+    /// A sticky group's members: its children that take part, with repeats,
+    /// collects, groups and choices replaced by what they expanded to, as
+    /// the current core's composites are. Each comes with the `active`
+    /// cells of the cases it sits in: it is a member while they are all 1.
+    pub fn sticky_members(&self, group: CompIdx) -> Vec<(CompIdx, Vec<CellIdx>)> {
+        let mut out = Vec::new();
+        let mut stack = vec![(group, Vec::new())];
+        while let Some((c, gates)) = stack.pop() {
+            let start = self.child_start[c as usize] as usize;
+            let kids = &self.child_list[start..start + self.child_count[c as usize] as usize];
+            for &k in kids.iter().rev() {
+                if k & TEXT_BIT != 0 {
+                    continue;
+                }
+                match self.kind[k as usize] {
+                    ComponentKind::RepeatForSequence | ComponentKind::Collect | ComponentKind::Group | ComponentKind::Select | ComponentKind::ConditionalContent => stack.push((k, gates.clone())),
+                    ComponentKind::Case => {
+                        let active = self.prop_cells[self.prop_base[k as usize] as usize + prop::case::ACTIVE];
+                        stack.push((k, [gates.as_slice(), &[active]].concat()));
+                    }
+                    kind if kind.sticky_layout().is_some() => out.push((k, gates.clone())),
+                    _ => {}
+                }
+            }
+        }
+        out
+    }
+
+    pub fn heap_bytes(&self) -> usize {
+        self.kind.capacity() * std::mem::size_of::<ComponentKind>()
+            + 4 * (self.name.capacity()
+                + self.parent.capacity()
+                + self.prop_base.capacity()
+                + self.prop_cells.capacity()
+                + self.child_start.capacity()
+                + self.child_count.capacity()
+                + self.child_list.capacity()
+                + self.node.capacity()
+                + self.scope.capacity())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Child<'a> {
+    Component(CompIdx),
+    Text(&'a str),
+}
 
 impl Document {
     pub fn n_components(&self) -> usize {

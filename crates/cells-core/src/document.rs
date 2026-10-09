@@ -13,8 +13,14 @@ use crate::dast::{Dast, NodeId, StrId, StringTable};
 use crate::invert::PointRequest;
 use crate::program::Program;
 
+mod load;
+mod paths;
+mod sections;
 mod sticky;
 mod table;
+
+pub use load::{LoadOptions, LoadTimings};
+pub use table::{Child, ComponentTable};
 
 pub type CellIdx = u32;
 pub type CompIdx = u32;
@@ -77,85 +83,6 @@ pub const NONE: u32 = u32::MAX;
 /// Set on a `child_list` entry whose low bits are a string id, not a component.
 pub const TEXT_BIT: u32 = 1 << 31;
 
-/// The component table as parallel arrays indexed by `CompIdx`. Props are implicit:
-/// component `c` of kind `k` owns `prop_cells[prop_base[c] + i]` for each
-/// `i` in `k.prop_defs()`.
-#[derive(Debug, Clone, Default)]
-pub struct ComponentTable {
-    pub kind: Vec<ComponentKind>,
-    /// String id of the name, or `NONE`.
-    pub name: Vec<StrId>,
-    pub parent: Vec<CompIdx>,
-    pub prop_base: Vec<u32>,
-    pub prop_cells: Vec<CellIdx>,
-    pub child_start: Vec<u32>,
-    pub child_count: Vec<u32>,
-    /// Component indices, or `TEXT_BIT | string id` for text children.
-    pub child_list: Vec<u32>,
-    /// DAST element each component came from (NONE if synthesized) and the
-    /// scope it was created in. Together they identify a component across
-    /// rebuilds, which lets a renderer keep its tree keyed by identity.
-    pub node: Vec<u32>,
-    pub scope: Vec<ScopeId>,
-}
-
-impl ComponentTable {
-    pub fn len(&self) -> usize {
-        self.kind.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.kind.is_empty()
-    }
-
-    /// A sticky group's members: its children that take part, with repeats,
-    /// collects, groups and choices replaced by what they expanded to, as
-    /// the current core's composites are. Each comes with the `active`
-    /// cells of the cases it sits in: it is a member while they are all 1.
-    pub fn sticky_members(&self, group: CompIdx) -> Vec<(CompIdx, Vec<CellIdx>)> {
-        let mut out = Vec::new();
-        let mut stack = vec![(group, Vec::new())];
-        while let Some((c, gates)) = stack.pop() {
-            let start = self.child_start[c as usize] as usize;
-            let kids = &self.child_list[start..start + self.child_count[c as usize] as usize];
-            for &k in kids.iter().rev() {
-                if k & TEXT_BIT != 0 {
-                    continue;
-                }
-                match self.kind[k as usize] {
-                    ComponentKind::RepeatForSequence | ComponentKind::Collect | ComponentKind::Group | ComponentKind::Select | ComponentKind::ConditionalContent => stack.push((k, gates.clone())),
-                    ComponentKind::Case => {
-                        let active = self.prop_cells[self.prop_base[k as usize] as usize + prop::case::ACTIVE];
-                        stack.push((k, [gates.as_slice(), &[active]].concat()));
-                    }
-                    kind if kind.sticky_layout().is_some() => out.push((k, gates.clone())),
-                    _ => {}
-                }
-            }
-        }
-        out
-    }
-
-    pub fn heap_bytes(&self) -> usize {
-        self.kind.capacity() * std::mem::size_of::<ComponentKind>()
-            + 4 * (self.name.capacity()
-                + self.parent.capacity()
-                + self.prop_base.capacity()
-                + self.prop_cells.capacity()
-                + self.child_start.capacity()
-                + self.child_count.capacity()
-                + self.child_list.capacity()
-                + self.node.capacity()
-                + self.scope.capacity())
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Child<'a> {
-    Component(CompIdx),
-    Text(&'a str),
-}
-
 #[derive(Debug, Clone)]
 pub struct Document {
     /// All cells. Essential cells come first, then fixed, then derived.
@@ -201,31 +128,6 @@ pub struct Tick {
     pub rebuild_error: Option<String>,
 }
 
-/// How to load a document. The default: engine A, seed 0, curves compiled.
-#[derive(Default)]
-pub struct LoadOptions {
-    /// The symbolic engine; engine A when None.
-    pub engine: Option<Box<dyn SymEngine>>,
-    /// The document seed load-time choices draw from (plan 6): one seed
-    /// gives one variant of the document.
-    pub seed: u64,
-    /// Sample curves through the engine instead of tapes compiled at build
-    /// time (plan 5, change 1); for checking the tapes and for measuring.
-    pub sample_with_engine: bool,
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-pub struct LoadTimings {
-    pub deserialize: Duration,
-    pub build: Duration,
-    pub schedule: Duration,
-    pub initial_compute: Duration,
-    /// Build passes until repeat counts settled (1 without repeats).
-    pub passes: u32,
-    /// `Structure::structural_depth` of the settled document.
-    pub structural_depth: u32,
-}
-
 impl Document {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(cells: Vec<f64>, n_essential: usize, n_fixed: usize, program: Program, comps: ComponentTable, strings: StringTable, root: CompIdx, structure: Structure, dast: Arc<Dast>) -> Self {
@@ -245,65 +147,6 @@ impl Document {
         doc
     }
 
-    /// Load from either wire format (JSON or binary), detected by content,
-    /// with the default options.
-    pub fn from_bytes(bytes: &[u8]) -> crate::Result<Document> {
-        Ok(Self::load(bytes, LoadOptions::default())?.0)
-    }
-
-    /// Load from either wire format, timing each stage separately. Build,
-    /// schedule and compute repeat until every repeat's iteration count
-    /// matches its `count` cell; the timings sum over passes.
-    pub fn load(bytes: &[u8], options: LoadOptions) -> crate::Result<(Document, LoadTimings)> {
-        let mut t = LoadTimings::default();
-        let clock = web_time::Instant::now();
-        let dast = Arc::new(crate::dast::load(bytes)?);
-        t.deserialize = clock.elapsed();
-        let doc = Self::load_dast(dast, options, &mut t)?;
-        Ok((doc, t))
-    }
-
-    /// `load` from a deserialized DAST.
-    pub fn load_dast(dast: Arc<Dast>, options: LoadOptions, t: &mut LoadTimings) -> crate::Result<Document> {
-        let mut engine = options.engine.unwrap_or_else(|| Box::new(cells_sym::flat::Flat::new()));
-        let mut prior = crate::build::Prior::default();
-        prior.seed = options.seed;
-        prior.sample_with_engine = options.sample_with_engine;
-        for _ in 0..MAX_PASSES {
-            let clock = web_time::Instant::now();
-            let unscheduled = crate::build::build(&dast, &prior, &mut *engine)?;
-            t.build += clock.elapsed();
-
-            let clock = web_time::Instant::now();
-            let mut doc = unscheduled.schedule(dast.clone(), &mut engine)?;
-            t.schedule += clock.elapsed();
-
-            let clock = web_time::Instant::now();
-            doc.recompute();
-            t.initial_compute += clock.elapsed();
-            t.passes += 1;
-            if doc.structure_settled() {
-                t.structural_depth = doc.structure.structural_depth;
-                return Ok(doc);
-            }
-            prior = crate::build::Prior::take_from(&mut doc);
-            engine = doc.take_engine();
-        }
-        Err(crate::Error::UnstableStructure(MAX_PASSES))
-    }
-
-    /// Move the symbolic engine out, leaving an empty one (the document is
-    /// about to be replaced by a rebuild).
-    fn take_engine(&mut self) -> Box<dyn SymEngine> {
-        std::mem::take(&mut self.program.sym).into_engine()
-    }
-
-    fn put_engine(&mut self, engine: Box<dyn SymEngine>) {
-        self.program.sym = crate::program::Sym::new(engine);
-        // The memo was dropped with the old `Sym`: recompute so it refills.
-        self.program.run_all(&mut self.cells);
-    }
-
     /// Name of the symbolic engine ("A" or "R").
     pub fn engine_name(&self) -> &'static str {
         self.program.sym.engine.borrow().name()
@@ -319,124 +162,6 @@ impl Document {
     pub fn math_text(&self, cell: CellIdx) -> String {
         let h = self.cells[cell as usize];
         if h.is_nan() { String::new() } else { self.program.sym.engine.borrow().text(h as cells_sym::Handle) }
-    }
-
-    /// Submit an answer: an ordinary request copying the live response
-    /// handle into its `submitted` cell.
-    pub fn submit(&mut self, answer: CompIdx) -> Tick {
-        let cells = self.comp_cells(answer);
-        let (response, submitted) = (cells[prop::answer::RESPONSE], cells[prop::answer::SUBMITTED]);
-        let value = self.cells[response as usize];
-        self.request(&[Request { cell: submitted, value }])
-    }
-
-    /// A section's full number, such as "2.1": its own `number` cell,
-    /// after its nearest section ancestor's full number when it includes
-    /// its parent's (`build/scoring.rs`). None for other components.
-    pub fn section_number(&self, c: CompIdx) -> Option<String> {
-        if self.kind(c) != ComponentKind::Section {
-            return None;
-        }
-        let cells = self.comp_cells(c);
-        let own = self.cells[cells[prop::section::NUMBER] as usize].to_string();
-        if self.cells[cells[prop::section::INCLUDE_PARENT_NUMBER] as usize] == 0.0 {
-            return Some(own);
-        }
-        let mut p = self.parent(c);
-        while let Some(x) = p {
-            if self.kind(x) == ComponentKind::Section {
-                return Some(format!("{}.{own}", self.section_number(x)?));
-            }
-            p = self.parent(x);
-        }
-        Some(own)
-    }
-
-    /// A section's automatic title, such as "Section 2.1" or "Problem 3".
-    pub fn section_title(&self, c: CompIdx) -> Option<String> {
-        let number = self.section_number(c)?;
-        let label = self.cells[self.comp_cells(c)[prop::section::LABEL] as usize] as usize;
-        Some(format!("{} {number}", crate::components::SECTION_TAGS[label].1))
-    }
-
-    /// Authoring warnings about the loaded document. Today: repeats whose
-    /// count reads a cell inside another repeat's iterations, since each
-    /// such link costs a full extra build pass and, unlike nesting, is
-    /// avoidable (see `Structure::repeat_depths`).
-    pub fn warnings(&self) -> Vec<String> {
-        let st = &self.structure;
-        let mut out = Vec::new();
-        for ((r, &d), &cross) in st.repeats.iter().zip(&st.repeat_depths).zip(&st.repeat_cross_reads) {
-            if cross {
-                let name = self.name(r.comp).map(str::to_string).unwrap_or_else(|| format!("<repeatForSequence>#{}", r.comp));
-                out.push(format!("repeat '{name}' has structural depth {d}: its count reads a cell inside another repeat's iterations, so a change there costs {d} build passes instead of one"));
-            }
-        }
-        out
-    }
-
-    /// Whether every repeat was expanded with the iteration count its
-    /// `count` cell now holds.
-    pub fn structure_settled(&self) -> bool {
-        self.structure.repeats.iter().all(|r| self.repeat_count(r) == r.n)
-    }
-
-    /// The iteration count a repeat's `count` cell currently asks for.
-    pub fn repeat_count(&self, r: &Repeat) -> u32 {
-        let pi = ComponentKind::RepeatForSequence.prop_index("count").unwrap();
-        let v = self.cells[self.comp_cells(r.comp)[pi] as usize];
-        if v.is_nan() || v < 0.0 { 0 } else { v.min(u32::MAX as f64) as u32 }
-    }
-
-    /// Rebuild from the retained DAST, carrying iteration counts and
-    /// essential values over. On error the document is left unchanged.
-    pub fn rebuild(&mut self) -> crate::Result<()> {
-        let profile = std::env::var_os("CELLS_BUILD_PROFILE").is_some();
-        let dast = self.dast.clone();
-        let clock = web_time::Instant::now();
-        // The value store and the engine move into the new build; on
-        // failure they move back.
-        let mut prior = crate::build::Prior::take_from(self);
-        let mut engine = self.take_engine();
-        if profile {
-            eprintln!("rebuild/prior: {:.2?}", clock.elapsed());
-        }
-        let result = (|| {
-            for _ in 0..MAX_PASSES {
-                let clock = web_time::Instant::now();
-                let u = crate::build::build(&dast, &prior, &mut *engine)?;
-                if profile {
-                    eprintln!("rebuild/build: {:.2?}", clock.elapsed());
-                }
-                let clock = web_time::Instant::now();
-                let mut doc = u.schedule(dast.clone(), &mut engine)?;
-                if profile {
-                    eprintln!("rebuild/schedule: {:.2?} (creation order valid: {})", clock.elapsed(), doc.program.in_creation_order);
-                }
-                let clock = web_time::Instant::now();
-                doc.recompute();
-                if profile {
-                    eprintln!("rebuild/recompute: {:.2?}", clock.elapsed());
-                }
-                if doc.structure_settled() {
-                    return Ok(doc);
-                }
-                prior = crate::build::Prior::take_from(&mut doc);
-                engine = doc.take_engine();
-            }
-            Err(crate::Error::UnstableStructure(MAX_PASSES))
-        })();
-        match result {
-            Ok(doc) => {
-                *self = doc;
-                Ok(())
-            }
-            Err(e) => {
-                prior.restore(self);
-                self.put_engine(engine);
-                Err(e)
-            }
-        }
     }
 
     /// A `<mathInput>` holds any math value, infinity included; every other
@@ -517,158 +242,6 @@ impl Document {
             }
         }
         tick
-    }
-
-    /// Resolve a dotted path as the current core's tests write it
-    /// (`"g.Ps[2]"`, `"circle1"`, `"r[3].p"`): a name is visible from the
-    /// scope of its nearest named ancestor outward; `[k]` picks the k-th
-    /// iteration of a repeat or the k-th child of a collect or point list.
-    pub fn resolve_path(&self, path: &str) -> Option<CompIdx> {
-        let mut cur: Option<CompIdx> = None;
-        // After `r[3]` on a repeat: the iteration a following name picks from.
-        let mut iteration: Option<ScopeId> = None;
-        for part in path.split('.') {
-            let (name, indices) = match part.find('[') {
-                Some(i) => (&part[..i], &part[i..]),
-                None => (part, ""),
-            };
-            if !name.is_empty() {
-                cur = Some(match (cur, iteration.take()) {
-                    (Some(repeat), Some(scope)) => self
-                        .children(repeat)
-                        .filter_map(|ch| match ch {
-                            Child::Component(c) if self.comps.scope[c as usize] == scope && self.name(c) == Some(name) => Some(c),
-                            _ => None,
-                        })
-                        .next()?,
-                    (scope, None) => self.find_in_scope(scope, name)?,
-                    (None, Some(_)) => unreachable!("an iteration always follows a repeat"),
-                });
-            }
-            for idx in indices.trim_end_matches(']').split(']').filter(|s| !s.is_empty()) {
-                let k: usize = idx.trim_start_matches('[').parse().ok()?;
-                let c = cur?;
-                // `s[1][2]`: the second component of the first pick.
-                if let Some(scope) = iteration.take() {
-                    cur = Some(self.iteration(c, scope).into_iter().nth(k.checked_sub(1)?)?);
-                    continue;
-                }
-                match self.kind(c) {
-                    ComponentKind::RepeatForSequence => {
-                        let r = self.structure.repeats.iter().find(|r| r.comp == c)?;
-                        iteration = Some(*r.iter_scopes.get(k.checked_sub(1)?)?);
-                    }
-                    ComponentKind::Select => {
-                        let mut picks: Vec<ScopeId> = Vec::new();
-                        for ch in self.children(c) {
-                            if let Child::Component(x) = ch
-                                && !picks.contains(&self.comps.scope[x as usize])
-                            {
-                                picks.push(self.comps.scope[x as usize]);
-                            }
-                        }
-                        iteration = Some(*picks.get(k.checked_sub(1)?)?);
-                    }
-                    _ => {
-                        cur = self
-                            .children(c)
-                            .filter_map(|ch| match ch {
-                                Child::Component(cc) => Some(cc),
-                                _ => None,
-                            })
-                            .nth(k.checked_sub(1)?);
-                    }
-                }
-            }
-        }
-        // A path ending at `r[3]` names the iteration's single component.
-        match (cur, iteration) {
-            (Some(repeat), Some(scope)) => match self.iteration(repeat, scope).as_slice() {
-                [c] => Some(*c),
-                _ => None,
-            },
-            _ => cur,
-        }
-    }
-
-    /// The components one iteration of a repeat (or one pick of a select)
-    /// contributes.
-    fn iteration(&self, repeat: CompIdx, scope: ScopeId) -> Vec<CompIdx> {
-        self.children(repeat)
-            .filter_map(|ch| match ch {
-                Child::Component(c) if self.comps.scope[c as usize] == scope => Some(c),
-                _ => None,
-            })
-            .collect()
-    }
-
-    /// The unique component named `name` visible from `scope` (None: the
-    /// document): a descendant not hidden inside a repeat, or `scope`
-    /// itself. Several visible matches are ambiguous and resolve to nothing,
-    /// except that repeat iterations fall back to the first in document
-    /// order so plain names inside a repeat keep working for tests.
-    fn find_in_scope(&self, scope: Option<CompIdx>, name: &str) -> Option<CompIdx> {
-        if let Some(sc) = scope
-            && self.name(sc) == Some(name)
-        {
-            return Some(sc);
-        }
-        let matches: Vec<CompIdx> = (0..self.comps.len() as CompIdx).filter(|&c| self.name(c) == Some(name) && self.visible_from(scope, c)).collect();
-        match matches.as_slice() {
-            [c] => Some(*c),
-            [] => (0..self.comps.len() as CompIdx).find(|&c| self.name(c) == Some(name) && self.is_descendant(scope, c)),
-            many => {
-                // Children of a container copy are reached through the copy's
-                // name; among bare matches only originals count.
-                let originals: Vec<CompIdx> = many.iter().copied().filter(|&c| !self.inside_copy(scope, c)).collect();
-                if originals.len() == 1 { Some(originals[0]) } else { None }
-            }
-        }
-    }
-
-    /// Whether `c` is below `scope` with no repeat strictly between them.
-    fn visible_from(&self, scope: Option<CompIdx>, c: CompIdx) -> bool {
-        let mut p = self.parent(c);
-        while let Some(pc) = p {
-            if Some(pc) == scope {
-                return true;
-            }
-            if self.kind(pc) == ComponentKind::RepeatForSequence {
-                return false;
-            }
-            // A built case that is not the active one is not there.
-            if self.kind(pc) == ComponentKind::Case && self.cells[self.comp_cells(pc)[prop::case::ACTIVE] as usize] != 1.0 {
-                return false;
-            }
-            p = self.parent(pc);
-        }
-        scope.is_none()
-    }
-
-    /// Whether a synthesized (copied) component lies between `scope` and `c`.
-    fn inside_copy(&self, scope: Option<CompIdx>, c: CompIdx) -> bool {
-        let mut cur = Some(c);
-        while let Some(x) = cur {
-            if Some(x) == scope {
-                return false;
-            }
-            if self.comps.node[x as usize] == NONE && self.kind(x) != ComponentKind::Document {
-                return true;
-            }
-            cur = self.parent(x);
-        }
-        false
-    }
-
-    fn is_descendant(&self, scope: Option<CompIdx>, c: CompIdx) -> bool {
-        let mut p = self.parent(c);
-        while let Some(pc) = p {
-            if Some(pc) == scope {
-                return true;
-            }
-            p = self.parent(pc);
-        }
-        scope.is_none()
     }
 }
 
