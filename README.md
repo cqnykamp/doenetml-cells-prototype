@@ -41,6 +41,10 @@ See `docs/plan-2.md` for the second round's scope and decisions.
 - `scripts/cdast-encode.mjs` — the DAST to binary encoder, shared by the
   script and the web app.
 - `scripts/gen-fixtures.sh` — generates `fixtures/*.doenet` and `*.json`.
+- `scripts/golden-diff.sh` — runs `cells-bench/examples/golden.rs` (every
+  component's props by tree path, after load and after a fixed script of
+  requests, on `crates/cells-bench/golden/*.doenet` and the smallest fixture of
+  each shape) on the working tree and on a base commit, and diffs them.
 - `scripts/render-results.py` — collects criterion, stats and e2e output into
   `results/raw/` and regenerates `RESULTS.md` (commentary in `results/NOTES.md`).
 
@@ -58,6 +62,8 @@ CELLS_BUILD_PROFILE=1 cargo run --release -p cells-bench --example rebuild_loop 
 cd web && pnpm install && pnpm wasm && pnpm dev     # interactive renderer at :5173
 cd web && pnpm e2e                                  # headless drag measurement
 scripts/render-results.py                           # regenerate RESULTS.md
+scripts/golden-diff.sh [rev]    # behavior dump of every golden document vs a base commit (default HEAD)
+cargo run --release -p cells-bench --example regress -- 50 chain-100000 points-10000 repeat-10000 circles3-10000 sticky-1000 curves-1000 symchain-1000 wording-10000 select-10000 answers-10000   # quick perf check
 ```
 
 Restrict a run with `CELLS_FIXTURES=chain-1000,points-100 cargo bench ...` or
