@@ -7,15 +7,15 @@
 pub mod build;
 pub mod components;
 pub mod dast;
-pub mod document;
-pub mod error;
-pub mod eval;
-pub mod geo;
-pub mod invert;
+mod document;
+mod error;
+mod eval;
+mod geo;
+mod invert;
 pub mod ops;
-pub mod program;
+mod program;
 pub mod reference;
-pub mod snap;
+mod snap;
 pub mod test_utils;
 
 pub use document::{CellIdx, Child, CompIdx, ComponentTable, Document, LoadOptions, LoadTimings, NONE, Repeat, Request, ScopeId, ScopeTable, Structure, TEXT_BIT, Tick};
