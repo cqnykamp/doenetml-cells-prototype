@@ -6,7 +6,7 @@ fn main() {
     for (spec, json) in cells_bench::fixtures() {
         let (doc, t) = Document::load_timed(json.as_bytes()).unwrap();
         let m = doc.memory_estimate();
-        let bin_bytes = std::fs::read(cells_bench::fixtures_dir().join(format!("{spec}.cdast"))).map(|b| b.len()).unwrap_or(0);
+        let bin_bytes = cells_bench::fixture_binary(&spec).map_or(0, |b| b.len());
         println!(
             "{}",
             serde_json::json!({

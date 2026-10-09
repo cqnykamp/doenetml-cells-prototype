@@ -3,7 +3,7 @@ use cells_core::{Document, Request};
 fn main() {
     let spec = std::env::args().nth(1).unwrap_or_else(|| "repeat-10000".into());
     let iters: usize = std::env::args().nth(2).and_then(|s| s.parse().ok()).unwrap_or(50);
-    let json = std::fs::read_to_string(cells_bench::fixtures_dir().join(format!("{spec}.json"))).unwrap();
+    let json = cells_bench::fixture_json(&spec);
     let mut doc = Document::from_dast_json(&json).unwrap();
     let n = doc.value("n", "value").unwrap();
     let t = std::time::Instant::now();

@@ -2,7 +2,7 @@
 use cells_core::{Child, Document};
 fn main() {
     let spec = std::env::args().nth(1).unwrap();
-    let json = std::fs::read_to_string(cells_bench::fixtures_dir().join(format!("{spec}.json"))).unwrap();
+    let json = cells_bench::fixture_json(&spec);
     let doc = Document::from_dast_json(&json).unwrap();
     println!("cells={} essential={} fixed={} instrs={} comps={}", doc.cells.len(), doc.n_essential, doc.n_fixed, doc.program.len(), doc.n_components());
     for c in 0..doc.n_components().min(12) as u32 {

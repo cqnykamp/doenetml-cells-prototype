@@ -4,16 +4,11 @@
 use cells_core::{Document, Request};
 use std::time::Instant;
 
-fn median(mut xs: Vec<f64>) -> f64 {
-    xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    xs[xs.len() / 2]
-}
-
 fn main() {
     let mut args = std::env::args().skip(1);
     let reps: usize = args.next().and_then(|s| s.parse().ok()).unwrap_or(20);
     for spec in args {
-        let bytes = cells_bench::fixture_binary(&spec).unwrap_or_else(|| std::fs::read(cells_bench::fixtures_dir().join(format!("{spec}.json"))).unwrap());
+        let bytes = cells_bench::fixture_bytes(&spec);
         let mut loads = Vec::with_capacity(reps);
         for _ in 0..reps.min(10).max(3) {
             let t = Instant::now();
@@ -29,6 +24,6 @@ fn main() {
             ticks.push(t.elapsed().as_secs_f64() * 1e3);
         }
         let m = doc.memory_estimate();
-        println!("{}", serde_json::json!({ "spec": spec, "load_ms": median(loads), "tick_ms": median(ticks), "bytes": m.total() }));
+        println!("{}", serde_json::json!({ "spec": spec, "load_ms": cells_bench::median(loads), "tick_ms": cells_bench::median(ticks), "bytes": m.total() }));
     }
 }

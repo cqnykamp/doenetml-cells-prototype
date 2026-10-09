@@ -6,14 +6,6 @@
 use cells_core::{Document, Request};
 use std::time::Instant;
 
-fn median(mut xs: Vec<f64>) -> f64 {
-    if xs.is_empty() {
-        return f64::NAN;
-    }
-    xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    xs[xs.len() / 2]
-}
-
 /// The input that flips every choice, and the two values it alternates.
 fn flip_input(spec: &str) -> Option<(&'static str, [f64; 2])> {
     match spec.split('-').next().unwrap() {
@@ -28,7 +20,7 @@ fn main() {
     let mut args = std::env::args().skip(1);
     let reps: usize = args.next().and_then(|s| s.parse().ok()).unwrap_or(20);
     for spec in args {
-        let bytes = cells_bench::fixture_binary(&spec).unwrap_or_else(|| std::fs::read(cells_bench::fixtures_dir().join(format!("{spec}.json"))).unwrap());
+        let bytes = cells_bench::fixture_bytes(&spec);
         let mut loads = Vec::new();
         let mut passes = 0;
         for _ in 0..reps.clamp(3, 7) {
@@ -64,9 +56,9 @@ fn main() {
         println!(
             "{}",
             serde_json::json!({
-                "spec": spec, "load_ms": median(loads), "passes": passes,
+                "spec": spec, "load_ms": cells_bench::median(loads), "passes": passes,
                 "bytes": m_est.total(), "cells": cells, "instrs": instrs, "components": comps,
-                "flip_ms": median(flips), "flip_rebuilt": rebuilt, "drag_ms": median(drags),
+                "flip_ms": cells_bench::median(flips), "flip_rebuilt": rebuilt, "drag_ms": cells_bench::median(drags),
             })
         );
     }

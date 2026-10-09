@@ -10,7 +10,7 @@ fn main() {
     let specs: Vec<String> = std::env::args().skip(1).collect();
     let specs = if specs.is_empty() { vec!["stickyfree-100".into(), "sticky-100".into(), "stickyfree-1000".into(), "sticky-1000".into()] } else { specs };
     for spec in specs {
-        let json = std::fs::read_to_string(cells_bench::fixtures_dir().join(format!("{spec}.json"))).unwrap();
+        let json = cells_bench::fixture_json(&spec);
         let t = Instant::now();
         let base = Document::from_dast_json(&json).unwrap();
         let load = t.elapsed();

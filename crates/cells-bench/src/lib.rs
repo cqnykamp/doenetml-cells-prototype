@@ -12,6 +12,26 @@ pub fn fixture_binary(spec: &str) -> Option<Vec<u8>> {
     std::fs::read(fixtures_dir().join(format!("{spec}.cdast"))).ok()
 }
 
+/// A fixture's DAST JSON.
+pub fn fixture_json(spec: &str) -> String {
+    std::fs::read_to_string(fixtures_dir().join(format!("{spec}.json"))).unwrap_or_else(|e| panic!("{spec}.json: {e}; run scripts/gen-fixtures.sh"))
+}
+
+/// A fixture in the binary wire format if generated, else as JSON bytes;
+/// `Document::from_bytes` takes either.
+pub fn fixture_bytes(spec: &str) -> Vec<u8> {
+    fixture_binary(spec).unwrap_or_else(|| fixture_json(spec).into_bytes())
+}
+
+/// The median of timings; NaN when there are none.
+pub fn median(mut xs: Vec<f64>) -> f64 {
+    if xs.is_empty() {
+        return f64::NAN;
+    }
+    xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    xs[xs.len() / 2]
+}
+
 /// (spec, DAST JSON) for every fixture, sorted by spec name. Set
 /// `CELLS_FIXTURES` to a comma-separated list of specs to restrict the set.
 pub fn fixtures() -> Vec<(String, String)> {
