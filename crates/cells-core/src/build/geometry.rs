@@ -10,10 +10,7 @@ impl<'a> Compiler<'a> {
     /// children; constraint children wrap them in a projection.
     pub(super) fn plan_point(&mut self, t: TemplateId, e: ElemId, base: Option<NodeId>) -> Result<ElemPlan> {
         let d = self.c.dast;
-        let (el, scope) = {
-            let x = &self.c.templates[t].elems[e];
-            (x.node, x.name_scope)
-        };
+        let Elem { node: el, name_scope: scope, .. } = self.c.templates[t].elems[e];
         let mut ch = ElemPlan::new(ComponentKind::Point.prop_defs().len());
         let math_children = |me: &Self, node: NodeId| -> Vec<NodeId> { d.children(node).iter().copied().filter(|&n| !me.is_blank(n) && d.kind(n) != NodeKind::Element).collect() };
         let own_children = math_children(self, el);
@@ -163,10 +160,7 @@ impl<'a> Compiler<'a> {
     /// Dispatch for the geometric kinds.
     pub(super) fn plan_geo(&mut self, t: TemplateId, e: ElemId, extend: Option<PlanId>) -> Result<()> {
         let d = self.c.dast;
-        let (el, kind) = {
-            let x = &self.c.templates[t].elems[e];
-            (x.node, x.kind)
-        };
+        let Elem { node: el, kind, .. } = self.c.templates[t].elems[e];
         // Own attributes other than name and extend, or children, override
         // the referent's; with none, the copy aliases every public prop.
         let own_attrs: Vec<String> = d.attrs(el).map(|a| d.attr_name(a).to_string()).filter(|n| n != "name" && n != "extend").collect();
@@ -382,10 +376,7 @@ impl<'a> Compiler<'a> {
 
     pub(super) fn plan_circle(&mut self, t: TemplateId, e: ElemId, base: Option<NodeId>) -> Result<ElemPlan> {
         let d = self.c.dast;
-        let (el, scope) = {
-            let x = &self.c.templates[t].elems[e];
-            (x.node, x.name_scope)
-        };
+        let Elem { node: el, name_scope: scope, .. } = self.c.templates[t].elems[e];
         let kind = ComponentKind::Circle;
         let center = match self.attr_or_inherited(el, base, "center") {
             Some(a) => Some(match self.single_macro(a) {
@@ -591,10 +582,7 @@ impl<'a> Compiler<'a> {
 
     pub(super) fn plan_line(&mut self, t: TemplateId, e: ElemId, base: Option<NodeId>) -> Result<ElemPlan> {
         let d = self.c.dast;
-        let (el, scope) = {
-            let x = &self.c.templates[t].elems[e];
-            (x.node, x.name_scope)
-        };
+        let Elem { node: el, name_scope: scope, .. } = self.c.templates[t].elems[e];
         let kind = ComponentKind::Line;
         let mut ch = ElemPlan::new(kind.prop_defs().len());
         let through = match self.attr_or_inherited(el, base, "through") {
@@ -763,10 +751,7 @@ impl<'a> Compiler<'a> {
     }
 
     pub(super) fn plan_segment(&mut self, t: TemplateId, e: ElemId, base: Option<NodeId>) -> Result<ElemPlan> {
-        let (el, scope) = {
-            let x = &self.c.templates[t].elems[e];
-            (x.node, x.name_scope)
-        };
+        let Elem { node: el, name_scope: scope, .. } = self.c.templates[t].elems[e];
         let mut ch = ElemPlan::new(ComponentKind::LineSegment.prop_defs().len());
         let ends = match self.attr_or_inherited(el, base, "endpoints") {
             Some(a) => self.plan_point_list(t, scope, a)?,
@@ -786,10 +771,7 @@ impl<'a> Compiler<'a> {
 
     pub(super) fn plan_polygon(&mut self, t: TemplateId, e: ElemId, base: Option<NodeId>) -> Result<ElemPlan> {
         let d = self.c.dast;
-        let (el, scope) = {
-            let x = &self.c.templates[t].elems[e];
-            (x.node, x.name_scope)
-        };
+        let Elem { node: el, name_scope: scope, .. } = self.c.templates[t].elems[e];
         let kind = ComponentKind::Polygon;
         let mut ch = ElemPlan::new(kind.prop_defs().len());
         let vertices = match self.attr_or_inherited(el, base, "vertices") {

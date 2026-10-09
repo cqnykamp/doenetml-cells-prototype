@@ -214,10 +214,7 @@ impl<'a> Compiler<'a> {
 
     pub(super) fn plan_elem(&mut self, t: TemplateId, e: ElemId) -> Result<()> {
         let d = self.c.dast;
-        let (el, kind, scope) = {
-            let x = &self.c.templates[t].elems[e];
-            (x.node, x.kind, x.name_scope)
-        };
+        let Elem { node: el, kind, name_scope: scope, .. } = self.c.templates[t].elems[e];
         match self.elem_shape(t, e)? {
             // Every public prop aliases the original's; nothing else to plan.
             ElemShape::Cloned => {
@@ -280,10 +277,7 @@ impl<'a> Compiler<'a> {
     /// plan on the element.
     fn elem_shape(&mut self, t: TemplateId, e: ElemId) -> Result<ElemShape> {
         let d = self.c.dast;
-        let (el, kind, scope, cloned) = {
-            let x = &self.c.templates[t].elems[e];
-            (x.node, x.kind, x.name_scope, x.cloned)
-        };
+        let Elem { node: el, kind, name_scope: scope, cloned, .. } = self.c.templates[t].elems[e];
         if cloned {
             return Ok(ElemShape::Cloned);
         }
@@ -327,10 +321,7 @@ impl<'a> Compiler<'a> {
     /// computed chains, children.
     pub(super) fn plan_attrs(&mut self, t: TemplateId, e: ElemId, extend: Option<PlanId>) -> Result<()> {
         let d = self.c.dast;
-        let (el, kind, scope) = {
-            let x = &self.c.templates[t].elems[e];
-            (x.node, x.kind, x.name_scope)
-        };
+        let Elem { node: el, kind, name_scope: scope, .. } = self.c.templates[t].elems[e];
         // Without an attribute a prop is the kind's default, or under
         // `extend` the referent's prop.
         let default = |v: f64| if extend.is_some() { SourcePlan::Inherit } else { SourcePlan::Default(v) };
@@ -455,10 +446,7 @@ impl<'a> Compiler<'a> {
     /// x-range of the graph it sits in, else [-10, 10].
     fn plan_symbolic(&mut self, t: TemplateId, e: ElemId) -> Result<()> {
         let d = self.c.dast;
-        let (el, kind, scope) = {
-            let x = &self.c.templates[t].elems[e];
-            (x.node, x.kind, x.name_scope)
-        };
+        let Elem { node: el, kind, name_scope: scope, .. } = self.c.templates[t].elems[e];
         let nodes: Vec<NodeId> = d.children(el).to_vec();
         let id = self.plan_sym_math(t, scope, &nodes)?;
         let mut plan = ElemPlan::new(kind.prop_defs().len());
@@ -509,10 +497,7 @@ impl<'a> Compiler<'a> {
     /// reference aliases another text's value.
     fn plan_text(&mut self, t: TemplateId, e: ElemId) -> Result<()> {
         let d = self.c.dast;
-        let (el, scope) = {
-            let x = &self.c.templates[t].elems[e];
-            (x.node, x.name_scope)
-        };
+        let Elem { node: el, name_scope: scope, .. } = self.c.templates[t].elems[e];
         let nodes: Vec<NodeId> = d.children(el).iter().copied().filter(|&n| !self.is_blank(n)).collect();
         let plan = match nodes.as_slice() {
             [] => SourcePlan::Fixed(f64::NAN),

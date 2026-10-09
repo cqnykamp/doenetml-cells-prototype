@@ -120,8 +120,7 @@ impl<'a> Compiler<'a> {
     pub(super) fn plan_choice(&mut self, t: TemplateId, e: ElemId) -> Result<()> {
         let Body::Choice(cid) = self.c.templates[t].elems[e].body else { unreachable!() };
         let d = self.c.dast;
-        let node = self.c.templates[t].elems[e].node;
-        let scope = self.c.templates[t].elems[e].name_scope;
+        let Elem { node, name_scope: scope, .. } = self.c.templates[t].elems[e];
         let hide = match d.attr(node, "hide") {
             Some(a) if self.attr_text(a).is_some() => SourcePlan::Fixed(if self.attr_flag(node, "hide") { 1.0 } else { 0.0 }),
             Some(a) => self.plan_value(t, scope, "hide", d.attr_children(a), None)?,
