@@ -8,14 +8,25 @@
 //! code of its own: the chain is data, and inversion through it is the
 //! generic operator inverse.
 //!
-//! This file holds the types and the lookups the build uses; `types.rs` holds
-//! the data (every type's prop table and its row in [`COMPONENT_TYPES`]); `prop.rs`
-//! names prop positions for code that reads or sets a prop by position.
+//! This file holds the types, the lookups the build uses, and the list of
+//! every type (`component_types!`). Each type's definition (its docs, its
+//! prop table, its row and its named prop positions) is in a family file:
+//! `containers.rs`, `geometry.rs`, `inputs.rs`, `structure.rs`,
+//! `values.rs`. `define.rs` has the builders they are written with, and
+//! `prop.rs` gathers the named positions.
 
 use crate::program::OpSpec;
 
+mod containers;
+mod define;
+mod geometry;
+mod inputs;
 pub mod prop;
-mod types;
+mod structure;
+mod values;
+
+pub use containers::SECTION_TAGS;
+pub use geometry::MAX_VERTICES;
 
 /// Declares every component type from one list: the `ComponentType` enum,
 /// `ComponentType::ALL`, and `COMPONENT_TYPES`, all in list order. Each
@@ -41,108 +52,69 @@ macro_rules! component_types {
 }
 
 component_types! {
-    Document => types::DOCUMENT,
-    Graph => types::GRAPH,
-    Point => types::POINT,
-    Number => types::NUMBER,
-    NumberInput => types::NUMBER_INPUT,
-    /// Prototype-only tag that applies a numeric operator to referenced cells.
-    Op => types::OP,
-    Slider => types::SLIDER,
-    /// `<repeatForSequence>`: its children are every iteration's expanded
-    /// template, flattened; its `count` prop is the structural cell.
-    RepeatForSequence => types::REPEAT_FOR_SEQUENCE,
-    /// `<collect>`: its children are copies of the collected components.
-    Collect => types::COLLECT,
-    /// The hidden component behind a repeat's `valueName`: `from + (k-1) * step`.
-    SequenceValue => types::SEQUENCE_VALUE,
-    /// A checkbox: its value cell holds 0 or 1 like any other `f64` cell.
-    BooleanInput => types::BOOLEAN_INPUT,
-    /// `<math>`: lowered to a numeric chain in `value` when its expression
-    /// is all numbers and numeric cells (`expr` is then NaN). Otherwise a
-    /// math cell: `expr` holds an engine handle, instantiated from the
-    /// template whenever a leaf changes (then simplified or expanded if the
-    /// attribute says so), and `value` evaluates it (NaN with free symbols).
-    Math => types::MATH,
-    /// `<evaluate function="$m" input="$a"/>`: the math's expression with
-    /// its free symbol set to the input.
-    Evaluate => types::EVALUATE,
-    /// `<mathInput>`: bound to another cell by a child reference or
-    /// `bindValueTo`, it is a numeric input (`expr` NaN). Unbound, its `expr`
-    /// is an essential math cell (typing writes a parsed handle) and `value`
-    /// evaluates it; a request on `value` writes a constant expression.
-    MathInput => types::MATH_INPUT,
-    /// `<circle>`: center and radius are derived or essential depending on
-    /// how the circle is specified (ADR 0006). Chains are planned in `build/compile/geometry/`.
-    Circle => types::CIRCLE,
-    /// `<line>`: its own two points are derived cells (ADR 0006); slope,
-    /// intercepts and coefficients follow from them or from the equation.
-    Line => types::LINE,
-    /// `<lineSegment endpoints="$a $b">`.
-    LineSegment => types::LINE_SEGMENT,
-    /// `<polygon vertices="...">`, optionally rigid. Up to `MAX_VERTICES`.
-    Polygon => types::POLYGON,
-    /// `<pointList extend="$l.points">`: its children are points aliasing
-    /// the items of an array prop.
-    PointList => types::POINT_LIST,
-    /// `<p>`: a rendered container with no props of its own.
-    P => types::P,
-    /// `<setup>`: an unrendered container.
-    Setup => types::SETUP,
-    /// `<stickyGroup>`: a container whose members snap to one another when
-    /// dragged (ADR 0007). `threshold` NaN means the default.
-    StickyGroup => types::STICKY_GROUP,
-    /// `<function>`: a math cell `expr` (variable `x`) and, as a curve, the
-    /// `SAMPLES` cells from `samples` on, filled by a `Sample` instruction
-    /// over the enclosing graph's x-range.
-    Function => types::FUNCTION,
-    /// `<derivative>$f</derivative>`: d/dx of a function or math, sampled
-    /// like a function.
-    Derivative => types::DERIVATIVE,
-    /// `<answer response="$mi">correct</answer>`: `submitted` is an
-    /// essential math cell that a submit request sets to the response;
-    /// `credit` compares it with `correct` (`symbolicEquality`: as written).
-    Answer => types::ANSWER,
-    /// `<text>` with literal content: `value` is a fixed cell holding the
-    /// string id of its text (ADR 0009). A cell's meaning is a property of
-    /// the operators around it, so a text value never reaches a numeric one.
-    Text => types::TEXT,
-    /// `<conditionalContent>`, a reactive choice (ADR 0009). Its
-    /// `choice` cell is the 1-based position of the first case whose
-    /// condition holds, or 0. Its children are `Case` components.
-    ConditionalContent => types::CONDITIONAL_CONTENT,
-    /// One built branch of a reactive choice: `active` is 1 while it is the
-    /// chosen one. Its children are the branch's content. A renderer shows
-    /// the children of an active case only.
-    Case => types::CASE,
-    /// `<select>`, a load-time choice: its children are the content of the
-    /// options it picked, flattened like a repeat's iterations.
-    Select => types::SELECT,
-    /// `<group>`: a rendered container with no props of its own.
-    Group => types::GROUP,
-    /// `<section>`, `<subsection>`, `<subsubsection>`, `<problem>`,
-    /// `<exercise>`, `<example>`: a rendered container that is numbered
-    /// among its sibling sections and, when it aggregates scores, holds the
-    /// weighted credit of the answers and sections inside it. Both are
-    /// wired after expansion (`build/expand/scoring.rs`).
-    Section => types::SECTION,
+    /// The root of every document.
+    Document => containers::DOCUMENT,
+    /// `<graph>`.
+    Graph => containers::GRAPH,
+    /// `<point>`.
+    Point => geometry::POINT,
+    /// `<number>`.
+    Number => values::NUMBER,
+    /// `<numberInput>`.
+    NumberInput => inputs::NUMBER_INPUT,
+    /// `<op>`: a numeric operator over referenced cells (prototype only).
+    Op => values::OP,
+    /// `<slider>`.
+    Slider => inputs::SLIDER,
+    /// `<repeatForSequence>`.
+    RepeatForSequence => structure::REPEAT_FOR_SEQUENCE,
+    /// `<collect>`.
+    Collect => structure::COLLECT,
+    /// The hidden component behind a repeat's `valueName`.
+    SequenceValue => structure::SEQUENCE_VALUE,
+    /// `<booleanInput>`.
+    BooleanInput => inputs::BOOLEAN_INPUT,
+    /// `<math>`.
+    Math => values::MATH,
+    /// `<evaluate>`.
+    Evaluate => values::EVALUATE,
+    /// `<mathInput>`.
+    MathInput => inputs::MATH_INPUT,
+    /// `<circle>`.
+    Circle => geometry::CIRCLE,
+    /// `<line>`.
+    Line => geometry::LINE,
+    /// `<lineSegment>`.
+    LineSegment => geometry::LINE_SEGMENT,
+    /// `<polygon>` and `<triangle>`.
+    Polygon => geometry::POLYGON,
+    /// `<pointList>`.
+    PointList => geometry::POINT_LIST,
+    /// `<p>`.
+    P => containers::P,
+    /// `<setup>`.
+    Setup => containers::SETUP,
+    /// `<stickyGroup>`.
+    StickyGroup => containers::STICKY_GROUP,
+    /// `<function>`.
+    Function => values::FUNCTION,
+    /// `<derivative>`.
+    Derivative => values::DERIVATIVE,
+    /// `<answer>`.
+    Answer => values::ANSWER,
+    /// `<text>`.
+    Text => values::TEXT,
+    /// `<conditionalContent>`.
+    ConditionalContent => structure::CONDITIONAL_CONTENT,
+    /// One built branch of a `<conditionalContent>`.
+    Case => structure::CASE,
+    /// `<select>`.
+    Select => structure::SELECT,
+    /// `<group>` and `<label>`.
+    Group => containers::GROUP,
+    /// `<section>` and its kin (`<problem>`, `<exercise>`, ...).
+    Section => containers::SECTION,
 }
-
-/// The tags that make a `Section`, in the order of its `label` cell, with
-/// the word a title shows and whether the tag aggregates scores and
-/// includes its parent section's number by default (the current core's
-/// `Sectioning.js`).
-pub const SECTION_TAGS: [(&str, &str, bool, bool); 6] = [
-    ("section", "Section", false, true),
-    ("subsection", "Section", false, true),
-    ("subsubsection", "Section", false, true),
-    ("problem", "Problem", true, false),
-    ("exercise", "Exercise", true, false),
-    ("example", "Example", false, false),
-];
-
-/// Largest polygon the fixed prop layout holds.
-pub const MAX_VERTICES: usize = 16;
 
 /// What the core knows about a type apart from how it is planned and
 /// expanded: one row per type in `COMPONENT_TYPES`, indexed by discriminant.
@@ -188,68 +160,6 @@ const PLANNED: u8 = 4;
 const SYMBOLIC: u8 = 8;
 /// Made by the builder, never by a tag in the source.
 const INTERNAL: u8 = 16;
-
-/// A row of `COMPONENT_TYPES`, to be finished with the builder methods:
-/// `info(..).copyable().default_prop("value")`.
-const fn info(tags: &'static [&'static str], props: &'static [PropDef]) -> ComponentTypeInfo {
-    ComponentTypeInfo {
-        tags,
-        props,
-        default_prop: None,
-        views: &[],
-        arrays: &[],
-        aliases: &[],
-        flags: 0,
-        sticky: None,
-    }
-}
-
-impl ComponentTypeInfo {
-    const fn flag(mut self, flag: u8) -> Self {
-        self.flags |= flag;
-        self
-    }
-    /// See [`ComponentType::copyable`].
-    const fn copyable(self) -> Self {
-        self.flag(COPYABLE)
-    }
-    /// See [`ComponentType::container`].
-    const fn container(self) -> Self {
-        self.flag(CONTAINER)
-    }
-    /// See [`ComponentType::planned`].
-    const fn planned(self) -> Self {
-        self.flag(PLANNED)
-    }
-    /// See [`ComponentType::symbolic`].
-    const fn symbolic(self) -> Self {
-        self.flag(SYMBOLIC)
-    }
-    /// Made by the builder, never by a tag in the source.
-    const fn internal(self) -> Self {
-        self.flag(INTERNAL)
-    }
-    const fn default_prop(mut self, prop: &'static str) -> Self {
-        self.default_prop = Some(prop);
-        self
-    }
-    const fn views(mut self, views: &'static [(&'static str, [&'static str; 2])]) -> Self {
-        self.views = views;
-        self
-    }
-    const fn arrays(mut self, arrays: &'static [ArrayProp]) -> Self {
-        self.arrays = arrays;
-        self
-    }
-    const fn aliases(mut self, aliases: &'static [(&'static str, &'static str)]) -> Self {
-        self.aliases = aliases;
-        self
-    }
-    const fn sticky(mut self, shape: crate::tick::snap::Shape, first: usize, max: usize) -> Self {
-        self.sticky = Some((shape, first, max));
-        self
-    }
-}
 
 impl ComponentType {
     pub fn info(self) -> &'static ComponentTypeInfo {
@@ -405,22 +315,6 @@ pub struct PropDef {
     /// the referent instead of its default prop (`function="$m"` wants the
     /// math's `expr`, not its `value`).
     pub ref_prop: Option<&'static str>,
-}
-
-/// `a == b`, usable in `const`.
-const fn str_eq(a: &str, b: &str) -> bool {
-    let (a, b) = (a.as_bytes(), b.as_bytes());
-    if a.len() != b.len() {
-        return false;
-    }
-    let mut i = 0;
-    while i < a.len() {
-        if a[i] != b[i] {
-            return false;
-        }
-        i += 1;
-    }
-    true
 }
 
 impl PropDef {
