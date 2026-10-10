@@ -28,8 +28,8 @@ type HashMap<K, V> = std::collections::HashMap<K, V, BuildHasherDefault<IndexHas
 type HashSet<K> = std::collections::HashSet<K, BuildHasherDefault<IndexHasher>>;
 
 use crate::document::{CellIdx, Request};
-use crate::geo::Produced;
-use crate::ops::{Op, SymKind};
+use crate::program::geo::Produced;
+use crate::program::ops::{Op, SymKind};
 use crate::program::Program;
 
 /// A request on both cells of a point, issued together with others as a

@@ -10,7 +10,7 @@ use cells_sym::SymEngine;
 
 use crate::components::{ComponentKind, prop};
 use crate::dast::{Dast, NodeId, StrId, StringTable};
-use crate::invert::PointRequest;
+use crate::tick::invert::PointRequest;
 use crate::program::Program;
 
 mod load;
@@ -240,17 +240,17 @@ impl Document {
     /// Apply requests: invert each to an essential cell (later requests win
     /// when two land on one cell), recompute, and report what changed.
     pub fn request(&mut self, requests: &[Request]) -> Tick {
-        self.request_with_groups(&mut crate::eval::FullRecompute, requests, &[])
+        self.request_with_groups(&mut crate::tick::eval::FullRecompute, requests, &[])
     }
 
     /// Apply a point group: points dragged together, which keep their shape
     /// when one of them is constrained (ADR 0006).
     pub fn request_points(&mut self, points: &[PointRequest]) -> Tick {
-        self.request_with_groups(&mut crate::eval::FullRecompute, &[], &[points.to_vec()])
+        self.request_with_groups(&mut crate::tick::eval::FullRecompute, &[], &[points.to_vec()])
     }
 
     /// Scalar requests and point groups in one tick.
-    pub fn request_with_groups(&mut self, evaluator: &mut (impl crate::eval::Evaluator + ?Sized), requests: &[Request], groups: &[Vec<PointRequest>]) -> Tick {
+    pub fn request_with_groups(&mut self, evaluator: &mut (impl crate::tick::eval::Evaluator + ?Sized), requests: &[Request], groups: &[Vec<PointRequest>]) -> Tick {
         let mut tick = Tick::default();
         // An infinite ask is never meaningful state (NaN is: an emptied
         // input), and the current core rejects it; drop it before inverting.

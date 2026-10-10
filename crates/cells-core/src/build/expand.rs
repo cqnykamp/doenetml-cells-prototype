@@ -4,6 +4,114 @@
 
 use super::*;
 
+// ---------------------------------------------------------------------------
+// Expansion state
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone)]
+pub(super) enum Source {
+    Unset,
+    Literal(f64),
+    Default(f64),
+    /// A constant that is not essential: an iteration index, a collect's
+    /// count, a math handle, the shared missing-referent cell.
+    Fixed(f64),
+    Alias(SlotId),
+    /// Operator over `op_inputs[start..start + n]`; for a vector operator,
+    /// the head (output 0).
+    Op(OpSpec, u32, u8),
+    /// Output `k` of the vector instruction headed at `head`.
+    VecOut(SlotId, u8),
+}
+
+/// `Builder::is_symbolic`'s memo for one component.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub(super) enum MathMode {
+    #[default]
+    Unknown,
+    Numeric,
+    Symbolic,
+    /// Being decided: a reference cycle back to it counts as numeric.
+    Deciding,
+}
+
+/// Where a reference path has arrived after walking its steps.
+#[derive(Debug, Clone, Copy)]
+pub(super) enum Resolved {
+    Comp(CompIdx),
+    /// An iteration of a repeat, named by `$r[k]`.
+    Iter(CompIdx, ScopeId),
+    /// An index with no referent (`$r[32]` with ten iterations).
+    Missing,
+}
+
+/// One expanded choice.
+#[derive(Debug, Clone)]
+pub(super) struct ChoiceInst {
+    pub(super) def: ChoiceId,
+    pub(super) comp: CompIdx,
+    /// The scope of each built branch (a select's picks in order; every
+    /// case of a reactive choice).
+    pub(super) scopes: Vec<ScopeId>,
+    /// The branch each of `scopes` instantiates.
+    pub(super) branch_of: Vec<usize>,
+    /// Reactive choice: one `Choose` component per `ChoiceDef::used`.
+    pub(super) iface_comps: Vec<CompIdx>,
+}
+
+/// One instantiated template element.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct Instance {
+    pub(super) scope: ScopeId,
+    pub(super) template: TemplateId,
+    pub(super) elem: ElemId,
+    pub(super) comp: CompIdx,
+}
+
+pub(super) struct Builder<'c, 'a> {
+    pub(super) c: &'c Compiled<'a>,
+    pub(super) prior: &'c Prior,
+    pub(super) engine: &'c mut dyn SymEngine,
+    /// Templates of `Instantiate` instructions, cell leaves holding slots
+    /// until emit rebinds them to cells and imports them.
+    pub(super) sym_templates: Vec<Tree>,
+    /// Slots that hold expression handles without being an instruction's
+    /// output (essential and fixed math cells).
+    pub(super) math_slots: Vec<SlotId>,
+    /// Per component, whether its `expr` is a math cell (`is_symbolic`).
+    pub(super) math_mode: Vec<MathMode>,
+    pub(super) comps: ComponentTable,
+    pub(super) slot_base: Vec<u32>,
+    pub(super) sources: Vec<Source>,
+    /// Owning component of each slot (prop index = slot - slot_base[comp]).
+    pub(super) slot_comp: Vec<CompIdx>,
+    pub(super) op_inputs: Vec<SlotId>,
+    /// Carried over from the prior build and extended.
+    pub(super) scopes: ScopeTable,
+    /// Per scope: element -> component, for the scope's template.
+    pub(super) scope_comps: Vec<Vec<CompIdx>>,
+    /// Per component: index into `instances`, or NONE for synthesized ones.
+    pub(super) comp_instance: Vec<u32>,
+    pub(super) instances: Vec<Instance>,
+    /// Per component: index into `repeats` for a repeat component.
+    pub(super) comp_repeat: Vec<u32>,
+    pub(super) repeats: Vec<Repeat>,
+    pub(super) counts_used: Vec<u32>,
+    /// `$ref` children awaiting a kind: (component, plan, scope, has index).
+    pub(super) pending: Vec<(CompIdx, RefId, ScopeId, bool)>,
+    /// Collect components awaiting expansion.
+    pub(super) collects: Vec<CompIdx>,
+    /// Point lists awaiting their synthesized children.
+    pub(super) pointlists: Vec<CompIdx>,
+    pub(super) collected: HashMap<CompIdx, Vec<CompIdx>>,
+    /// Expanded choices, and the instance each choice component owns.
+    pub(super) choice_insts: Vec<ChoiceInst>,
+    pub(super) comp_choice: HashMap<CompIdx, usize>,
+    pub(super) missing: Option<SlotId>,
+    pub(super) arena: Arena,
+    pub(super) root: CompIdx,
+}
+
 impl<'c, 'a> Builder<'c, 'a> {
     pub(super) fn new(c: &'c Compiled<'a>, prior: &'c Prior, engine: &'c mut dyn SymEngine) -> Self {
         // Size the columns from the previous build when there was one.

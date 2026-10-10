@@ -10,9 +10,9 @@ use std::borrow::Cow;
 use std::collections::HashSet;
 
 use super::*;
-use crate::geo::VecOp;
-use crate::ops::Op;
-use crate::snap::{Member, Params, Pt, snap_group};
+use crate::program::geo::VecOp;
+use crate::program::ops::Op;
+use crate::tick::snap::{Member, Params, Pt, snap_group};
 
 /// One group as cells.
 #[derive(Debug, Clone)]

@@ -9,10 +9,10 @@
 //! outside the operator's domain (a non-finite ask on Round), returns `None`
 //! and the request is dropped. Vector operators (`Op::Vec`) carry their own
 //! rules in `geo.rs`, and may write several inputs; the request engine in
-//! `invert.rs` gathers requests and keeps point groups together.
+//! `tick/invert.rs` gathers requests and keeps point groups together.
 
 use crate::document::CellIdx;
-use crate::geo::VecOp;
+use crate::program::geo::VecOp;
 
 /// Samples a function curve owns: `Sample` writes this many y-values over
 /// evenly spaced x-values from the graph's `xmin` to `xmax`.
@@ -277,7 +277,7 @@ impl Op {
             }
             // Symbolic inverses are out of scope (plan 5); `Evaluate`'s
             // constant-expression inverse needs the engine, so the request
-            // engine handles it (`invert.rs`).
+            // engine handles it (`tick/invert.rs`).
             Op::Pow(..) | Op::Sym(..) => return None,
             // A request cannot change a condition (plan 6).
             Op::Lt(..) | Op::Le(..) | Op::Eq(..) | Op::Truthy(..) | Op::Not(..) => return None,
@@ -309,7 +309,7 @@ impl Op {
     #[inline]
     pub fn eval_vec(&self, cells: &[f64], extra: &[CellIdx], out: &mut [f64]) {
         let Op::Vec(v, start, n_in, _) = *self else { unreachable!() };
-        let mut inp = [0.0f64; crate::geo::MAX_VEC_IN];
+        let mut inp = [0.0f64; crate::program::geo::MAX_VEC_IN];
         let n_in = n_in as usize;
         for (k, &c) in extra[start as usize..start as usize + n_in].iter().enumerate() {
             inp[k] = cells[c as usize];

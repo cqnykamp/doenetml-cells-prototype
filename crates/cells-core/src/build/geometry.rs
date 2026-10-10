@@ -1,7 +1,7 @@
 //! Planned kinds: point, circle, line, line segment and polygon. Each
 //! planner reads the element's attributes and children and chooses the
 //! operator chain that produces the kind's public props (plan 3). The
-//! inverse rules of the operators it uses are in `geo.rs`.
+//! inverse rules of the operators it uses are in `program/geo.rs`.
 
 use super::*;
 use crate::components::prop::{circle, line, point, polygon, segment};

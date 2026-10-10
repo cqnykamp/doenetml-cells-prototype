@@ -9,16 +9,20 @@ vocabulary, and `docs/adr/` for recorded decisions.
 - `crates/cells-core` — the core. `dast.rs` reads the DAST (JSON or the
   binary `CDST` wire format, ADR 0002); `components.rs` describes each kind
   (one `KINDS` row: tags, props, flags) and names prop positions
-  (`components::prop`); `build/` compiles templates once (`compile.rs`,
-  `attrs.rs`, `refs.rs`, `geometry.rs`, `choice.rs`), stamps them per scope
-  (`expand.rs`, `resolve.rs`, `expand_math.rs`, `scoring.rs`) and emits cells
-  and the program (`emit.rs`), rebuilding the whole document on structural
-  change (ADR 0004); `ops.rs` and `geo.rs` hold the operators and their
-  inverses (ADR 0003, 0006), `program.rs` the scheduled program, `eval.rs`
-  the evaluators and `invert.rs` the request engine; `document/` loads the
+  (`components::prop`); `build.rs` is the build's entry point and
+  `build/` compiles templates once (`compile.rs`, `attrs.rs`, `refs.rs`,
+  `geometry.rs`, `choice.rs`, into the types in `plan.rs`), stamps them per
+  scope (`expand.rs`, `resolve.rs`, `expand_math.rs`, `scoring.rs`) and emits
+  cells and the program (`emit.rs`), rebuilding the whole document on
+  structural change (ADR 0004); `program/` is the instruction set the build
+  emits and a tick runs: `ops.rs` and `geo.rs` hold the operators and their
+  inverses (ADR 0003, 0006), `program.rs` the scheduled program; `tick/`
+  holds the run-time machinery, `eval.rs` the evaluators, `invert.rs` the
+  request engine and `snap.rs` the sticky rule; `document/` loads the
   document (`load.rs`), runs ticks (`document.rs`, with the sticky pre-pass
-  in `sticky.rs` over `snap.rs`) and answers questions about it (`table.rs`,
-  `sections.rs`, `paths.rs`). Math cells are handles into a symbolic engine
+  in `sticky.rs`) and answers questions about it (`table.rs`,
+  `sections.rs`, `paths.rs`); `testing/` holds the reference oracle and test
+  helpers. Math cells are handles into a symbolic engine
   (`cells-sym`, behind the `SymEngine` trait; ADR 0008).
 - `crates/cells-sym` — the symbolic engine (engine A) and curve tapes;
   `crates/cells-sym-mer` wraps math-expressions-rs (engine R) as its oracle.

@@ -1,6 +1,6 @@
 //! Compile: walk the DAST once per template and plan every element's
 //! props (literals, references, operators, math), with name lookup and
-//! reference paths. See the module docs in `mod.rs`.
+//! reference paths. See the module docs in `build.rs`.
 
 use super::*;
 

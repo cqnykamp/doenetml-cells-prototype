@@ -1,12 +1,18 @@
-//! The instruction list and its topological schedule; the inversion engine
-//! is `invert.rs`.
+//! The instruction set: what the build emits and a tick runs. Scalar
+//! operators are in `ops.rs`, vector operators in `geo.rs`, each with its
+//! inverse rule; this file holds the instruction list and its topological
+//! schedule. The inversion engine that drives the inverses is
+//! `tick/invert.rs`.
 
 use std::cell::{Cell, RefCell};
 
 use cells_sym::{Handle, SymEngine};
 
 use crate::document::CellIdx;
-use crate::ops::{Instr, Op, SAMPLES, SymKind};
+pub mod geo;
+pub mod ops;
+
+use ops::{Instr, Op, SAMPLES, SymKind};
 
 /// The document's symbolic engine and the memo of every symbolic
 /// instruction. Interior mutability because instructions run through
@@ -306,9 +312,9 @@ fn run_sym(engine: &mut dyn SymEngine, kind: SymKind, cells: &[f64], inputs: &[C
         SymKind::Instantiate { template, post } => {
             let h = engine.instantiate(template, cells);
             let h = match post {
-                crate::ops::Post::None => h,
-                crate::ops::Post::Simplify => engine.simplify(h),
-                crate::ops::Post::Expand => engine.expand(h),
+                crate::program::ops::Post::None => h,
+                crate::program::ops::Post::Simplify => engine.simplify(h),
+                crate::program::ops::Post::Expand => engine.expand(h),
             };
             out[0] = h as f64;
         }

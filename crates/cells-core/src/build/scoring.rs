@@ -24,7 +24,7 @@ use super::*;
 
 /// Most items one `WeightedMean` reads: weights and credits share
 /// `geo::MAX_VEC_IN` inputs.
-const CHUNK: usize = crate::geo::MAX_VEC_IN / 2;
+const CHUNK: usize = crate::program::geo::MAX_VEC_IN / 2;
 
 use crate::components::prop::{answer, document, section};
 use section::{AGGREGATE, CREDIT, NUMBER, PERCENT_CREDIT, WEIGHT};
