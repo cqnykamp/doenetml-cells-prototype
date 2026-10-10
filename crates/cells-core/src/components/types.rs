@@ -1,8 +1,8 @@
-//! The data: every kind's prop table and its row in `KINDS`.
+//! The data: every type's prop table and its row in `COMPONENT_TYPES`.
 
 use super::{
-    ArrayProp, CONTAINER, COPYABLE, ComponentKind, INTERNAL, KindInfo, MAX_VERTICES, PLANNED,
-    PropDef, PropFrom, SYMBOLIC, prop,
+    ArrayProp, CONTAINER, COPYABLE, ComponentType, ComponentTypeInfo, INTERNAL, MAX_VERTICES,
+    PLANNED, PropDef, PropFrom, SYMBOLIC, prop,
 };
 use crate::program::{OpSpec, SymKind};
 
@@ -382,13 +382,13 @@ pub(super) const CASE_PROPS: &[PropDef] = &[planned("active")];
 pub(super) const SELECT_PROPS: &[PropDef] = &[planned("hide")];
 
 const fn row(
-    kind: ComponentKind,
+    component_type: ComponentType,
     tags: &'static [&'static str],
     props: &'static [PropDef],
     flags: u8,
-) -> KindInfo {
-    KindInfo {
-        kind,
+) -> ComponentTypeInfo {
+    ComponentTypeInfo {
+        component_type,
         tags,
         props,
         default_prop: None,
@@ -406,9 +406,9 @@ pub(super) const LINE_POINTS: &[ArrayProp] = &[ArrayProp {
     items: &[["x1", "y1"], ["x2", "y2"]],
 }];
 
-pub const KINDS: [KindInfo; 31] = {
+pub const COMPONENT_TYPES: [ComponentTypeInfo; 31] = {
     use crate::tick::snap::Shape;
-    use ComponentKind as K;
+    use ComponentType as K;
     [
         row(K::Document, &["document"], DOCUMENT_PROPS, 0),
         row(K::Graph, &["graph"], GRAPH_PROPS, CONTAINER),
@@ -544,10 +544,10 @@ pub const KINDS: [KindInfo; 31] = {
 
 const _: () = {
     let mut i = 0;
-    while i < KINDS.len() {
+    while i < COMPONENT_TYPES.len() {
         assert!(
-            KINDS[i].kind as usize == i,
-            "KINDS is in discriminant order"
+            COMPONENT_TYPES[i].component_type as usize == i,
+            "COMPONENT_TYPES is in discriminant order"
         );
         i += 1;
     }

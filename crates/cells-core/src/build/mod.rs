@@ -6,7 +6,7 @@
 //!
 //! **Compile** walks the DAST once and produces one [`Template`] per repeat
 //! (plus one for the document itself). A template holds, per element, the
-//! kind, the name, and a *plan* for every prop: a parsed literal, a default,
+//! type, the name, and a *plan* for every prop: a parsed literal, a default,
 //! an operator over reference plans, or a reference plan. A reference plan
 //! is a path resolved against the template nesting: how many template levels
 //! up the name was found, which element it is, which `[index]` expressions
@@ -32,7 +32,7 @@
 //! **`compile/`**: `mod.rs` walks the DAST and decides each element's
 //! shape; `attrs.rs` plans attribute and math sources, `refs.rs` names and
 //! reference paths, `expr.rs` the parse arena for math text, `geometry/` the
-//! planned kinds, `choice.rs` with `condition.rs` the choices, `copies.rs`
+//! planned types, `choice.rs` with `condition.rs` the choices, `copies.rs`
 //! `extend`, and `fix.rs` `fixed`. What compile produces is in `plan.rs`.
 //! **`expand/`**: `mod.rs` holds the builder's state and stamps templates;
 //! `resolve.rs` follows reference plans, `math.rs` gives math its source per
@@ -48,7 +48,7 @@ use std::collections::HashMap;
 
 use cells_sym::{SymEngine, Tree};
 
-use crate::components::{ComponentKind, PropFrom, prop};
+use crate::components::{ComponentType, PropFrom, prop};
 use crate::dast::{Dast, NodeId, NodeKind, StrId, StringTable};
 use crate::document::{CellIdx, CompIdx, ComponentTable, Document, NONE, TEXT_BIT};
 use crate::error::{Error, Result};

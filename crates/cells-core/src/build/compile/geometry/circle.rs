@@ -16,7 +16,7 @@ impl Compiler<'_> {
             name_scope: scope,
             ..
         } = self.compiled.templates[t].elems[e];
-        let kind = ComponentKind::Circle;
+        let component_type = ComponentType::Circle;
         let center = match self.attr_or_inherited(el, base, "center") {
             Some(a) => Some(match self.plan_point_attr(t, scope, a) {
                 // Not a point (`center="A"`): no center, as the current
@@ -37,10 +37,10 @@ impl Compiler<'_> {
             None => Vec::new(),
         };
         let n = through.len();
-        let mut ch = ElemPlan::new(kind.prop_defs().len());
+        let mut ch = ElemPlan::new(component_type.prop_defs().len());
         // Computed public props (diameter, circumference) keep their defs;
         // area goes through a hidden square.
-        for (i, def) in kind.prop_defs().iter().enumerate() {
+        for (i, def) in component_type.prop_defs().iter().enumerate() {
             if let PropFrom::Computed { op, args } = def.from {
                 ch.set(i, SourcePlan::from_def(op, args));
             }

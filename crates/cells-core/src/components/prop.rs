@@ -1,9 +1,9 @@
-//! Positions of props in their kind's table, for code that sets or reads a
+//! Positions of props in their type's table, for code that sets or reads a
 //! prop by position. Each is looked up by name when compiled, so renaming
 //! or reordering a table cannot silently break a reader.
 
 use super::PropDef;
-use super::kinds::*;
+use super::types::*;
 
 const fn at(defs: &[PropDef], name: &str) -> usize {
     let mut i = 0;

@@ -46,6 +46,13 @@ are a naming layer over cells; they are not graph nodes.
 `point`). Components own props and renderer identity but no computation of
 their own.
 
+**Component type** — What a component is: `point`, `number`, `section`
+(`ComponentType`), with its props and where each prop's value comes from.
+One component type may have several tags (`section`, `problem`, `example`
+are all `Section`). Not to be confused with a *value type* (number, math,
+text), which is the kind of value a cell or prop holds.
+_Avoid_: kind (the current core and DoenetML's docs say component type)
+
 **Reference** — A `$name` or `$name.prop` in the document. A component-level
 reference (`$p1`) produces a copy sharing every cell with the referent; a
 prop-level reference (`$p1.x`) aliases that one prop. A bare `$name` resolves
@@ -170,7 +177,7 @@ cell: forward it is the identity, and its inverse drops the request while the
 flag is nonzero. Not to be confused with a gate.
 
 **Slot** — At build time, one prop of one component instance (or a hidden
-value a planned kind needs), before aliases merge slots into cells. A
+value a planned component type needs), before aliases merge slots into cells. A
 *template slot* is the same position within a template, shared by every
 instance; essential keys use it.
 
@@ -211,9 +218,9 @@ after essential cells change. Fixed once the document is loaded.
 instruction in schedule order, or only the downstream closure of the cells
 that changed. Both give the same values.
 
-**Component table** — The columnar description of components (kind, name,
-parent, children, prop cell indices) that the renderer reads directly, the
-same way it reads cells. It replaces an earlier serialized render manifest.
+**Component table** — The columnar description of components (component
+type, name, parent, children, prop cell indices) that the renderer reads
+directly, the same way it reads cells. It replaces an earlier serialized render manifest.
 
 **Wire format** — The encoding in which a parsed document reaches the core:
 either the DAST JSON of the current DoenetML worker or the compact binary

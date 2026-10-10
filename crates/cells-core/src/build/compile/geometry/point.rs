@@ -19,7 +19,7 @@ impl Compiler<'_> {
             name_scope: scope,
             ..
         } = self.compiled.templates[t].elems[e];
-        let mut ch = ElemPlan::new(ComponentKind::Point.prop_defs().len());
+        let mut ch = ElemPlan::new(ComponentType::Point.prop_defs().len());
         let own_children = self.math_children(el);
         let base_children = base.map(|b| self.math_children(b)).unwrap_or_default();
         if let Some(a) = self.attr_or_inherited(el, base, "coords") {
@@ -195,8 +195,8 @@ impl Compiler<'_> {
                         .map(|pr| ch.hidden(SourcePlan::reference(me.plan_with_prop(p, pr))))
                         .collect()
                 };
-                match self.compiled.templates[t].elems[target].kind {
-                    ComponentKind::Circle => {
+                match self.compiled.templates[t].elems[target].component_type {
+                    ComponentType::Circle => {
                         let c = refs(self, ch, &["cx", "cy", "radius"]);
                         ch.set_vec(
                             point::X,
@@ -204,7 +204,7 @@ impl Compiler<'_> {
                             vec![raw_x, raw_y, c[0], c[1], c[2]],
                         );
                     }
-                    ComponentKind::Line | ComponentKind::LineSegment => {
+                    ComponentType::Line | ComponentType::LineSegment => {
                         let l = refs(self, ch, &["x1", "y1", "x2", "y2"]);
                         ch.set_vec(
                             point::X,

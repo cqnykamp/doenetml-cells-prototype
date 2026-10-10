@@ -122,7 +122,7 @@ impl<'a> Compiler<'a> {
                         match self.compiled.templates[cur_t].elems[e].body {
                             Body::Choice(cid)
                                 if self.compiled.templates[cur_t].elems[e]
-                                    .kind
+                                    .component_type
                                     .prop_index(name)
                                     .is_none() =>
                             {
@@ -175,16 +175,18 @@ impl<'a> Compiler<'a> {
                         at = At::Elem(child);
                     }
                     At::Elem(e) => {
-                        let kind = self.compiled.templates[cur_t].elems[e].kind;
-                        let kind = match self.compiled.templates[cur_t].elems[e].body {
+                        let component_type = self.compiled.templates[cur_t].elems[e].component_type;
+                        let component_type = match self.compiled.templates[cur_t].elems[e].body {
                             // After `$c[k]` the component is a collected copy.
-                            Body::Collect { kind: ck, .. } if steps.len() > 1 => ck,
-                            _ => kind,
+                            Body::Collect {
+                                component_type: ck, ..
+                            } if steps.len() > 1 => ck,
+                            _ => component_type,
                         };
                         // `$l.points[1]`, `$l.points[1][2]`, `$l.points[2].y`:
                         // items of an array prop, by literal index.
-                        let name = kind.canonical_prop(name);
-                        if let Some(items) = kind.array_prop(name) {
+                        let name = component_type.canonical_prop(name);
+                        if let Some(items) = component_type.array_prop(name) {
                             let idx: Vec<i64> = d
                                 .part_indices(part)
                                 .map(|expr| self.literal_index(expr, &display))
@@ -216,16 +218,17 @@ impl<'a> Compiler<'a> {
                                 Some(1) => item[0].to_string(),
                                 Some(2) => item[1].to_string(),
                                 Some(_) => return Err(Error::BadIndex(display)),
-                                None => kind
+                                None => component_type
                                     .array_item_prop(name, k as usize)
                                     .ok_or_else(|| Error::PathTooDeep(display.clone()))?,
                             });
                             break;
                         }
                         // `$l.point1[2]`: a coordinate of a point-valued prop.
-                        if let (Some(parts_of), Some(expr)) =
-                            (kind.virtual_prop(name), d.part_indices(part).next())
-                        {
+                        if let (Some(parts_of), Some(expr)) = (
+                            component_type.virtual_prop(name),
+                            d.part_indices(part).next(),
+                        ) {
                             let k = self.literal_index(expr, &display)?;
                             if !(1..=2).contains(&k)
                                 || d.part_indices(part).nth(1).is_some()
@@ -242,7 +245,7 @@ impl<'a> Compiler<'a> {
                         // A prop name, or a coordinate of a point-valued prop
                         // (`$c.center.y`), which must end the path.
                         if i + 1 != parts.len() {
-                            let parts_of = kind
+                            let parts_of = component_type
                                 .virtual_prop(name)
                                 .ok_or_else(|| Error::PathTooDeep(display.clone()))?;
                             let coord = d.strings.get(names[i + 1]).trim();
@@ -257,9 +260,9 @@ impl<'a> Compiler<'a> {
                             prop = Some(parts_of[j].to_string());
                             break;
                         }
-                        if kind.prop_index(name).is_none()
-                            && kind.virtual_prop(name).is_none()
-                            && kind.array_prop(name).is_none()
+                        if component_type.prop_index(name).is_none()
+                            && component_type.virtual_prop(name).is_none()
+                            && component_type.array_prop(name).is_none()
                         {
                             return Err(Error::UnknownProp {
                                 name: self.elem_label(cur_t, e),
@@ -281,7 +284,7 @@ impl<'a> Compiler<'a> {
                     return Err(Error::NotIndexable(display));
                 };
                 // `$p[2]`: a coordinate of a point.
-                let ek = self.compiled.templates[cur_t].elems[e].kind;
+                let ek = self.compiled.templates[cur_t].elems[e].component_type;
                 if let Some(parts_of) = ek.default_prop().and_then(|dp| ek.virtual_prop(dp)) {
                     if prop.is_some() || i + 1 != parts.len() {
                         return Err(Error::PathTooDeep(display));
@@ -310,8 +313,8 @@ impl<'a> Compiler<'a> {
                         steps.push(Step::Index(ip));
                         at = At::SelectPick(cid);
                     }
-                    _ if self.compiled.templates[cur_t].elems[e].kind
-                        == ComponentKind::PointList =>
+                    _ if self.compiled.templates[cur_t].elems[e].component_type
+                        == ComponentType::PointList =>
                     {
                         let ip = self.plan_index(t, expr, &display)?;
                         steps.push(Step::Index(ip));
@@ -397,8 +400,8 @@ impl<'a> Compiler<'a> {
                         tt = self.compiled.templates[tt].parent.unwrap().0;
                     }
                     let el = &self.compiled.templates[tt].elems[e];
-                    match (el.kind, el.props.first()) {
-                        (ComponentKind::Number, Some(SourcePlan::IterIndex)) => {
+                    match (el.component_type, el.props.first()) {
+                        (ComponentType::Number, Some(SourcePlan::IterIndex)) => {
                             terms.push(IndexTerm::Iter(hops))
                         }
                         _ => return Err(Error::DynamicIndex(display.to_string())),

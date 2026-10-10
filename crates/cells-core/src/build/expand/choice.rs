@@ -35,7 +35,7 @@ impl<'c, 'a> Builder<'c, 'a> {
             let choice = self.slot(comp, crate::components::prop::conditional_content::CHOICE);
             for k in 1..=def.branches.len() {
                 let s = self.scope_for(scope, node, k as u32);
-                let case = self.new_component(ComponentKind::Case, NONE, comp, NONE, scope, 1);
+                let case = self.new_component(ComponentType::Case, NONE, comp, NONE, scope, 1);
                 let pos = self.anon_slot(Source::Fixed(k as f64));
                 let active_slot = self.slot(case, crate::components::prop::case::ACTIVE);
                 self.sources[active_slot as usize] = self.op_source(OpSpec::Eq, &[choice, pos]);
@@ -52,9 +52,16 @@ impl<'c, 'a> Builder<'c, 'a> {
                 inst.branch_of.push(k - 1);
             }
             for name in &def.used {
-                let kind = def.iface[name].0;
+                let component_type = def.iface[name].0;
                 // Unnamed: a test path `cc.x` finds the active case's `x`.
-                let ic = self.new_component(kind, NONE, comp, NONE, scope, kind.prop_defs().len());
+                let ic = self.new_component(
+                    component_type,
+                    NONE,
+                    comp,
+                    NONE,
+                    scope,
+                    component_type.prop_defs().len(),
+                );
                 inst.iface_comps.push(ic);
             }
         }
@@ -127,7 +134,7 @@ impl<'c, 'a> Builder<'c, 'a> {
             let def = &c.choices[inst.def];
             let choice = self.slot(inst.comp, 0);
             for (u, &ic) in inst.iface_comps.iter().enumerate() {
-                let (kind, elems) = &def.iface[&def.used[u]];
+                let (component_type, elems) = &def.iface[&def.used[u]];
                 let members: Vec<CompIdx> = inst
                     .scopes
                     .iter()
@@ -143,7 +150,7 @@ impl<'c, 'a> Builder<'c, 'a> {
                     MathMode::Numeric
                 };
                 let n = members.len() as u8;
-                for pi in 0..kind.prop_defs().len() {
+                for pi in 0..component_type.prop_defs().len() {
                     let inputs: Vec<SlotId> = std::iter::once(choice)
                         .chain(members.iter().map(|&m| self.slot(m, pi)))
                         .collect();
@@ -151,7 +158,7 @@ impl<'c, 'a> Builder<'c, 'a> {
                     self.sources[s as usize] =
                         self.op_source(OpSpec::Vec(VecOp::Choose { n }), &inputs);
                 }
-                if symbolic && let Some(pi) = kind.prop_index("expr") {
+                if symbolic && let Some(pi) = component_type.prop_index("expr") {
                     let s = self.slot(ic, pi);
                     self.math_slots.push(s);
                 }

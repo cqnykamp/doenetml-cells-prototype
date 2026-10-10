@@ -5,7 +5,7 @@ use super::*;
 use crate::components::prop::{math_input, section};
 
 impl<'a> Compiler<'a> {
-    /// Plans for a kind described by `PropFrom`: attributes, bindings,
+    /// Plans for a type described by `PropFrom`: attributes, bindings,
     /// computed chains, children.
     pub(in crate::build) fn plan_attrs(
         &mut self,
@@ -16,11 +16,11 @@ impl<'a> Compiler<'a> {
         let d = self.compiled.dast;
         let Elem {
             node: el,
-            kind,
+            component_type,
             name_scope: scope,
             ..
         } = self.compiled.templates[t].elems[e];
-        // Without an attribute a prop is the kind's default, or under
+        // Without an attribute a prop is the type's default, or under
         // `extend` the referent's prop.
         let default = |v: f64| {
             if extend.is_some() {
@@ -29,8 +29,8 @@ impl<'a> Compiler<'a> {
                 SourcePlan::Default(v)
             }
         };
-        let mut props: Vec<Option<SourcePlan>> = vec![None; kind.prop_defs().len()];
-        for (pi, def) in kind.prop_defs().iter().enumerate() {
+        let mut props: Vec<Option<SourcePlan>> = vec![None; component_type.prop_defs().len()];
+        for (pi, def) in component_type.prop_defs().iter().enumerate() {
             let bound = match def.bind.and_then(|b| d.attr(el, b)) {
                 Some(a) => {
                     let bind = def.bind.unwrap();
@@ -42,33 +42,33 @@ impl<'a> Compiler<'a> {
                 }
                 None => None,
             };
-            let plan =
-                match (bound, def.from) {
-                    (Some(p), _) => p,
-                    (None, PropFrom::Attribute) => match d.attr(el, def.attr_name()) {
-                        Some(a) => self.plan_value(
-                            t,
-                            scope,
-                            def.attr_name(),
-                            d.attr_children(a),
-                            def.ref_prop,
-                        )?,
-                        None => default(def.default),
-                    },
-                    (None, PropFrom::AttributeOr { alias }) => match d.attr(el, def.attr_name()) {
-                        Some(a) => {
-                            self.plan_value(t, scope, def.attr_name(), d.attr_children(a), None)?
-                        }
-                        None => SourcePlan::own(alias as usize),
-                    },
-                    (None, PropFrom::Computed { op, args }) => SourcePlan::from_def(op, args),
-                    (None, PropFrom::Children) => {
-                        let blank = d.children(el).iter().all(|&n| self.is_blank(n));
-                        // A mathInput's `prefill` stands in for blank children.
-                        let from_attr = def.attr.and_then(|a| d.attr(el, a));
-                        if blank {
-                            match from_attr {
-                                Some(a) => match self.plan_value(
+            let plan = match (bound, def.from) {
+                (Some(p), _) => p,
+                (None, PropFrom::Attribute) => match d.attr(el, def.attr_name()) {
+                    Some(a) => self.plan_value(
+                        t,
+                        scope,
+                        def.attr_name(),
+                        d.attr_children(a),
+                        def.ref_prop,
+                    )?,
+                    None => default(def.default),
+                },
+                (None, PropFrom::AttributeOr { alias }) => match d.attr(el, def.attr_name()) {
+                    Some(a) => {
+                        self.plan_value(t, scope, def.attr_name(), d.attr_children(a), None)?
+                    }
+                    None => SourcePlan::own(alias as usize),
+                },
+                (None, PropFrom::Computed { op, args }) => SourcePlan::from_def(op, args),
+                (None, PropFrom::Children) => {
+                    let blank = d.children(el).iter().all(|&n| self.is_blank(n));
+                    // A mathInput's `prefill` stands in for blank children.
+                    let from_attr = def.attr.and_then(|a| d.attr(el, a));
+                    if blank {
+                        match from_attr {
+                            Some(a) => {
+                                match self.plan_value(
                                     t,
                                     scope,
                                     def.attr_name(),
@@ -80,45 +80,51 @@ impl<'a> Compiler<'a> {
                                         self.plan_math(t, scope, d.attr_children(a))?,
                                     ),
                                     Err(e) => return Err(e),
-                                },
-                                None => default(def.default),
-                            }
-                        } else {
-                            match self.plan_value(t, scope, def.name, d.children(el), None) {
-                                // `<number>3</number>` cannot be changed by a drag in
-                                // the current core (no math child to write), so it is
-                                // a constant; an input's literal is its initial state.
-                                Ok(SourcePlan::Literal(v)) if kind == ComponentKind::Number => {
-                                    SourcePlan::Fixed(v)
                                 }
-                                Ok(p) => p,
-                                // Not a single literal or reference: math text.
-                                Err(Error::BadValue { .. }) => {
-                                    SourcePlan::Math(self.plan_math(t, scope, d.children(el))?)
-                                }
-                                Err(e) => return Err(e),
                             }
+                            None => default(def.default),
+                        }
+                    } else {
+                        match self.plan_value(t, scope, def.name, d.children(el), None) {
+                            // `<number>3</number>` cannot be changed by a drag in
+                            // the current core (no math child to write), so it is
+                            // a constant; an input's literal is its initial state.
+                            Ok(SourcePlan::Literal(v))
+                                if component_type == ComponentType::Number =>
+                            {
+                                SourcePlan::Fixed(v)
+                            }
+                            Ok(p) => p,
+                            // Not a single literal or reference: math text.
+                            Err(Error::BadValue { .. }) => {
+                                SourcePlan::Math(self.plan_math(t, scope, d.children(el))?)
+                            }
+                            Err(e) => return Err(e),
                         }
                     }
-                    (None, PropFrom::Derived) => self.plan_op(t, scope, el)?,
-                    // Wired once the whole tree exists (`scoring.rs`).
-                    (None, PropFrom::Planned)
-                        if matches!(kind, ComponentKind::Document | ComponentKind::Section) =>
-                    {
-                        SourcePlan::Fixed(f64::NAN)
-                    }
-                    (None, PropFrom::Planned) => unreachable!("planned kinds take plan_geo"),
-                };
+                }
+                (None, PropFrom::Derived) => self.plan_op(t, scope, el)?,
+                // Wired once the whole tree exists (`scoring.rs`).
+                (None, PropFrom::Planned)
+                    if matches!(
+                        component_type,
+                        ComponentType::Document | ComponentType::Section
+                    ) =>
+                {
+                    SourcePlan::Fixed(f64::NAN)
+                }
+                (None, PropFrom::Planned) => unreachable!("planned component_types take plan_geo"),
+            };
             props[pi] = Some(plan);
         }
         let mut props: Vec<Option<SourcePlan>> = props;
-        if kind == ComponentKind::MathInput {
+        if component_type == ComponentType::MathInput {
             self.plan_math_input(el, &mut props)?;
         }
-        if kind == ComponentKind::Section {
+        if component_type == ComponentType::Section {
             self.plan_section_flags(el, &mut props)?;
         }
-        let fix_attrs: &[&str] = if kind == ComponentKind::Graph {
+        let fix_attrs: &[&str] = if component_type == ComponentType::Graph {
             &["fixed", "fixAxes"]
         } else {
             &["fixed"]
@@ -211,16 +217,16 @@ impl<'a> Compiler<'a> {
         let d = self.compiled.dast;
         let Elem {
             node: el,
-            kind,
+            component_type,
             name_scope: scope,
             ..
         } = self.compiled.templates[t].elems[e];
         let nodes: Vec<NodeId> = d.children(el).to_vec();
         let id = self.plan_sym_math(t, scope, &nodes)?;
-        let mut plan = ElemPlan::new(kind.prop_defs().len());
-        match kind {
-            ComponentKind::Function | ComponentKind::Derivative => {
-                if kind == ComponentKind::Function {
+        let mut plan = ElemPlan::new(component_type.prop_defs().len());
+        match component_type {
+            ComponentType::Function | ComponentType::Derivative => {
+                if component_type == ComponentType::Function {
                     plan.set(0, SourcePlan::SymExpr(id, Post::None));
                 } else {
                     let of = plan.hidden(SourcePlan::SymExpr(id, Post::None));
@@ -233,7 +239,8 @@ impl<'a> Compiler<'a> {
                     );
                 }
                 let graph = (scope != ROOT_SCOPE
-                    && self.compiled.templates[t].elems[scope].kind == ComponentKind::Graph)
+                    && self.compiled.templates[t].elems[scope].component_type
+                        == ComponentType::Graph)
                     .then_some(scope);
                 match graph {
                     Some(g) => {
@@ -253,7 +260,7 @@ impl<'a> Compiler<'a> {
                     ),
                 );
             }
-            ComponentKind::Answer => {
+            ComponentType::Answer => {
                 let response = match d.attr(el, "response") {
                     Some(a) => {
                         self.plan_value(t, scope, "response", d.attr_children(a), Some("expr"))?

@@ -10,7 +10,7 @@ use cells_sym::SymEngine;
 
 use crate::build::{Repeat, ScopeId, Structure};
 
-use crate::components::{ComponentKind, prop};
+use crate::components::{ComponentType, prop};
 use crate::dast::{Dast, StrId, StringTable};
 use crate::program::Program;
 use crate::tick::{Request, TickOutcome};
@@ -114,7 +114,7 @@ impl Document {
     /// request site rejects an infinite ask as the current core does.
     fn accepts_infinity(&self, cell: CellIdx) -> bool {
         (0..self.components.len() as CompIdx).any(|c| {
-            self.kind(c) == ComponentKind::MathInput
+            self.component_type(c) == ComponentType::MathInput
                 && self.comp_cells(c)[prop::math_input::VALUE] == cell
         })
     }

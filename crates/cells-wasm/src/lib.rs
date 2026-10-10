@@ -126,16 +126,16 @@ impl Core {
         self.doc.n_components()
     }
 
-    /// `u8` per component: the `ComponentKind` discriminant, in the order of
-    /// `kind_tags()`.
-    pub fn comp_kind_ptr(&self) -> *const u8 {
-        self.doc.components.kind.as_ptr() as *const u8
+    /// `u8` per component: the `ComponentType` discriminant, in the order of
+    /// `type_tags()`.
+    pub fn comp_type_ptr(&self) -> *const u8 {
+        self.doc.components.component_type.as_ptr() as *const u8
     }
 
-    /// Tag names indexed by kind discriminant, JSON array.
-    pub fn kind_tags(&self) -> String {
+    /// Tag names indexed by type discriminant, JSON array.
+    pub fn type_tags(&self) -> String {
         serde_json::to_string(
-            &cells_core::components::ComponentKind::ALL
+            &cells_core::components::ComponentType::ALL
                 .iter()
                 .map(|k| k.tag())
                 .collect::<Vec<_>>(),
@@ -143,10 +143,10 @@ impl Core {
         .unwrap()
     }
 
-    /// Prop names per kind, JSON array of arrays, in the order of `kind_tags()`.
-    pub fn kind_props(&self) -> String {
+    /// Prop names per type, JSON array of arrays, in the order of `type_tags()`.
+    pub fn type_props(&self) -> String {
         serde_json::to_string(
-            &cells_core::components::ComponentKind::ALL
+            &cells_core::components::ComponentType::ALL
                 .iter()
                 .map(|k| k.prop_defs().iter().map(|p| p.name).collect::<Vec<_>>())
                 .collect::<Vec<_>>(),
@@ -261,7 +261,7 @@ impl Core {
 
     pub fn component_tag(&self, idx: u32) -> Option<String> {
         if (idx as usize) < self.doc.n_components() {
-            Some(self.doc.kind(idx).tag().to_string())
+            Some(self.doc.component_type(idx).tag().to_string())
         } else {
             None
         }

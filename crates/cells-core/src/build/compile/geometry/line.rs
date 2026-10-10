@@ -43,8 +43,8 @@ impl Compiler<'_> {
             name_scope: scope,
             ..
         } = self.compiled.templates[t].elems[e];
-        let kind = ComponentKind::Line;
-        let mut ch = ElemPlan::new(kind.prop_defs().len());
+        let component_type = ComponentType::Line;
+        let mut ch = ElemPlan::new(component_type.prop_defs().len());
         let through = match self.attr_or_inherited(el, base, "through") {
             Some(a) => self.plan_point_list(t, scope, a)?,
             None => Vec::new(),
@@ -258,11 +258,11 @@ impl Compiler<'_> {
     ) -> Result<[usize; 2]> {
         match self.plan_point_attr(t, scope, a)? {
             PointPlan::Ref(p) => {
-                let target_kind = self
+                let target_type = self
                     .plan_elem_target(t, p)
-                    .map(|e| self.compiled.templates[t].elems[e].kind);
-                match target_kind {
-                    Some(ComponentKind::Line | ComponentKind::LineSegment) => {
+                    .map(|e| self.compiled.templates[t].elems[e].component_type);
+                match target_type {
+                    Some(ComponentType::Line | ComponentType::LineSegment) => {
                         let x1 = self.plan_with_prop(p, "x1");
                         let y1 = self.plan_with_prop(p, "y1");
                         let x2 = self.plan_with_prop(p, "x2");
@@ -295,7 +295,7 @@ impl Compiler<'_> {
             name_scope: scope,
             ..
         } = self.compiled.templates[t].elems[e];
-        let mut ch = ElemPlan::new(ComponentKind::LineSegment.prop_defs().len());
+        let mut ch = ElemPlan::new(ComponentType::LineSegment.prop_defs().len());
         let ends = match self.attr_or_inherited(el, base, "endpoints") {
             Some(a) => self.plan_point_list(t, scope, a)?,
             None => Vec::new(),

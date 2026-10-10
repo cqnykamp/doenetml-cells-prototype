@@ -1,6 +1,6 @@
 //! Copies: `extend` with a prop path, container copies whose children are
 //! clones, and the clone elements themselves. The merged-attribute rule for
-//! a planned kind with overrides is in `geometry/mod.rs` (`plan_geo`).
+//! a planned type with overrides is in `geometry/mod.rs` (`plan_geo`).
 
 use super::*;
 
@@ -12,22 +12,22 @@ impl<'a> Compiler<'a> {
         e: ElemId,
         p: RefId,
     ) -> Result<()> {
-        let kind = self.compiled.templates[t].elems[e].kind;
+        let component_type = self.compiled.templates[t].elems[e].component_type;
         let display = self.compiled.refs[p].display.clone();
-        let props = match kind {
-            ComponentKind::Point => {
+        let props = match component_type {
+            ComponentType::Point => {
                 let hide =
-                    ComponentKind::Point.prop_defs()[crate::components::prop::point::HIDE].default;
+                    ComponentType::Point.prop_defs()[crate::components::prop::point::HIDE].default;
                 vec![
                     SourcePlan::coord(p, 0),
                     SourcePlan::coord(p, 1),
                     SourcePlan::Default(hide),
                 ]
             }
-            ComponentKind::Number | ComponentKind::NumberInput | ComponentKind::MathInput => {
+            ComponentType::Number | ComponentType::NumberInput | ComponentType::MathInput => {
                 vec![SourcePlan::reference(p)]
             }
-            ComponentKind::Math => {
+            ComponentType::Math => {
                 let id = self.compiled.arena.push(Expr::Cell(p as CellIdx));
                 self.compiled.sym_text.insert(id, format!("#{p}"));
                 vec![
@@ -35,7 +35,7 @@ impl<'a> Compiler<'a> {
                     SourcePlan::MathValue(id),
                 ]
             }
-            ComponentKind::PointList => {
+            ComponentType::PointList => {
                 self.compiled.templates[t].elems[e].body = Body::PointList { from: p };
                 Vec::new()
             }
@@ -55,7 +55,7 @@ impl<'a> Compiler<'a> {
     ) -> Result<()> {
         let r = self
             .plan_elem_target(t, p)
-            .ok_or_else(|| Error::UncopyableKind("graph from another scope".into()))?;
+            .ok_or_else(|| Error::UncopyableType("graph from another scope".into()))?;
         self.plan_attrs(t, e, Some(p))?;
         let scope = self.child_scope(t, e);
         let kids = self.clone_children(t, r, scope, e)?;
@@ -75,20 +75,21 @@ impl<'a> Compiler<'a> {
         for ch in kids {
             match ch {
                 Child::Elem(c) => {
-                    let (kind, name) = {
+                    let (component_type, name) = {
                         let el = &self.compiled.templates[t].elems[c];
-                        (el.kind, el.name)
+                        (el.component_type, el.name)
                     };
                     if matches!(
                         self.compiled.templates[t].elems[c].body,
                         Body::Repeat { .. } | Body::Collect { .. }
                     ) {
-                        return Err(Error::UncopyableKind(format!(
+                        return Err(Error::UncopyableType(format!(
                             "{} inside a copied container",
-                            kind.tag()
+                            component_type.tag()
                         )));
                     }
-                    let ne = self.push_elem_visible_to(t, NONE, kind, name, scope, root)?;
+                    let ne =
+                        self.push_elem_visible_to(t, NONE, component_type, name, scope, root)?;
                     let label = format!("(copy of {})", self.elem_label(t, c));
                     self.compiled.refs.push(RefPlan {
                         hops: 0,

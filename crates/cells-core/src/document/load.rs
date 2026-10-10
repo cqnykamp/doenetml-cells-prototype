@@ -127,7 +127,7 @@ impl Document {
 
     /// The iteration count a repeat's `count` cell currently asks for.
     pub fn repeat_count(&self, r: &Repeat) -> u32 {
-        let pi = ComponentKind::RepeatForSequence
+        let pi = ComponentType::RepeatForSequence
             .prop_index("count")
             .unwrap();
         let v = self.cells[self.comp_cells(r.comp)[pi] as usize];

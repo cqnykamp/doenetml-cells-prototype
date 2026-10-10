@@ -40,7 +40,7 @@ impl<'c, 'a> Builder<'c, 'a> {
         let root = self.root;
         self.set_credit(root);
         for c in 0..self.components.len() as CompIdx {
-            if self.components.kind[c as usize] == ComponentKind::Section {
+            if self.components.component_type[c as usize] == ComponentType::Section {
                 if self.aggregates(c) {
                     self.set_credit(c);
                 } else {
@@ -133,20 +133,20 @@ impl<'c, 'a> Builder<'c, 'a> {
     /// containers are looked through, `<setup>` is not.
     fn scored_items(&mut self, c: CompIdx, gate: Option<SlotId>, out: &mut Vec<(SlotId, SlotId)>) {
         for k in self.component_children(c) {
-            let (weight, credit) = match self.components.kind[k as usize] {
-                ComponentKind::Setup => continue,
-                ComponentKind::Case => {
+            let (weight, credit) = match self.components.component_type[k as usize] {
+                ComponentType::Setup => continue,
+                ComponentType::Case => {
                     let g = self.gate_through(gate, k);
                     self.scored_items(k, g, out);
                     continue;
                 }
-                ComponentKind::Answer => {
+                ComponentType::Answer => {
                     // A blank response checks as NaN; it is no credit.
                     let checked = self.slot(k, answer::CREDIT);
                     let credit = self.op_slot(OpSpec::NanTo { k: 0.0 }, &[checked]);
                     (self.slot(k, answer::WEIGHT), credit)
                 }
-                ComponentKind::Section if self.aggregates(k) => {
+                ComponentType::Section if self.aggregates(k) => {
                     (self.slot(k, WEIGHT), self.slot(k, CREDIT))
                 }
                 _ => {
@@ -165,17 +165,17 @@ impl<'c, 'a> Builder<'c, 'a> {
     /// counted.
     fn number_sections(&mut self, c: CompIdx, gate: Option<SlotId>, counter: &mut Counter) {
         for k in self.component_children(c) {
-            match self.components.kind[k as usize] {
-                ComponentKind::Case => {
+            match self.components.component_type[k as usize] {
+                ComponentType::Case => {
                     let g = self.gate_through(gate, k);
                     self.number_sections(k, g, counter);
                 }
-                ComponentKind::ConditionalContent
-                | ComponentKind::Select
-                | ComponentKind::Group
-                | ComponentKind::RepeatForSequence
-                | ComponentKind::Collect => self.number_sections(k, gate, counter),
-                ComponentKind::Section => {
+                ComponentType::ConditionalContent
+                | ComponentType::Select
+                | ComponentType::Group
+                | ComponentType::RepeatForSequence
+                | ComponentType::Collect => self.number_sections(k, gate, counter),
+                ComponentType::Section => {
                     let number = match counter.before {
                         None => Source::Fixed(counter.fixed + 1.0),
                         Some(b) => self.op_source(

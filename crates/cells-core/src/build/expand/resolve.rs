@@ -10,7 +10,7 @@ impl<'c, 'a> Builder<'c, 'a> {
         arg: Arg,
         comp: CompIdx,
         scope: ScopeId,
-        kind: ComponentKind,
+        component_type: ComponentType,
         pi: usize,
     ) -> Result<SlotId> {
         Ok(match arg {
@@ -22,15 +22,19 @@ impl<'c, 'a> Builder<'c, 'a> {
             Arg::Ref(p, Sel::Whole) => self.resolve_one(p, scope).map_err(|e| {
                 arity_error(
                     e,
-                    kind,
-                    kind.prop_defs().get(pi).map(|d| d.name).unwrap_or("args"),
+                    component_type,
+                    component_type
+                        .prop_defs()
+                        .get(pi)
+                        .map(|d| d.name)
+                        .unwrap_or("args"),
                 )
             })?,
             Arg::Ref(p, Sel::Coord(j)) => {
                 let targets = self.resolve_ref(p, scope, Some(2))?;
                 if targets.len() != 2 {
                     return Err(Error::ArityMismatch {
-                        kind: kind.tag().into(),
+                        component_type: component_type.tag().into(),
                         prop: "coords".into(),
                         expected: 2,
                         got: targets.len(),
@@ -84,8 +88,8 @@ impl<'c, 'a> Builder<'c, 'a> {
                     cur = match cur {
                         Resolved::Missing => Resolved::Missing,
                         Resolved::Iter(..) => return Err(Error::NotIndexable(p.display.clone())),
-                        Resolved::Comp(c) => match self.components.kind[c as usize] {
-                            ComponentKind::RepeatForSequence => {
+                        Resolved::Comp(c) => match self.components.component_type[c as usize] {
+                            ComponentType::RepeatForSequence => {
                                 let r = &self.repeats[self.comp_repeat[c as usize] as usize];
                                 if k < 1 || k > r.iterations as i64 {
                                     Resolved::Missing
@@ -93,14 +97,14 @@ impl<'c, 'a> Builder<'c, 'a> {
                                     Resolved::Iter(c, r.iter_scopes[(k - 1) as usize])
                                 }
                             }
-                            ComponentKind::Collect => match self.collected.get(&c) {
+                            ComponentType::Collect => match self.collected.get(&c) {
                                 Some(items) if k >= 1 && (k as usize) <= items.len() => {
                                     Resolved::Comp(items[(k - 1) as usize])
                                 }
                                 Some(_) => Resolved::Missing,
                                 None => return Err(Error::NotIndexable(p.display.clone())),
                             },
-                            ComponentKind::PointList => {
+                            ComponentType::PointList => {
                                 let (s, n) = (
                                     self.components.child_start[c as usize] as usize,
                                     self.components.child_count[c as usize] as usize,
@@ -111,7 +115,7 @@ impl<'c, 'a> Builder<'c, 'a> {
                                     Resolved::Missing
                                 }
                             }
-                            ComponentKind::Select => {
+                            ComponentType::Select => {
                                 let inst = &self.choice_insts[self.comp_choice[&c]];
                                 if k < 1 || k as usize > inst.scopes.len() {
                                     Resolved::Missing
@@ -183,23 +187,25 @@ impl<'c, 'a> Builder<'c, 'a> {
             }
             other => self.single_component(other, plan)?,
         };
-        let kind = self.components.kind[comp as usize];
+        let component_type = self.components.component_type[comp as usize];
         let prop = match prop {
             Some(p) => p,
-            None => kind
+            None => component_type
                 .default_prop()
                 .ok_or_else(|| Error::NoDefaultProp(self.comp_label(comp)))?,
         };
-        if let Some(parts) = kind.virtual_prop(prop) {
+        if let Some(parts) = component_type.virtual_prop(prop) {
             return Ok(parts
                 .iter()
-                .map(|p| self.slot(comp, kind.prop_index(p).unwrap()))
+                .map(|p| self.slot(comp, component_type.prop_index(p).unwrap()))
                 .collect());
         }
-        let pi = kind.prop_index(prop).ok_or_else(|| Error::UnknownProp {
-            name: self.comp_label(comp),
-            prop: prop.into(),
-        })?;
+        let pi = component_type
+            .prop_index(prop)
+            .ok_or_else(|| Error::UnknownProp {
+                name: self.comp_label(comp),
+                prop: prop.into(),
+            })?;
         Ok(vec![self.slot(comp, pi)])
     }
 
@@ -214,7 +220,7 @@ impl<'c, 'a> Builder<'c, 'a> {
     }
 
     /// The one slot a reference names, without allocating. Errors with a
-    /// placeholder `ArityMismatch` (callers fill in kind and prop) when the
+    /// placeholder `ArityMismatch` (callers fill in type and prop) when the
     /// reference names several cells.
     pub(in crate::build) fn resolve_one(&mut self, plan: RefId, scope: ScopeId) -> Result<SlotId> {
         let (target, prop) = self.resolve(plan, scope)?;
@@ -222,34 +228,36 @@ impl<'c, 'a> Builder<'c, 'a> {
             Resolved::Missing => return Ok(self.missing_slot()),
             other => self.single_component(other, plan)?,
         };
-        let kind = self.components.kind[comp as usize];
+        let component_type = self.components.component_type[comp as usize];
         let prop = match prop {
             Some(p) => p,
-            None => kind
+            None => component_type
                 .default_prop()
                 .ok_or_else(|| Error::NoDefaultProp(self.comp_label(comp)))?,
         };
-        if let Some(parts) = kind.virtual_prop(prop) {
+        if let Some(parts) = component_type.virtual_prop(prop) {
             return Err(Error::ArityMismatch {
-                kind: String::new(),
+                component_type: String::new(),
                 prop: String::new(),
                 expected: 1,
                 got: parts.len(),
             });
         }
-        let pi = kind.prop_index(prop).ok_or_else(|| Error::UnknownProp {
-            name: self.comp_label(comp),
-            prop: prop.into(),
-        })?;
+        let pi = component_type
+            .prop_index(prop)
+            .ok_or_else(|| Error::UnknownProp {
+                name: self.comp_label(comp),
+                prop: prop.into(),
+            })?;
         Ok(self.slot(comp, pi))
     }
 }
 
-/// Fill in the kind and prop of an arity error raised by `resolve_one`.
-fn arity_error(e: Error, kind: ComponentKind, prop: &str) -> Error {
+/// Fill in the type and prop of an arity error raised by `resolve_one`.
+fn arity_error(e: Error, component_type: ComponentType, prop: &str) -> Error {
     match e {
         Error::ArityMismatch { expected, got, .. } => Error::ArityMismatch {
-            kind: kind.tag().into(),
+            component_type: component_type.tag().into(),
             prop: prop.into(),
             expected,
             got,

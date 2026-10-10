@@ -1,14 +1,14 @@
-//! The component table as a renderer or a test reads it: kinds, names,
+//! The component table as a renderer or a test reads it: types, names,
 //! children and prop cells.
 
 use super::*;
 
 /// The component table as parallel arrays indexed by `CompIdx`. Props are implicit:
-/// component `c` of kind `k` owns `prop_cells[prop_base[c] + i]` for each
+/// component `c` of type `k` owns `prop_cells[prop_base[c] + i]` for each
 /// `i` in `k.prop_defs()`.
 #[derive(Debug, Clone, Default)]
 pub struct ComponentTable {
-    pub kind: Vec<ComponentKind>,
+    pub component_type: Vec<ComponentType>,
     /// String id of the name, or `NONE`.
     pub name: Vec<StrId>,
     pub parent: Vec<CompIdx>,
@@ -27,11 +27,11 @@ pub struct ComponentTable {
 
 impl ComponentTable {
     pub fn len(&self) -> usize {
-        self.kind.len()
+        self.component_type.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.kind.is_empty()
+        self.component_type.is_empty()
     }
 
     /// A sticky group's members: its children that take part, with repeats,
@@ -48,18 +48,20 @@ impl ComponentTable {
                 if k & TEXT_BIT != 0 {
                     continue;
                 }
-                match self.kind[k as usize] {
-                    ComponentKind::RepeatForSequence
-                    | ComponentKind::Collect
-                    | ComponentKind::Group
-                    | ComponentKind::Select
-                    | ComponentKind::ConditionalContent => stack.push((k, gates.clone())),
-                    ComponentKind::Case => {
+                match self.component_type[k as usize] {
+                    ComponentType::RepeatForSequence
+                    | ComponentType::Collect
+                    | ComponentType::Group
+                    | ComponentType::Select
+                    | ComponentType::ConditionalContent => stack.push((k, gates.clone())),
+                    ComponentType::Case => {
                         let active = self.prop_cells
                             [self.prop_base[k as usize] as usize + prop::case::ACTIVE];
                         stack.push((k, [gates.as_slice(), &[active]].concat()));
                     }
-                    kind if kind.sticky_layout().is_some() => out.push((k, gates.clone())),
+                    component_type if component_type.sticky_layout().is_some() => {
+                        out.push((k, gates.clone()))
+                    }
                     _ => {}
                 }
             }
@@ -68,7 +70,7 @@ impl ComponentTable {
     }
 
     pub fn heap_bytes(&self) -> usize {
-        self.kind.capacity() * std::mem::size_of::<ComponentKind>()
+        self.component_type.capacity() * std::mem::size_of::<ComponentType>()
             + 4 * (self.name.capacity()
                 + self.parent.capacity()
                 + self.prop_base.capacity()
@@ -92,8 +94,8 @@ impl Document {
         self.components.len()
     }
 
-    pub fn kind(&self, c: CompIdx) -> ComponentKind {
-        self.components.kind[c as usize]
+    pub fn component_type(&self, c: CompIdx) -> ComponentType {
+        self.components.component_type[c as usize]
     }
 
     pub fn name(&self, c: CompIdx) -> Option<&str> {
@@ -120,10 +122,10 @@ impl Document {
         })
     }
 
-    /// Cells of the single-cell props of `c`, in `kind.prop_defs()` order.
+    /// Cells of the single-cell props of `c`, in `component_type.prop_defs()` order.
     pub fn comp_cells(&self, c: CompIdx) -> &[CellIdx] {
         let base = self.components.prop_base[c as usize] as usize;
-        &self.components.prop_cells[base..base + self.kind(c).prop_defs().len()]
+        &self.components.prop_cells[base..base + self.component_type(c).prop_defs().len()]
     }
 
     /// The text a component shows, as the current core's `text` state
@@ -140,23 +142,23 @@ impl Document {
             self.prop_cells(c, prop)
                 .map(|cells| self.cells[cells[0] as usize])
         };
-        match self.kind(c) {
-            ComponentKind::Text => {
+        match self.component_type(c) {
+            ComponentType::Text => {
                 out.push_str(&self.text_value(self.comp_cells(c)[prop::text::VALUE]))
             }
-            ComponentKind::Number | ComponentKind::NumberInput | ComponentKind::Slider => {
+            ComponentType::Number | ComponentType::NumberInput | ComponentType::Slider => {
                 out.push_str(&format_number(value("value").unwrap_or(f64::NAN)))
             }
-            ComponentKind::Math | ComponentKind::MathInput => {
+            ComponentType::Math | ComponentType::MathInput => {
                 let expr = self.prop_cells(c, "expr").map(|cells| cells[0]);
                 match expr {
                     Some(e) if !self.cells[e as usize].is_nan() => out.push_str(&self.math_text(e)),
                     _ => out.push_str(&format_number(value("value").unwrap_or(f64::NAN))),
                 }
             }
-            ComponentKind::Case
+            ComponentType::Case
                 if self.cells[self.comp_cells(c)[prop::case::ACTIVE] as usize] != 1.0 => {}
-            ComponentKind::ConditionalContent | ComponentKind::Select
+            ComponentType::ConditionalContent | ComponentType::Select
                 if value("hide").is_some_and(|h| h != 0.0 && !h.is_nan()) => {}
             _ => {
                 for ch in self.children(c) {
@@ -188,16 +190,16 @@ impl Document {
     /// and array props such as a line's `points` (items flattened, live
     /// items only).
     pub fn prop_cells(&self, comp: CompIdx, prop: &str) -> Option<Vec<CellIdx>> {
-        let kind = self.kind(comp);
-        if let Some(parts) = kind.virtual_prop(prop) {
+        let component_type = self.component_type(comp);
+        if let Some(parts) = component_type.virtual_prop(prop) {
             return parts
                 .iter()
                 .map(|p| self.prop_cells(comp, p).map(|v| v[0]))
                 .collect();
         }
-        if let Some(items) = kind.array_prop(prop) {
-            let live = match kind {
-                ComponentKind::Polygon => {
+        if let Some(items) = component_type.array_prop(prop) {
+            let live = match component_type {
+                ComponentType::Polygon => {
                     self.cells[self.comp_cells(comp)[prop::polygon::NUM_VERTICES] as usize] as usize
                 }
                 _ => items.len(),
@@ -209,7 +211,7 @@ impl Document {
                 .collect::<Option<Vec<_>>>()
                 .map(|v| v.concat());
         }
-        let i = kind.prop_index(prop)?;
+        let i = component_type.prop_index(prop)?;
         Some(vec![self.comp_cells(comp)[i]])
     }
 

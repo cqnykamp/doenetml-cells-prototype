@@ -7,9 +7,9 @@ export interface ComponentColumns {
   root: number;
   nCells: number;
   nEssential: number;
-  kindTags: string[];
-  kindProps: string[][];
-  kind: Uint8Array;
+  typeTags: string[];
+  typeProps: string[][];
+  componentType: Uint8Array;
   name: Uint32Array;
   parent: Uint32Array;
   propBase: Uint32Array;
@@ -35,14 +35,14 @@ export class ComponentTable {
   private propIndex: Map<string, number>[];
 
   constructor(public cols: ComponentColumns) {
-    this.propIndex = cols.kindProps.map((names) => new Map(names.map((n, i) => [n, i])));
+    this.propIndex = cols.typeProps.map((names) => new Map(names.map((n, i) => [n, i])));
   }
 
   get root() {
     return this.cols.root;
   }
   get length() {
-    return this.cols.kind.length;
+    return this.cols.componentType.length;
   }
   get nCells() {
     return this.cols.nCells;
@@ -61,8 +61,8 @@ export class ComponentTable {
     return s;
   }
 
-  kind(c: number): string {
-    return this.cols.kindTags[this.cols.kind[c]];
+  componentType(c: number): string {
+    return this.cols.typeTags[this.cols.componentType[c]];
   }
 
   name(c: number): string | null {
@@ -77,8 +77,8 @@ export class ComponentTable {
 
   /** Cell index of prop `name` on component `c`. */
   cell(c: number, name: string): number {
-    const i = this.propIndex[this.cols.kind[c]].get(name);
-    if (i === undefined) throw new Error(`component ${c} (${this.kind(c)}) has no prop ${name}`);
+    const i = this.propIndex[this.cols.componentType[c]].get(name);
+    if (i === undefined) throw new Error(`component ${c} (${this.componentType(c)}) has no prop ${name}`);
     return this.cols.propCells[this.cols.propBase[c] + i];
   }
 
@@ -118,9 +118,9 @@ export function columnsFromCore(core: any, memory: WebAssembly.Memory, copy: boo
     root: core.root(),
     nCells: core.cells_len(),
     nEssential: core.n_essential(),
-    kindTags: JSON.parse(core.kind_tags()),
-    kindProps: JSON.parse(core.kind_props()),
-    kind: u8(core.comp_kind_ptr(), n),
+    typeTags: JSON.parse(core.type_tags()),
+    typeProps: JSON.parse(core.type_props()),
+    componentType: u8(core.comp_type_ptr(), n),
     name: u32(core.comp_name_ptr(), n),
     parent: u32(core.comp_parent_ptr(), n),
     propBase: u32(core.comp_prop_base_ptr(), n),
@@ -134,7 +134,7 @@ export function columnsFromCore(core: any, memory: WebAssembly.Memory, copy: boo
     stringBytes: u8(core.string_bytes_ptr(), core.string_bytes_len()),
   };
   if (copy) {
-    for (const k of ["kind", "name", "parent", "propBase", "propCells", "childStart", "childCount", "childList", "node", "scope", "stringOffsets", "stringBytes"] as const) {
+    for (const k of ["componentType", "name", "parent", "propBase", "propCells", "childStart", "childCount", "childList", "node", "scope", "stringOffsets", "stringBytes"] as const) {
       (cols as any)[k] = (cols as any)[k].slice();
     }
   }
@@ -143,5 +143,5 @@ export function columnsFromCore(core: any, memory: WebAssembly.Memory, copy: boo
 
 /** Buffers to transfer when posting copied columns across threads. */
 export function columnBuffers(cols: ComponentColumns): ArrayBuffer[] {
-  return [cols.kind, cols.name, cols.parent, cols.propBase, cols.propCells, cols.childStart, cols.childCount, cols.childList, cols.node, cols.scope, cols.stringOffsets, cols.stringBytes].map((a) => a.buffer as ArrayBuffer);
+  return [cols.componentType, cols.name, cols.parent, cols.propBase, cols.propCells, cols.childStart, cols.childCount, cols.childList, cols.node, cols.scope, cols.stringOffsets, cols.stringBytes].map((a) => a.buffer as ArrayBuffer);
 }

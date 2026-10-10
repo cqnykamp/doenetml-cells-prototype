@@ -116,20 +116,20 @@ impl<'c, 'a> Builder<'c, 'a> {
         if comp == NONE {
             return None;
         }
-        let kind = self.components.kind[comp as usize];
+        let component_type = self.components.component_type[comp as usize];
         let pi = (slot - self.slot_base[comp as usize]) as usize;
-        let name = kind.prop_defs().get(pi)?.name;
-        match (kind, name) {
-            (ComponentKind::Answer, "response" | "correct" | "submitted") => Some(slot),
+        let name = component_type.prop_defs().get(pi)?.name;
+        match (component_type, name) {
+            (ComponentType::Answer, "response" | "correct" | "submitted") => Some(slot),
             (
-                ComponentKind::Math
-                | ComponentKind::MathInput
-                | ComponentKind::Function
-                | ComponentKind::Derivative,
+                ComponentType::Math
+                | ComponentType::MathInput
+                | ComponentType::Function
+                | ComponentType::Derivative,
                 "expr" | "value",
             ) => self
                 .is_symbolic(comp)
-                .then(|| self.slot(comp, kind.prop_index("expr").unwrap())),
+                .then(|| self.slot(comp, component_type.prop_index("expr").unwrap())),
             _ => None,
         }
     }
@@ -149,15 +149,15 @@ impl<'c, 'a> Builder<'c, 'a> {
             MathMode::Unknown => {}
         }
         self.math_mode[comp as usize] = MathMode::Deciding;
-        let kind = self.components.kind[comp as usize];
+        let component_type = self.components.component_type[comp as usize];
         let inst = self.comp_instance[comp as usize];
-        let yes = match kind {
-            ComponentKind::Function | ComponentKind::Derivative => true,
+        let yes = match component_type {
+            ComponentType::Function | ComponentType::Derivative => true,
             // A copy of a math (its `expr`) or a bound mathInput (its `value`).
-            ComponentKind::Math | ComponentKind::MathInput if inst == NONE => {
+            ComponentType::Math | ComponentType::MathInput if inst == NONE => {
                 match self.sources.get(self.slot(
                     comp,
-                    if kind == ComponentKind::Math {
+                    if component_type == ComponentType::Math {
                         prop::math::EXPR
                     } else {
                         prop::math_input::VALUE
@@ -171,7 +171,7 @@ impl<'c, 'a> Builder<'c, 'a> {
                     _ => false,
                 }
             }
-            ComponentKind::MathInput => {
+            ComponentType::MathInput => {
                 let i = self.instances[inst as usize];
                 matches!(
                     self.compiled.templates[i.template].elems[i.elem]
@@ -180,7 +180,7 @@ impl<'c, 'a> Builder<'c, 'a> {
                     Some(SourcePlan::MathEssential(_))
                 )
             }
-            ComponentKind::Math => {
+            ComponentType::Math => {
                 let i = self.instances[inst as usize];
                 match self.compiled.templates[i.template].elems[i.elem]
                     .props

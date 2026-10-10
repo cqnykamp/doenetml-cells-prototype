@@ -8,7 +8,7 @@
 //! has the full map):
 //!
 //! - [`dast`]: the input, the parser's DAST in flat, columnar form.
-//! - [`components`]: the tag vocabulary, meaning each kind's props and where
+//! - [`components`]: the tag vocabulary, meaning each type's props and where
 //!   their values come from. The build plans from it, and the component
 //!   table names cells with it.
 //! - [`build`]: DAST to cells and instructions, in three stages: `compile`

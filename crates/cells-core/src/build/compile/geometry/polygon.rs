@@ -16,8 +16,8 @@ impl Compiler<'_> {
             name_scope: scope,
             ..
         } = self.compiled.templates[t].elems[e];
-        let kind = ComponentKind::Polygon;
-        let mut ch = ElemPlan::new(kind.prop_defs().len());
+        let component_type = ComponentType::Polygon;
+        let mut ch = ElemPlan::new(component_type.prop_defs().len());
         let vertices = match self.attr_or_inherited(el, base, "vertices") {
             Some(a) => self.plan_point_list(t, scope, a)?,
             None => Vec::new(),

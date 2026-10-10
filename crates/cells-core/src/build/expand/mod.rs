@@ -1,5 +1,5 @@
 //! Expand: stamp templates into components per scope, give `$ref` children
-//! their kind, expand collects and point lists, and turn every plan into a
+//! their type, expand collects and point lists, and turn every plan into a
 //! source (an essential value, an alias, or an operator over slots).
 
 use super::*;
@@ -101,7 +101,7 @@ pub(in crate::build) struct Builder<'c, 'a> {
     /// Per component: index into `repeats` for a repeat component.
     pub(in crate::build) comp_repeat: Vec<u32>,
     pub(in crate::build) repeats: Vec<Repeat>,
-    /// `$ref` children awaiting a kind: (component, plan, scope, has index).
+    /// `$ref` children awaiting a type: (component, plan, scope, has index).
     pub(in crate::build) pending: Vec<(CompIdx, RefId, ScopeId, bool)>,
     /// Collect components awaiting expansion.
     pub(in crate::build) collects: Vec<CompIdx>,
@@ -138,7 +138,7 @@ impl<'c, 'a> Builder<'c, 'a> {
             math_slots: Vec::new(),
             math_mode: Vec::new(),
             components: ComponentTable {
-                kind: Vec::with_capacity(guess),
+                component_type: Vec::with_capacity(guess),
                 name: Vec::with_capacity(guess),
                 parent: Vec::with_capacity(guess),
                 prop_base: Vec::new(),
@@ -177,7 +177,7 @@ impl<'c, 'a> Builder<'c, 'a> {
     /// element's plan added.
     pub(in crate::build) fn new_component(
         &mut self,
-        kind: ComponentKind,
+        component_type: ComponentType,
         name: StrId,
         parent: CompIdx,
         node: NodeId,
@@ -185,7 +185,7 @@ impl<'c, 'a> Builder<'c, 'a> {
         n_slots: usize,
     ) -> CompIdx {
         let idx = self.components.len() as CompIdx;
-        self.components.kind.push(kind);
+        self.components.component_type.push(component_type);
         self.components.name.push(name);
         self.components.parent.push(parent);
         self.components.child_start.push(0);
@@ -239,7 +239,11 @@ impl<'c, 'a> Builder<'c, 'a> {
         if name != NONE {
             self.compiled.dast.strings.get(name).trim().to_string()
         } else {
-            format!("<{}>#{}", self.components.kind[comp as usize].tag(), comp)
+            format!(
+                "<{}>#{}",
+                self.components.component_type[comp as usize].tag(),
+                comp
+            )
         }
     }
 
@@ -249,7 +253,10 @@ impl<'c, 'a> Builder<'c, 'a> {
             return format!("(anonymous slot {slot})");
         }
         let pi = (slot - self.slot_base[comp as usize]) as usize;
-        match self.components.kind[comp as usize].prop_defs().get(pi) {
+        match self.components.component_type[comp as usize]
+            .prop_defs()
+            .get(pi)
+        {
             Some(def) => format!("{}.{}", self.comp_label(comp), def.name),
             None => format!("{}.(hidden slot {pi})", self.comp_label(comp)),
         }
@@ -296,8 +303,9 @@ impl<'c, 'a> Builder<'c, 'a> {
         // Create every element's component first so children can refer to them.
         for e in 0..n_elems {
             let el = &self.compiled.templates[t].elems[e];
-            let n_slots = el.props.len().max(el.kind.prop_defs().len());
-            let comp = self.new_component(el.kind, el.name, parent, el.node, scope, n_slots);
+            let n_slots = el.props.len().max(el.component_type.prop_defs().len());
+            let comp =
+                self.new_component(el.component_type, el.name, parent, el.node, scope, n_slots);
             self.scope_comps[scope as usize][e] = comp;
             self.comp_instance[comp as usize] = self.instances.len() as u32;
             self.instances.push(Instance {
@@ -350,7 +358,9 @@ impl<'c, 'a> Builder<'c, 'a> {
                     self.pointlists.push(comp);
                     Vec::new()
                 }
-                _ if self.compiled.templates[t].elems[e].kind == ComponentKind::PointList => {
+                _ if self.compiled.templates[t].elems[e].component_type
+                    == ComponentType::PointList =>
+                {
                     // A copy of a point list: children copied once the
                     // original's exist.
                     self.pointlists.push(comp);
@@ -400,8 +410,8 @@ impl<'c, 'a> Builder<'c, 'a> {
             Child::Elem(e) => self.scope_comps[scope as usize][e],
             Child::Text(s) => TEXT_BIT | s,
             Child::Macro(plan, has_index) => {
-                // Kind is unknown until the reference resolves; Document stands in.
-                let idx = self.new_component(ComponentKind::Document, NONE, parent, NONE, scope, 0);
+                // Type is unknown until the reference resolves; Document stands in.
+                let idx = self.new_component(ComponentType::Document, NONE, parent, NONE, scope, 0);
                 self.pending.push((idx, plan, scope, has_index));
                 idx
             }
@@ -438,7 +448,7 @@ impl<'c, 'a> Builder<'c, 'a> {
         Ok(())
     }
 
-    /// Give a `$ref` child its kind: a copy of a component, a number aliasing
+    /// Give a `$ref` child its type: a copy of a component, a number aliasing
     /// one prop, or a number holding the missing-referent cell.
     pub(in crate::build) fn place(
         &mut self,
@@ -449,7 +459,7 @@ impl<'c, 'a> Builder<'c, 'a> {
         let (target, prop) = self.resolve(plan, scope)?;
         match (target, prop) {
             (Resolved::Missing, _) => {
-                self.components.kind[idx as usize] = ComponentKind::Number;
+                self.components.component_type[idx as usize] = ComponentType::Number;
                 self.allocate_slots(idx, 1);
                 let s = self.slot(idx, 0);
                 self.sources[s as usize] = Source::Alias(self.missing_slot());
@@ -457,14 +467,13 @@ impl<'c, 'a> Builder<'c, 'a> {
             (_, Some(prop)) => {
                 let targets = self.targets_of(target, Some(prop), plan, Some(1))?;
                 // A text's value is a string id: it shows as a text.
-                let is_text = self
-                    .single_component(target, plan)
-                    .is_ok_and(|c| self.components.kind[c as usize] == ComponentKind::Text)
-                    && prop == "value";
-                self.components.kind[idx as usize] = if is_text {
-                    ComponentKind::Text
+                let is_text = self.single_component(target, plan).is_ok_and(|c| {
+                    self.components.component_type[c as usize] == ComponentType::Text
+                }) && prop == "value";
+                self.components.component_type[idx as usize] = if is_text {
+                    ComponentType::Text
                 } else {
-                    ComponentKind::Number
+                    ComponentType::Number
                 };
                 self.allocate_slots(idx, 1);
                 let s = self.slot(idx, 0);
@@ -472,18 +481,18 @@ impl<'c, 'a> Builder<'c, 'a> {
             }
             (target, None) => {
                 let referent = self.single_component(target, plan)?;
-                let kind = self.components.kind[referent as usize];
+                let component_type = self.components.component_type[referent as usize];
                 if matches!(
-                    kind,
-                    ComponentKind::ConditionalContent | ComponentKind::Select | ComponentKind::Case
+                    component_type,
+                    ComponentType::ConditionalContent | ComponentType::Select | ComponentType::Case
                 ) {
                     return Err(Error::Banned(format!(
                         "copying a whole <{}>: reference its interface names instead",
-                        kind.tag()
+                        component_type.tag()
                     )));
                 }
-                if !kind.copyable() {
-                    return Err(Error::UncopyableKind(kind.tag().into()));
+                if !component_type.copyable() {
+                    return Err(Error::UncopyableType(component_type.tag().into()));
                 }
                 self.copy_into(idx, referent);
             }
@@ -491,12 +500,12 @@ impl<'c, 'a> Builder<'c, 'a> {
         Ok(())
     }
 
-    /// Make `idx` a copy of `referent`: same kind, every slot aliased.
+    /// Make `idx` a copy of `referent`: same type, every slot aliased.
     pub(in crate::build) fn copy_into(&mut self, idx: CompIdx, referent: CompIdx) {
-        let kind = self.components.kind[referent as usize];
-        self.components.kind[idx as usize] = kind;
-        self.allocate_slots(idx, kind.prop_defs().len());
-        for pi in 0..kind.prop_defs().len() {
+        let component_type = self.components.component_type[referent as usize];
+        self.components.component_type[idx as usize] = component_type;
+        self.allocate_slots(idx, component_type.prop_defs().len());
+        for pi in 0..component_type.prop_defs().len() {
             let s = self.slot(idx, pi);
             self.sources[s as usize] = Source::Alias(self.slot(referent, pi));
         }
@@ -511,16 +520,18 @@ impl<'c, 'a> Builder<'c, 'a> {
     ) -> Result<Vec<[SlotId; 2]>> {
         let (target, prop) = self.resolve(plan, scope)?;
         let comp = self.single_component(target, plan)?;
-        let kind = self.components.kind[comp as usize];
+        let component_type = self.components.component_type[comp as usize];
         let prop =
             prop.ok_or_else(|| Error::PathTooDeep(self.compiled.refs[plan].display.clone()))?;
-        let items = kind.array_prop(prop).ok_or_else(|| Error::UnknownProp {
-            name: self.comp_label(comp),
-            prop: prop.into(),
-        })?;
-        let count_slot = match kind {
-            ComponentKind::Polygon => Some(self.slot(comp, prop::polygon::NUM_VERTICES)),
-            ComponentKind::Circle => Some(self.slot(comp, prop::circle::NUM_THROUGH_POINTS)),
+        let items = component_type
+            .array_prop(prop)
+            .ok_or_else(|| Error::UnknownProp {
+                name: self.comp_label(comp),
+                prop: prop.into(),
+            })?;
+        let count_slot = match component_type {
+            ComponentType::Polygon => Some(self.slot(comp, prop::polygon::NUM_VERTICES)),
+            ComponentType::Circle => Some(self.slot(comp, prop::circle::NUM_THROUGH_POINTS)),
             _ => None,
         };
         let live = match count_slot.map(|s| self.sources[s as usize].clone()) {
@@ -532,8 +543,8 @@ impl<'c, 'a> Builder<'c, 'a> {
             .take(live)
             .map(|[x, y]| {
                 [
-                    self.slot(comp, kind.prop_index(x).unwrap()),
-                    self.slot(comp, kind.prop_index(y).unwrap()),
+                    self.slot(comp, component_type.prop_index(x).unwrap()),
+                    self.slot(comp, component_type.prop_index(y).unwrap()),
                 ]
             })
             .collect())
@@ -551,7 +562,7 @@ impl<'c, 'a> Builder<'c, 'a> {
                 let items = self.resolve_items(from, inst.scope)?;
                 for [x, y] in items {
                     let pt =
-                        self.new_component(ComponentKind::Point, NONE, comp, NONE, inst.scope, 3);
+                        self.new_component(ComponentType::Point, NONE, comp, NONE, inst.scope, 3);
                     let (sx, sy, sh) = (
                         self.slot(pt, prop::point::X),
                         self.slot(pt, prop::point::Y),
@@ -574,7 +585,7 @@ impl<'c, 'a> Builder<'c, 'a> {
                 let originals: Vec<CompIdx> = self.components.child_list[s..s + n].to_vec();
                 for orig in originals {
                     let copy = self.new_component(
-                        ComponentKind::Document,
+                        ComponentType::Document,
                         NONE,
                         comp,
                         NONE,
@@ -593,21 +604,23 @@ impl<'c, 'a> Builder<'c, 'a> {
 
     pub(in crate::build) fn expand_collect(&mut self, comp: CompIdx) -> Result<()> {
         let inst = self.instances[self.comp_instance[comp as usize] as usize];
-        let Body::Collect { from, kind } =
-            self.compiled.templates[inst.template].elems[inst.elem].body
+        let Body::Collect {
+            from,
+            component_type,
+        } = self.compiled.templates[inst.template].elems[inst.elem].body
         else {
             unreachable!()
         };
         let (target, _) = self.resolve(from, inst.scope)?;
         let mut found = Vec::new();
         match target {
-            Resolved::Comp(c) => self.collect_descendants(c, kind, &mut found),
+            Resolved::Comp(c) => self.collect_descendants(c, component_type, &mut found),
             Resolved::Iter(repeat, s) => {
                 for c in self.iteration_components(repeat, s) {
-                    if self.components.kind[c as usize] == kind {
+                    if self.components.component_type[c as usize] == component_type {
                         found.push(c);
                     } else {
-                        self.collect_descendants(c, kind, &mut found);
+                        self.collect_descendants(c, component_type, &mut found);
                     }
                 }
             }
@@ -615,8 +628,8 @@ impl<'c, 'a> Builder<'c, 'a> {
         }
         let mut copies = Vec::with_capacity(found.len());
         for &c in &found {
-            // Created kind-less so `copy_into` allocates the slots once.
-            let copy = self.new_component(ComponentKind::Document, NONE, comp, NONE, inst.scope, 0);
+            // Created without a type so `copy_into` allocates the slots once.
+            let copy = self.new_component(ComponentType::Document, NONE, comp, NONE, inst.scope, 0);
             self.copy_into(copy, c);
             copies.push(copy);
         }
@@ -627,12 +640,12 @@ impl<'c, 'a> Builder<'c, 'a> {
         Ok(())
     }
 
-    /// Descendants of `c` of `kind`, in document order, not recursing into
+    /// Descendants of `c` of `component_type`, in document order, not recursing into
     /// a match (as the current core's `recurseToMatchedChildren: false`).
     pub(in crate::build) fn collect_descendants(
         &self,
         c: CompIdx,
-        kind: ComponentKind,
+        component_type: ComponentType,
         out: &mut Vec<CompIdx>,
     ) {
         let (s, n) = (
@@ -644,10 +657,10 @@ impl<'c, 'a> Builder<'c, 'a> {
             if e & TEXT_BIT != 0 {
                 continue;
             }
-            if self.components.kind[e as usize] == kind {
+            if self.components.component_type[e as usize] == component_type {
                 out.push(e);
             } else {
-                self.collect_descendants(e, kind, out);
+                self.collect_descendants(e, component_type, out);
             }
         }
     }
@@ -673,20 +686,20 @@ impl<'c, 'a> Builder<'c, 'a> {
     /// Sources for every prop of one instantiated element.
     pub(in crate::build) fn instance_sources(&mut self, inst: Instance) -> Result<()> {
         let comp = inst.comp;
-        let (kind, extend_plan) = {
+        let (component_type, extend_plan) = {
             let el = &self.compiled.templates[inst.template].elems[inst.elem];
-            (el.kind, el.extend)
+            (el.component_type, el.extend)
         };
         let extend = match extend_plan {
             Some(p) => {
                 let (target, _) = self.resolve(p, inst.scope)?;
                 let referent = self.single_component(target, p)?;
-                let rk = self.components.kind[referent as usize];
-                if rk != kind {
-                    return Err(Error::ExtendKindMismatch {
+                let rk = self.components.component_type[referent as usize];
+                if rk != component_type {
+                    return Err(Error::ExtendTypeMismatch {
                         referent: self.compiled.refs[p].display.clone(),
-                        referent_kind: rk.tag().into(),
-                        kind: kind.tag().into(),
+                        referent_type: rk.tag().into(),
+                        component_type: component_type.tag().into(),
                     });
                 }
                 Some(referent)
@@ -716,12 +729,12 @@ impl<'c, 'a> Builder<'c, 'a> {
                 )),
                 SourcePlan::Fixed(v) => Source::Fixed(*v),
                 SourcePlan::Alias(arg) => {
-                    Source::Alias(self.arg_slot(*arg, comp, inst.scope, kind, pi)?)
+                    Source::Alias(self.arg_slot(*arg, comp, inst.scope, component_type, pi)?)
                 }
                 SourcePlan::Op(spec, args) => {
                     let start = self.op_inputs.len() as u32;
                     for &a in args {
-                        let slot = self.arg_slot(a, comp, inst.scope, kind, pi)?;
+                        let slot = self.arg_slot(a, comp, inst.scope, component_type, pi)?;
                         self.op_inputs.push(slot);
                     }
                     Source::Op(*spec, start, args.len() as u8)

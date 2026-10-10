@@ -21,18 +21,20 @@ pub enum Error {
     #[error("'{0}' has no default prop, so a bare reference to it cannot supply a value")]
     NoDefaultProp(String),
     #[error("cannot copy a <{0}>")]
-    UncopyableKind(String),
-    #[error("extend=\"${referent}\" is a <{referent_kind}> but the element is a <{kind}>")]
-    ExtendKindMismatch {
+    UncopyableType(String),
+    #[error(
+        "extend=\"${referent}\" is a <{referent_type}> but the element is a <{component_type}>"
+    )]
+    ExtendTypeMismatch {
         referent: String,
-        referent_kind: String,
-        kind: String,
+        referent_type: String,
+        component_type: String,
     },
     #[error(
-        "prop '{prop}' of <{kind}> expects {expected} cell(s) but the reference supplies {got}"
+        "prop '{prop}' of <{component_type}> expects {expected} cell(s) but the reference supplies {got}"
     )]
     ArityMismatch {
-        kind: String,
+        component_type: String,
         prop: String,
         expected: usize,
         got: usize,

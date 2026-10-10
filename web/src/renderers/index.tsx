@@ -13,7 +13,7 @@ import { CaseView, ChoiceView, SectionView, TextView } from "./Choice";
 
 export function Component({ idx, inGraph }: { idx: number; inGraph: boolean }) {
   const store = useStore();
-  switch (store.comps.kind(idx)) {
+  switch (store.comps.componentType(idx)) {
     case "document":
       return <div className="doc"><Children idx={idx} inGraph={false} /></div>;
     case "graph":

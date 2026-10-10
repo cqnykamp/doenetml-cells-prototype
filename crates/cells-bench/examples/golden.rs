@@ -8,7 +8,7 @@
 //!
 //! Documents: `crates/cells-bench/golden/*.doenet` plus the smallest fixture
 //! of each shape in `fixtures/`.
-use cells_core::components::ComponentKind;
+use cells_core::components::ComponentType;
 use cells_core::{Child, CompIdx, Document, PointRequest, Request, TickOutcome};
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -26,7 +26,7 @@ fn tree(doc: &Document) -> Vec<(String, CompIdx)> {
                 let label = doc
                     .name(k)
                     .map(str::to_string)
-                    .unwrap_or_else(|| doc.kind(k).tag().to_string());
+                    .unwrap_or_else(|| doc.component_type(k).tag().to_string());
                 let n = seen.entry(label.clone()).or_insert(0);
                 *n += 1;
                 walk(doc, k, format!("{path}/{label}[{n}]"), out);
@@ -40,9 +40,9 @@ fn tree(doc: &Document) -> Vec<(String, CompIdx)> {
 
 fn dump(doc: &Document, out: &mut String) {
     for (path, c) in tree(doc) {
-        let kind = doc.kind(c);
-        let _ = write!(out, "{path} <{}>", kind.tag());
-        for (i, def) in kind.prop_defs().iter().enumerate() {
+        let component_type = doc.component_type(c);
+        let _ = write!(out, "{path} <{}>", component_type.tag());
+        for (i, def) in component_type.prop_defs().iter().enumerate() {
             let cell = doc.comp_cells(c)[i];
             let v = doc.cells[cell as usize];
             if doc
@@ -53,7 +53,7 @@ fn dump(doc: &Document, out: &mut String) {
                 .unwrap_or(false)
             {
                 let _ = write!(out, " {}={:?}", def.name, doc.math_text(cell));
-            } else if kind == ComponentKind::Text && i == 0 {
+            } else if component_type == ComponentType::Text && i == 0 {
                 let _ = write!(out, " {}={:?}", def.name, doc.text_value(cell));
             } else {
                 let _ = write!(out, " {}={v:?}", def.name);
@@ -77,12 +77,15 @@ enum Action {
 }
 
 fn plan(doc: &Document) -> Vec<(String, Action)> {
-    let mut by_kind: BTreeMap<&'static str, Vec<String>> = BTreeMap::new();
+    let mut by_type: BTreeMap<&'static str, Vec<String>> = BTreeMap::new();
     for (path, c) in tree(doc) {
-        by_kind.entry(doc.kind(c).tag()).or_default().push(path);
+        by_type
+            .entry(doc.component_type(c).tag())
+            .or_default()
+            .push(path);
     }
     let mut steps = Vec::new();
-    for (tag, paths) in by_kind {
+    for (tag, paths) in by_type {
         let action = || -> Option<Action> {
             Some(match tag {
                 "point" => Action::Shift("coords", 1.5, -0.5),

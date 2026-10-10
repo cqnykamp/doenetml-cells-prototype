@@ -35,7 +35,7 @@ function numberCells(store: ReturnType<typeof useStore>, idx: number): number[] 
   const own = store.comps.cell(idx, "number");
   if (store.get(store.comps.cell(idx, "includeParentNumber")) === 0) return [own];
   for (let p = store.comps.parent(idx); p !== null; p = store.comps.parent(p)) {
-    if (store.comps.kind(p) === "section") return [...numberCells(store, p), own];
+    if (store.comps.componentType(p) === "section") return [...numberCells(store, p), own];
   }
   return [own];
 }

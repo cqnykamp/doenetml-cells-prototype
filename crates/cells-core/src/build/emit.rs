@@ -194,7 +194,7 @@ impl<'c, 'a> Builder<'c, 'a> {
         self.components.prop_base = Vec::with_capacity(n_comps);
         self.components.prop_cells = Vec::with_capacity(n);
         for c in 0..n_comps {
-            let np = self.components.kind[c].prop_defs().len();
+            let np = self.components.component_type[c].prop_defs().len();
             self.components
                 .prop_base
                 .push(self.components.prop_cells.len() as u32);
@@ -227,7 +227,7 @@ impl<'c, 'a> Builder<'c, 'a> {
         // Lazy labels for cycle errors.
         let slot_comp = self.slot_comp;
         let slot_base = self.slot_base;
-        let kinds = self.components.kind.clone();
+        let component_types = self.components.component_type.clone();
         let names: Vec<Option<String>> = self
             .components
             .name
@@ -243,15 +243,15 @@ impl<'c, 'a> Builder<'c, 'a> {
             let pi = (slot - slot_base[comp as usize]) as usize;
             let owner = names[comp as usize]
                 .clone()
-                .unwrap_or_else(|| format!("<{}>#{}", kinds[comp as usize].tag(), comp));
-            match kinds[comp as usize].prop_defs().get(pi) {
+                .unwrap_or_else(|| format!("<{}>#{}", component_types[comp as usize].tag(), comp));
+            match component_types[comp as usize].prop_defs().get(pi) {
                 Some(def) => format!("{owner}.{}", def.name),
                 None => format!("{owner}.(hidden slot {pi})"),
             }
         });
 
         let mut components = self.components;
-        components.kind.shrink_to_fit();
+        components.component_type.shrink_to_fit();
         components.name.shrink_to_fit();
         components.parent.shrink_to_fit();
         components.child_start.shrink_to_fit();
@@ -331,7 +331,7 @@ impl<'c, 'a> Builder<'c, 'a> {
     /// one; a count that reads a cell inside another repeat's iterations adds
     /// one, and is flagged (`cross`) since authors can avoid it.
     pub(in crate::build) fn structural_depths(&self) -> (Vec<u32>, Vec<bool>) {
-        let count_pi = ComponentKind::RepeatForSequence
+        let count_pi = ComponentType::RepeatForSequence
             .prop_index("count")
             .unwrap();
         let mut owner: HashMap<ScopeId, usize> = HashMap::new();

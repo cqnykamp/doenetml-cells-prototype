@@ -23,7 +23,7 @@ impl Document {
     /// after its nearest section ancestor's full number when it includes
     /// its parent's (`build/expand/scoring.rs`). None for other components.
     pub fn section_number(&self, c: CompIdx) -> Option<String> {
-        if self.kind(c) != ComponentKind::Section {
+        if self.component_type(c) != ComponentType::Section {
             return None;
         }
         let cells = self.comp_cells(c);
@@ -33,7 +33,7 @@ impl Document {
         }
         let mut p = self.parent(c);
         while let Some(x) = p {
-            if self.kind(x) == ComponentKind::Section {
+            if self.component_type(x) == ComponentType::Section {
                 return Some(format!("{}.{own}", self.section_number(x)?));
             }
             p = self.parent(x);

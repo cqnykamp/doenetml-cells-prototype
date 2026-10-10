@@ -34,7 +34,7 @@ pub(in crate::build) enum Sel {
 pub(in crate::build) enum SourcePlan {
     /// An essential cell with this initial value.
     Literal(f64),
-    /// An essential cell with the kind's default value.
+    /// An essential cell with the type's default value.
     Default(f64),
     /// The matching slot of the `extend` referent.
     Inherit,
@@ -88,7 +88,7 @@ impl SourcePlan {
             args.into_iter().map(|a| Arg::Own(own_slot(a))).collect(),
         )
     }
-    /// A kind's `PropFrom::Computed` prop.
+    /// A type's `PropFrom::Computed` prop.
     pub(in crate::build) fn from_def(op: OpSpec, args: &[u8]) -> Self {
         SourcePlan::Op(op, args.iter().map(|&a| Arg::Own(a)).collect())
     }
@@ -116,7 +116,7 @@ pub(in crate::build) enum Body {
     },
     Collect {
         from: RefId,
-        kind: ComponentKind,
+        component_type: ComponentType,
     },
     /// `<pointList extend="$l.points">`: children are synthesized points.
     PointList {
@@ -142,9 +142,9 @@ pub(in crate::build) struct ChoiceDef {
     pub(in crate::build) num_to_select: u32,
     pub(in crate::build) with_replacement: bool,
     pub(in crate::build) weights: Vec<f64>,
-    /// The branch interface (`CONTEXT.md`): name -> kind and the element
+    /// The branch interface (`CONTEXT.md`): name -> type and the element
     /// carrying it in each branch. Filled once every element is planned.
-    pub(in crate::build) iface: HashMap<String, (ComponentKind, Vec<ElemId>)>,
+    pub(in crate::build) iface: HashMap<String, (ComponentType, Vec<ElemId>)>,
     /// Interface names that references use, in first-use order; a
     /// `Step::Iface` holds an index here.
     pub(in crate::build) used: Vec<String>,
@@ -156,7 +156,7 @@ pub(in crate::build) const ROOT_SCOPE: ElemId = usize::MAX;
 #[derive(Debug, Clone)]
 pub(in crate::build) struct Elem {
     pub(in crate::build) node: NodeId,
-    pub(in crate::build) kind: ComponentKind,
+    pub(in crate::build) component_type: ComponentType,
     pub(in crate::build) name: StrId,
     /// Parent element within the template (`ROOT_SCOPE` at the top). A
     /// name is visible from every ancestor, as in the current core's
@@ -164,7 +164,7 @@ pub(in crate::build) struct Elem {
     /// each repeat body is its own template.
     pub(in crate::build) name_scope: ElemId,
     /// First of this element's prop slots within the template's slot space.
-    /// Assigned once every element is planned, since planned kinds add
+    /// Assigned once every element is planned, since planned types add
     /// hidden slots after the public props.
     pub(in crate::build) slot_off: u32,
     pub(in crate::build) props: Vec<SourcePlan>,
@@ -173,7 +173,7 @@ pub(in crate::build) struct Elem {
     /// A child of a container copy (`<graph extend="$g"/>`): every prop
     /// aliases the original's, and the children are clones too.
     pub(in crate::build) cloned: bool,
-    /// Named essential slots of a planned kind (a line's default points, a
+    /// Named essential slots of a planned type (a line's default points, a
     /// circle's essential radius), so a copy with overridden attributes can
     /// share the ones it does not override.
     pub(in crate::build) roles: HashMap<&'static str, u8>,

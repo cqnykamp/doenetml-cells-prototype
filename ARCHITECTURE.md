@@ -20,7 +20,7 @@ has the briefs and plans of the rounds that built it.
        │                    ┌─────────────── load and rebuild ───────────────┐
        ▼                    │                                                │
  ┌──────────────────────────┴──┐                                             │
- │ build/                      │  uses components/ (each kind's props)       │
+ │ build/                      │  uses components/ (each type's props)       │
  │  compile/  DAST → templates │  once per document                          │
  │  expand/   templates →      │  once per scope (document, each iteration)  │
  │            components, slots│                                             │
@@ -59,14 +59,14 @@ component table (`document/sticky.rs`).
 | Type | Where | What it is |
 |---|---|---|
 | `Dast` | `dast/mod.rs` | The parsed source in parallel arrays indexed by `NodeId`. Loaded from JSON (`json.rs`) or the binary wire format (`binary.rs`, ADR 0002). |
-| `ComponentKind`, `KindInfo`, `PropDef` | `components/` | The tag vocabulary: each kind's props, where each prop's value comes from (attribute, default, computed from other props, or planned by the build), and flags. The data is the `KINDS` table in `kinds.rs`. |
+| `ComponentType`, `ComponentTypeInfo`, `PropDef` | `components/` | The tag vocabulary: each component type's props, where each prop's value comes from (attribute, default, computed from other props, or planned by the build), and flags. The data is the `COMPONENT_TYPES` table in `types.rs`. |
 | `Compiler`, `Compiled`, `Template` | `build/compile/` | Compile's state and output: one template per repeat body, choice branch and the document, with a *plan* for every prop and reference. Nothing in a plan names an iteration. |
 | `Builder` | `build/expand/mod.rs` | The state of expand and emit: components and slots per scope, then cells and instructions. |
 | `BuildOutput` | `build/mod.rs` | Cells, instructions and the component table, before scheduling. `schedule` turns it into a `Document`. |
 | `Carryover`, `Structure` | `build/mod.rs`, `build/structure.rs` | What one build hands the next: the scope table, each repeat's iteration count, and every essential value by (scope, template slot), so state survives a rebuild. |
 | `Program`, `Instr`, `Op`, `VecOp` | `program/` | The instruction set. `Op` (`scalar.rs`) is a bound operator with its evaluation and inverse; vector operators (`vector.rs`) read and write several cells; symbolic ones call the math engine. |
 | `Document` | `document/mod.rs` | A loaded document: `cells`, `program`, `components` (the `ComponentTable`), the string table, its `Structure`, and the DAST it came from. The API a renderer or test uses. |
-| `ComponentTable` | `document/table.rs` | Components in columns: kind, name, parent, children, and each one's prop cells. What references and the renderer read. |
+| `ComponentTable` | `document/table.rs` | Components in columns: component type, name, parent, children, and each one's prop cells. What references and the renderer read. |
 | `Request`, `PointRequest`, `TickOutcome` | `tick/` | A tick's input (set a cell; move points together) and its result. |
 | `Evaluator` | `tick/eval.rs` | A recompute strategy: `FullRecompute` runs every instruction; `DirtyClosure` only those downstream of a changed cell. |
 | `SymEngine` | `crates/cells-sym` | The symbolic math engine behind math cells (ADR 0008). A math cell holds a handle into it. |
@@ -76,7 +76,7 @@ component table (`document/sticky.rs`).
 **A document loads** (`Document::load`, `document/load.rs`). The bytes become
 a `Dast`. Then `build::build` runs: **compile** walks the DAST once and plans
 every element (`build/compile/mod.rs`; attributes and math in `attrs.rs`,
-references in `refs.rs`, geometric kinds in `geometry/`, choices in
+references in `refs.rs`, geometric component types in `geometry/`, choices in
 `choice.rs`). **Expand** stamps each template into components once per
 scope and resolves references to slots (`build/expand/`). **Emit** merges
 aliased slots into cells with a union-find, numbers cells (essential,
@@ -113,12 +113,12 @@ is an ordinary request: the response handle is copied into the answer's
 
 ## Where to change things
 
-**Add a component kind.** Add a variant to `ComponentKind`
-(`components/mod.rs`), a prop table and a `KINDS` row (`components/kinds.rs`)
-in discriminant order, and prop positions in `components/prop.rs` if code
-reads props by position. A kind whose props are attributes, defaults or
-chains of operators over its other props needs nothing else. A kind whose
-wiring depends on which attributes the author gave is `PLANNED`, and its
+**Add a component type.** Add a variant to `ComponentType`
+(`components/mod.rs`), a prop table and a `COMPONENT_TYPES` row
+(`components/types.rs`) in discriminant order, and prop positions in
+`components/prop.rs` if code reads props by position. A component type
+whose props are attributes, defaults or chains of operators over its other
+props needs nothing else. A component type whose wiring depends on which attributes the author gave is `PLANNED`, and its
 planner goes in `build/compile/` (see `geometry/` for examples). The
 renderer side is in `web/src/renderers/`.
 

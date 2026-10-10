@@ -28,7 +28,7 @@ fn main() {
             .collect();
         println!(
             "#{c} {:?} name={:?} parent={:?} cells=[{}] kids={:?}",
-            doc.kind(c),
+            doc.component_type(c),
             doc.name(c),
             doc.parent(c),
             cells.join(" "),

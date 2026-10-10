@@ -40,7 +40,7 @@ impl Document {
         let mut seen: HashSet<Vec<CellIdx>> = HashSet::new();
         let mut out = Vec::new();
         for g in 0..self.components.len() as CompIdx {
-            if self.kind(g) != ComponentKind::StickyGroup {
+            if self.component_type(g) != ComponentType::StickyGroup {
                 continue;
             }
             let mut t = StickyTable {
@@ -54,7 +54,7 @@ impl Document {
             };
             if let Some(p) = self
                 .parent(g)
-                .filter(|&p| self.kind(p) == ComponentKind::Graph)
+                .filter(|&p| self.component_type(p) == ComponentType::Graph)
             {
                 let c = self.comp_cells(p);
                 t.bounds = Some([
@@ -65,10 +65,10 @@ impl Document {
                 ]);
             }
             for (m, gates) in self.components.sticky_members(g) {
-                let kind = self.kind(m);
-                let (shape, first, max) = kind.sticky_layout().unwrap();
+                let component_type = self.component_type(m);
+                let (shape, first, max) = component_type.sticky_layout().unwrap();
                 let cells = self.comp_cells(m);
-                let n = if kind == ComponentKind::Polygon {
+                let n = if component_type == ComponentType::Polygon {
                     (self.cells[cells[prop::polygon::NUM_VERTICES] as usize].max(0.0) as usize)
                         .min(max)
                 } else {

@@ -64,7 +64,7 @@ impl<'a> Compiler<'a> {
             Some(el) => vec![Child::Elem(cp.add_elem(0, el, ROOT_SCOPE)?)],
             None => {
                 // Synthesize a root when the DAST was not normalized.
-                let e = cp.add_synthetic(0, ComponentKind::Document, NONE);
+                let e = cp.add_synthetic(0, ComponentType::Document, NONE);
                 cp.compiled.templates[0].elems[e].props = vec![
                     SourcePlan::Fixed(f64::NAN),
                     SourcePlan::computed(OpSpec::Scale { k: 100.0 }, vec![prop::document::CREDIT]),
@@ -98,12 +98,12 @@ impl<'a> Compiler<'a> {
             }
         }
         cp.finish_choices()?;
-        // Slot offsets, now that planned kinds know their hidden slot count.
+        // Slot offsets, now that planned types know their hidden slot count.
         for tpl in &mut cp.compiled.templates {
             let mut off = 0;
             for el in &mut tpl.elems {
                 el.slot_off = off;
-                off += el.props.len().max(el.kind.prop_defs().len()) as u32;
+                off += el.props.len().max(el.component_type.prop_defs().len()) as u32;
             }
             tpl.n_slots = off;
         }
@@ -119,11 +119,11 @@ impl<'a> Compiler<'a> {
         &mut self,
         t: TemplateId,
         node: NodeId,
-        kind: ComponentKind,
+        component_type: ComponentType,
         name: StrId,
         name_scope: ElemId,
     ) -> Result<ElemId> {
-        self.push_elem_visible_to(t, node, kind, name, name_scope, ROOT_SCOPE)
+        self.push_elem_visible_to(t, node, component_type, name, name_scope, ROOT_SCOPE)
     }
 
     /// `push_elem` whose name is registered only up to ancestor `stop`
@@ -133,7 +133,7 @@ impl<'a> Compiler<'a> {
         &mut self,
         t: TemplateId,
         node: NodeId,
-        kind: ComponentKind,
+        component_type: ComponentType,
         name: StrId,
         name_scope: ElemId,
         stop: ElemId,
@@ -142,7 +142,7 @@ impl<'a> Compiler<'a> {
         let e = tpl.elems.len();
         tpl.elems.push(Elem {
             node,
-            kind,
+            component_type,
             name,
             name_scope,
             slot_off: 0,
@@ -179,10 +179,10 @@ impl<'a> Compiler<'a> {
     pub(in crate::build) fn add_synthetic(
         &mut self,
         t: TemplateId,
-        kind: ComponentKind,
+        component_type: ComponentType,
         name: StrId,
     ) -> ElemId {
-        self.push_elem(t, NONE, kind, name, ROOT_SCOPE)
+        self.push_elem(t, NONE, component_type, name, ROOT_SCOPE)
             .expect("synthetic names are unique")
     }
 
@@ -204,26 +204,27 @@ impl<'a> Compiler<'a> {
     ) -> Result<ElemId> {
         let d = self.compiled.dast;
         let tag = d.str(el);
-        let kind =
-            ComponentKind::from_tag(tag).ok_or_else(|| Error::UnsupportedTag(tag.to_string()))?;
+        let component_type =
+            ComponentType::from_tag(tag).ok_or_else(|| Error::UnsupportedTag(tag.to_string()))?;
         // `<group rendered="c">` is a conditional content with one case.
-        let kind = if kind == ComponentKind::Group && d.attr(el, "rendered").is_some() {
-            ComponentKind::ConditionalContent
-        } else {
-            kind
-        };
-        if kind == ComponentKind::Case {
+        let component_type =
+            if component_type == ComponentType::Group && d.attr(el, "rendered").is_some() {
+                ComponentType::ConditionalContent
+            } else {
+                component_type
+            };
+        if component_type == ComponentType::Case {
             return Err(Error::Unsupported(
                 "<case> outside a <conditionalContent>".into(),
             ));
         }
         let name = self.attr_name_str(el, "name").unwrap_or(NONE);
-        let e = self.push_elem(t, el, kind, name, name_scope)?;
+        let e = self.push_elem(t, el, component_type, name, name_scope)?;
         self.pending_elems.push((t, e));
         let child_scope = e;
         let _ = name_scope;
-        match kind {
-            ComponentKind::RepeatForSequence => {
+        match component_type {
+            ComponentType::RepeatForSequence => {
                 let sub = self.compiled.templates.len();
                 self.compiled.templates.push(Template {
                     parent: Some((t, e)),
@@ -232,9 +233,9 @@ impl<'a> Compiler<'a> {
                 // Hidden iteration components first, so `$v` and `$i` resolve
                 // anywhere inside the template.
                 if let Some(vn) = self.attr_name_str(el, "valueName") {
-                    let v = self.add_synthetic(sub, ComponentKind::SequenceValue, vn);
+                    let v = self.add_synthetic(sub, ComponentType::SequenceValue, vn);
                     // from and step alias the repeat's own props (one hop up);
-                    // k is the iteration position; the rest is the kind's chain.
+                    // k is the iteration position; the rest is the type's chain.
                     let from = self.own_prop_plan(e, "from");
                     let step = self.own_prop_plan(e, "step");
                     let mut props = vec![
@@ -242,7 +243,7 @@ impl<'a> Compiler<'a> {
                         SourcePlan::reference(step),
                         SourcePlan::IterIndex,
                     ];
-                    for def in ComponentKind::SequenceValue.prop_defs().iter().skip(3) {
+                    for def in ComponentType::SequenceValue.prop_defs().iter().skip(3) {
                         let PropFrom::Computed { op, args } = def.from else {
                             unreachable!()
                         };
@@ -251,22 +252,22 @@ impl<'a> Compiler<'a> {
                     self.compiled.templates[sub].elems[v].props = props;
                 }
                 if let Some(iname) = self.attr_name_str(el, "indexName") {
-                    let i = self.add_synthetic(sub, ComponentKind::Number, iname);
+                    let i = self.add_synthetic(sub, ComponentType::Number, iname);
                     self.compiled.templates[sub].elems[i].props = vec![SourcePlan::IterIndex];
                 }
                 let kids = self.add_children(sub, None, ROOT_SCOPE, d.children(el))?;
                 self.compiled.templates[sub].children = kids;
                 self.compiled.templates[t].elems[e].body = Body::Repeat { template: sub };
             }
-            ComponentKind::Collect | ComponentKind::PointList => {}
-            ComponentKind::ConditionalContent | ComponentKind::Select => {
+            ComponentType::Collect | ComponentType::PointList => {}
+            ComponentType::ConditionalContent | ComponentType::Select => {
                 self.add_choice(t, e, el)?
             }
             // A number's children are its value, not rendered children; the
-            // planned kinds read their children themselves (a line's equation,
+            // planned types read their children themselves (a line's equation,
             // a point's constraints).
-            _ if kind.planned()
-                || kind
+            _ if component_type.planned()
+                || component_type
                     .prop_defs()
                     .iter()
                     .any(|p| p.from == PropFrom::Children) => {}
@@ -331,14 +332,14 @@ impl<'a> Compiler<'a> {
         let d = self.compiled.dast;
         let Elem {
             node: el,
-            kind,
+            component_type,
             name_scope: scope,
             ..
         } = self.compiled.templates[t].elems[e];
         match self.elem_shape(t, e)? {
             // Every public prop aliases the original's; nothing else to plan.
             ElemShape::Cloned => {
-                let n = kind.prop_defs().len();
+                let n = component_type.prop_defs().len();
                 self.compiled.templates[t].elems[e].props = vec![SourcePlan::Inherit; n];
                 Ok(())
             }
@@ -356,8 +357,8 @@ impl<'a> Compiler<'a> {
                     && expr::split_top(inner, &Token::Comma).len() == 2
                 {
                     let [x, y] = self.plan_tuple(t, scope, &nodes)?;
-                    let hide = ComponentKind::Point.prop_defs()[prop::point::HIDE].default;
-                    self.compiled.templates[t].elems[e].kind = ComponentKind::Point;
+                    let hide = ComponentType::Point.prop_defs()[prop::point::HIDE].default;
+                    self.compiled.templates[t].elems[e].component_type = ComponentType::Point;
                     self.compiled.templates[t].elems[e].props =
                         vec![x, y, SourcePlan::Default(hide)];
                     return Ok(());
@@ -386,14 +387,17 @@ impl<'a> Compiler<'a> {
                     .attr(el, "componentType")
                     .and_then(|a| self.attr_text(a))
                     .ok_or(Error::BadCollect)?;
-                let ck = ComponentKind::from_tag(type_text.trim())
+                let ck = ComponentType::from_tag(type_text.trim())
                     .filter(|k| k.copyable())
                     .ok_or_else(|| Error::BadCollectType(type_text.trim().into()))?;
                 let p = self.plan_ref(t, scope, from)?;
                 if self.compiled.refs[p].prop.is_some() {
                     return Err(Error::BadCollect);
                 }
-                self.compiled.templates[t].elems[e].body = Body::Collect { from: p, kind: ck };
+                self.compiled.templates[t].elems[e].body = Body::Collect {
+                    from: p,
+                    component_type: ck,
+                };
                 // `count` is set when the collect expands.
                 self.compiled.templates[t].elems[e].props = vec![SourcePlan::Fixed(f64::NAN)];
                 Ok(())
@@ -402,14 +406,14 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    /// Which way an element is planned, decided from its kind and its
+    /// Which way an element is planned, decided from its type and its
     /// `extend` attribute before any prop is looked at. Records the extend
     /// plan on the element.
     fn elem_shape(&mut self, t: TemplateId, e: ElemId) -> Result<ElemShape> {
         let d = self.compiled.dast;
         let Elem {
             node: el,
-            kind,
+            component_type,
             name_scope: scope,
             cloned,
             ..
@@ -439,30 +443,30 @@ impl<'a> Compiler<'a> {
         };
         self.compiled.templates[t].elems[e].extend = extend;
         if matches!(
-            kind,
-            ComponentKind::ConditionalContent | ComponentKind::Select
+            component_type,
+            ComponentType::ConditionalContent | ComponentType::Select
         ) {
             if extend.is_some() {
                 return Err(Error::Banned(format!(
                     "extend on a <{}>: reference its interface names instead",
-                    kind.tag()
+                    component_type.tag()
                 )));
             }
             return Ok(ElemShape::Choice);
         }
-        Ok(match (kind, extend) {
+        Ok(match (component_type, extend) {
             (k, Some(p)) if k.container() => ElemShape::ContainerCopy(p),
-            (ComponentKind::PointList, _) => {
+            (ComponentType::PointList, _) => {
                 return Err(Error::BadValue {
                     attr: "extend".into(),
                     text: "<pointList> needs extend=\"$shape.points\"".into(),
                 });
             }
             (k, _) if k.planned() => ElemShape::Planned(extend),
-            (ComponentKind::Math, _) => ElemShape::Math,
+            (ComponentType::Math, _) => ElemShape::Math,
             (k, _) if k.symbolic() => ElemShape::Symbolic,
-            (ComponentKind::Collect, _) => ElemShape::Collect,
-            (ComponentKind::Text, None) => ElemShape::Text,
+            (ComponentType::Collect, _) => ElemShape::Collect,
+            (ComponentType::Text, None) => ElemShape::Text,
             _ => ElemShape::Generic(extend),
         })
     }
@@ -472,7 +476,7 @@ impl<'a> Compiler<'a> {
         if el.name != NONE {
             self.compiled.dast.strings.get(el.name).trim().to_string()
         } else {
-            format!("<{}>", el.kind.tag())
+            format!("<{}>", el.component_type.tag())
         }
     }
 }

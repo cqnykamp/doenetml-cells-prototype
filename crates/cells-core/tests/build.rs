@@ -1,4 +1,4 @@
-use cells_core::components::ComponentKind;
+use cells_core::components::ComponentType;
 use cells_core::testing::reference;
 use cells_core::testing::test_utils::{load, load_via_binary};
 use cells_core::{Child, Document, Error};
@@ -55,7 +55,7 @@ fn bare_component_reference_shares_every_cell() {
         })
         .collect();
     assert_eq!(kids.len(), 2);
-    assert_eq!(doc.kind(kids[1]), ComponentKind::Point);
+    assert_eq!(doc.component_type(kids[1]), ComponentType::Point);
     assert_eq!(doc.name(kids[1]), None);
     assert_eq!(
         doc.prop_cells(kids[1], "coords"),
@@ -111,7 +111,7 @@ fn number_children_literal_reference_and_bare_text_reference() {
                 None
             }
         })
-        .find(|&c| doc.name(c).is_none() && doc.kind(c) == ComponentKind::Number)
+        .find(|&c| doc.name(c).is_none() && doc.component_type(c) == ComponentType::Number)
         .expect("anonymous number");
     assert_eq!(doc.comp_cells(anon), &[doc.cell("p1", "y").unwrap()]);
     // p1.x, p1.y, a, c
@@ -206,7 +206,7 @@ fn error_cases() {
     ));
     assert!(matches!(
         load(r#"<point name="p"/><number extend="$p"/>"#).unwrap_err(),
-        Error::ExtendKindMismatch { .. }
+        Error::ExtendTypeMismatch { .. }
     ));
     assert!(matches!(
         load(r#"<point name="p"/><op kind="add" args="$p.x"/>"#).unwrap_err(),
@@ -222,7 +222,7 @@ fn error_cases() {
     ));
     assert!(matches!(
         load(r#"<graph name="g"/>$g"#).unwrap_err(),
-        Error::UncopyableKind(_)
+        Error::UncopyableType(_)
     ));
     assert!(matches!(
         load(r#"<textInput/>"#).unwrap_err(),
@@ -247,7 +247,7 @@ fn text_children_survive_and_whitespace_is_dropped() {
     let kids: Vec<String> = doc
         .children(doc.root)
         .map(|c| match c {
-            Child::Component(i) => format!("<{}>", doc.kind(i).tag()),
+            Child::Component(i) => format!("<{}>", doc.component_type(i).tag()),
             Child::Text(t) => format!("{t:?}"),
         })
         .collect();

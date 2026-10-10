@@ -8,22 +8,22 @@
 //! code of its own: the chain is data, and inversion through it is the
 //! generic operator inverse.
 //!
-//! This file holds the types and the lookups the build uses; `kinds.rs` holds
-//! the data (every kind's prop table and its row in [`KINDS`]); `prop.rs`
+//! This file holds the types and the lookups the build uses; `types.rs` holds
+//! the data (every type's prop table and its row in [`COMPONENT_TYPES`]); `prop.rs`
 //! names prop positions for code that reads or sets a prop by position.
 
 use crate::program::OpSpec;
 
-mod kinds;
 pub mod prop;
+mod types;
 
-pub use kinds::KINDS;
+pub use types::COMPONENT_TYPES;
 
-/// `repr(u8)` so the renderer can read the kind column as a byte array; the
-/// discriminant order matches `ComponentKind::ALL`.
+/// `repr(u8)` so the renderer can read the type column as a byte array; the
+/// discriminant order matches `ComponentType::ALL`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
-pub enum ComponentKind {
+pub enum ComponentType {
     Document = 0,
     Graph = 1,
     Point = 2,
@@ -127,11 +127,11 @@ pub const SECTION_TAGS: [(&str, &str, bool, bool); 6] = [
 /// Largest polygon the fixed prop layout holds.
 pub const MAX_VERTICES: usize = 16;
 
-/// What the core knows about a kind apart from how it is planned and
-/// expanded: one row per kind in `KINDS`, indexed by discriminant.
-pub struct KindInfo {
-    pub kind: ComponentKind,
-    /// The tag the kind shows as, then other tags that make it.
+/// What the core knows about a type apart from how it is planned and
+/// expanded: one row per type in `COMPONENT_TYPES`, indexed by discriminant.
+pub struct ComponentTypeInfo {
+    pub component_type: ComponentType,
+    /// The tag the type shows as, then other tags that make it.
     pub tags: &'static [&'static str],
     pub props: &'static [PropDef],
     /// The prop a bare `$name` reference resolves to.
@@ -152,7 +152,7 @@ pub struct KindInfo {
 
 /// An array prop of points, such as a polygon's `vertices`: the names it
 /// goes by, the name of an item (`vertex` for `vertex3`), and each item's
-/// coordinate props, as many as the kind can hold.
+/// coordinate props, as many as the type can hold.
 pub struct ArrayProp {
     pub names: &'static [&'static str],
     pub item: &'static str,
@@ -160,12 +160,12 @@ pub struct ArrayProp {
 }
 
 /// `$name` as a child may produce a copy of the component, and
-/// `<collect componentType>` may name the kind.
+/// `<collect componentType>` may name the type.
 pub const COPYABLE: u8 = 1;
 /// The children are rendered; `extend` copies them deeply.
 pub const CONTAINER: u8 = 2;
 /// The builder plans the props from the element's attributes and children
-/// rather than from `PropFrom` (the geometric kinds).
+/// rather than from `PropFrom` (the geometric types).
 pub const PLANNED: u8 = 4;
 /// Planned as math cells (`plan_symbolic`); not allowed in a branch
 /// interface.
@@ -173,7 +173,7 @@ pub const SYMBOLIC: u8 = 8;
 /// Made by the builder, never by a tag in the source.
 pub const INTERNAL: u8 = 16;
 
-impl KindInfo {
+impl ComponentTypeInfo {
     const fn default_prop(mut self, prop: &'static str) -> Self {
         self.default_prop = Some(prop);
         self
@@ -196,29 +196,29 @@ impl KindInfo {
     }
 }
 
-impl ComponentKind {
-    pub const ALL: [ComponentKind; 31] = {
-        let mut out = [ComponentKind::Document; 31];
+impl ComponentType {
+    pub const ALL: [ComponentType; 31] = {
+        let mut out = [ComponentType::Document; 31];
         let mut i = 0;
-        while i < KINDS.len() {
-            out[i] = KINDS[i].kind;
+        while i < COMPONENT_TYPES.len() {
+            out[i] = COMPONENT_TYPES[i].component_type;
             i += 1;
         }
         out
     };
 
-    pub fn info(self) -> &'static KindInfo {
-        &KINDS[self as usize]
+    pub fn info(self) -> &'static ComponentTypeInfo {
+        &COMPONENT_TYPES[self as usize]
     }
 
     pub fn from_tag(tag: &str) -> Option<Self> {
-        static BY_TAG: std::sync::OnceLock<std::collections::HashMap<&'static str, ComponentKind>> =
+        static BY_TAG: std::sync::OnceLock<std::collections::HashMap<&'static str, ComponentType>> =
             std::sync::OnceLock::new();
         let by_tag = BY_TAG.get_or_init(|| {
-            KINDS
+            COMPONENT_TYPES
                 .iter()
                 .filter(|k| k.flags & INTERNAL == 0)
-                .flat_map(|k| k.tags.iter().map(move |&t| (t, k.kind)))
+                .flat_map(|k| k.tags.iter().map(move |&t| (t, k.component_type)))
                 .collect()
         });
         by_tag.get(tag).copied()
@@ -247,7 +247,7 @@ impl ComponentKind {
             .map_or(name, |(_, to)| to)
     }
 
-    /// Multi-cell props that are views over single-cell props: the kind's
+    /// Multi-cell props that are views over single-cell props: the type's
     /// views, and each array item by name (`vertex3`, `point1`).
     pub fn virtual_prop(self, name: &str) -> Option<&'static [&'static str]> {
         let info = self.info();
@@ -263,7 +263,7 @@ impl ComponentKind {
     }
 
     /// Array props whose items are points: the prop names of each item's
-    /// cells, as many items as the kind can hold. A polygon's live count is
+    /// cells, as many items as the type can hold. A polygon's live count is
     /// its `numVertices` cell; the builder trims the list.
     pub fn array_prop(self, name: &str) -> Option<&'static [[&'static str; 2]]> {
         self.array(name).map(|a| a.items)
@@ -284,7 +284,7 @@ impl ComponentKind {
     }
 
     /// Whether `$name` as a child may produce a copy of this component, and
-    /// `<collect componentType>` name the kind.
+    /// `<collect componentType>` name the type.
     pub fn copyable(self) -> bool {
         self.info().flags & COPYABLE != 0
     }
@@ -294,7 +294,7 @@ impl ComponentKind {
         self.info().flags & CONTAINER != 0
     }
 
-    /// Kinds whose prop sources the builder plans from the element's
+    /// Types whose prop sources the builder plans from the element's
     /// attributes and children rather than from `PropFrom`.
     pub fn planned(self) -> bool {
         self.info().flags & PLANNED != 0
@@ -323,7 +323,7 @@ pub enum PropFrom {
     /// Value given by the attribute if present, else an alias of the
     /// component's own prop at `alias`.
     AttributeOr { alias: u8 },
-    /// Planned by the builder from the whole element (geometric kinds).
+    /// Planned by the builder from the whole element (geometric types).
     Planned,
 }
 

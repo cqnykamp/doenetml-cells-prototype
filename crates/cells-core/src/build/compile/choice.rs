@@ -3,7 +3,7 @@
 //! Each branch (a case or an option) is its own template, so the names
 //! inside it are private, as a repeat's are. What the rest of the document
 //! may reach is the branch interface: the names every branch declares, each
-//! with the same kind in every branch, checked once every element is
+//! with the same type in every branch, checked once every element is
 //! planned.
 //!
 //! A select picks its options while the document is built, from the
@@ -32,7 +32,7 @@ impl<'a> Compiler<'a> {
     ) -> Result<()> {
         let d = self.compiled.dast;
         let reactive =
-            self.compiled.templates[t].elems[e].kind == ComponentKind::ConditionalContent;
+            self.compiled.templates[t].elems[e].component_type == ComponentType::ConditionalContent;
         let tag = d.str(el).to_string();
         if d.attr(el, "extend").is_some() || d.attr(el, "copySource").is_some() {
             return Err(Error::Banned(format!(
@@ -225,7 +225,7 @@ impl<'a> Compiler<'a> {
                     if *at != ROOT_SCOPE {
                         continue;
                     }
-                    let kind = first.elems[*e0].kind;
+                    let component_type = first.elems[*e0].component_type;
                     let per_branch: Option<Vec<ElemId>> = def
                         .branches
                         .iter()
@@ -235,7 +235,10 @@ impl<'a> Compiler<'a> {
                                 .get(&(ROOT_SCOPE, name.clone()))
                                 .map(Vec::as_slice)
                             {
-                                Some([x]) if self.compiled.templates[b].elems[*x].kind == kind => {
+                                Some([x])
+                                    if self.compiled.templates[b].elems[*x].component_type
+                                        == component_type =>
+                                {
                                     Some(*x)
                                 }
                                 _ => None,
@@ -243,16 +246,18 @@ impl<'a> Compiler<'a> {
                         })
                         .collect();
                     if let Some(per_branch) = per_branch {
-                        iface.insert(name.clone(), (kind, per_branch));
+                        iface.insert(name.clone(), (component_type, per_branch));
                     }
                 }
             }
             for name in &def.used {
                 match iface.get(name) {
-                    Some((kind, _)) if !kind.copyable() || kind.symbolic() => {
+                    Some((component_type, _))
+                        if !component_type.copyable() || component_type.symbolic() =>
+                    {
                         return Err(Error::Unsupported(format!(
                             "a <{}> in a branch interface ('{name}')",
-                            kind.tag()
+                            component_type.tag()
                         )));
                     }
                     Some(_) => {}
@@ -272,7 +277,7 @@ impl<'a> Compiler<'a> {
         let reason = if empty_branch {
             "it has no <else>, so no branch is active when every condition fails".to_string()
         } else {
-            let mut first: Option<(usize, ComponentKind)> = None;
+            let mut first: Option<(usize, ComponentType)> = None;
             let mut reason = String::new();
             for (b, &tpl) in def.branches.iter().enumerate() {
                 match self.compiled.templates[tpl]
@@ -281,15 +286,15 @@ impl<'a> Compiler<'a> {
                     .map(Vec::as_slice)
                 {
                     Some([x]) => {
-                        let kind = self.compiled.templates[tpl].elems[*x].kind;
+                        let component_type = self.compiled.templates[tpl].elems[*x].component_type;
                         match first {
-                            None => first = Some((b, kind)),
-                            Some((b0, k0)) if k0 != kind => {
+                            None => first = Some((b, component_type)),
+                            Some((b0, k0)) if k0 != component_type => {
                                 reason = format!(
                                     "'{name}' is a <{}> in {what} {} but a <{}> in {what} {}",
                                     k0.tag(),
                                     b0 + 1,
-                                    kind.tag(),
+                                    component_type.tag(),
                                     b + 1
                                 );
                                 break;
@@ -319,7 +324,7 @@ impl<'a> Compiler<'a> {
     /// The step for interface name `name` of choice `cid`, and the element
     /// of the first branch that has it, which stands for every branch while
     /// the rest of the path is planned (the interface check makes their
-    /// kinds equal).
+    /// types equal).
     pub(in crate::build) fn iface_step(
         &mut self,
         cid: ChoiceId,

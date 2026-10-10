@@ -52,12 +52,12 @@ impl Document {
                     );
                     continue;
                 }
-                match self.kind(c) {
-                    ComponentKind::RepeatForSequence => {
+                match self.component_type(c) {
+                    ComponentType::RepeatForSequence => {
                         let r = self.structure.repeats.iter().find(|r| r.comp == c)?;
                         iteration = Some(*r.iter_scopes.get(k.checked_sub(1)?)?);
                     }
-                    ComponentKind::Select => {
+                    ComponentType::Select => {
                         let mut picks: Vec<ScopeId> = Vec::new();
                         for ch in self.children(c) {
                             if let Child::Component(x) = ch
@@ -143,11 +143,11 @@ impl Document {
             if Some(pc) == scope {
                 return true;
             }
-            if self.kind(pc) == ComponentKind::RepeatForSequence {
+            if self.component_type(pc) == ComponentType::RepeatForSequence {
                 return false;
             }
             // A built case that is not the active one is not there.
-            if self.kind(pc) == ComponentKind::Case
+            if self.component_type(pc) == ComponentType::Case
                 && self.cells[self.comp_cells(pc)[prop::case::ACTIVE] as usize] != 1.0
             {
                 return false;
@@ -165,7 +165,7 @@ impl Document {
                 return false;
             }
             if self.components.dast_node[x as usize] == NONE
-                && self.kind(x) != ComponentKind::Document
+                && self.component_type(x) != ComponentType::Document
             {
                 return true;
             }

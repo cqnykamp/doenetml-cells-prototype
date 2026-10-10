@@ -1,10 +1,10 @@
-//! Planned kinds: point, circle, line, line segment and polygon. Each
+//! Planned types: point, circle, line, line segment and polygon. Each
 //! planner reads the element's attributes and children and chooses the
-//! operator chain that produces the kind's public props (ADR 0006). The
+//! operator chain that produces the type's public props (ADR 0006). The
 //! inverse rules of the operators it uses are in `program/vector.rs`.
 //!
-//! This file holds the dispatcher (`plan_geo`) and what the kinds share:
-//! point slots and roles, point lists, and inherited attributes. Each kind's
+//! This file holds the dispatcher (`plan_geo`) and what the types share:
+//! point slots and roles, point lists, and inherited attributes. Each type's
 //! planner is in its own file.
 
 use super::*;
@@ -15,7 +15,7 @@ mod point;
 mod polygon;
 
 impl<'a> Compiler<'a> {
-    /// Dispatch for the geometric kinds.
+    /// Dispatch for the geometric types.
     pub(in crate::build) fn plan_geo(
         &mut self,
         t: TemplateId,
@@ -23,7 +23,11 @@ impl<'a> Compiler<'a> {
         extend: Option<RefId>,
     ) -> Result<()> {
         let d = self.compiled.dast;
-        let Elem { node: el, kind, .. } = self.compiled.templates[t].elems[e];
+        let Elem {
+            node: el,
+            component_type,
+            ..
+        } = self.compiled.templates[t].elems[e];
         // Own attributes other than name and extend, or children, override
         // the referent's; with none, the copy aliases every public prop.
         let own_attrs: Vec<String> = d
@@ -33,7 +37,7 @@ impl<'a> Compiler<'a> {
             .collect();
         let has_children = !d.children(el).iter().all(|&n| self.is_blank(n));
         if extend.is_some() && own_attrs.is_empty() && !has_children {
-            let n = kind.prop_defs().len();
+            let n = component_type.prop_defs().len();
             self.compiled.templates[t].elems[e].props = vec![SourcePlan::Inherit; n];
             return Ok(());
         }
@@ -42,12 +46,12 @@ impl<'a> Compiler<'a> {
             .and_then(|p| self.plan_elem_target(t, p))
             .filter(|&r| self.compiled.templates[t].elems[r].node != NONE);
         let base = base_elem.map(|r| self.compiled.templates[t].elems[r].node);
-        let mut ch = match kind {
-            ComponentKind::Point => self.plan_point(t, e, base)?,
-            ComponentKind::Circle => self.plan_circle(t, e, base)?,
-            ComponentKind::Line => self.plan_line(t, e, base)?,
-            ComponentKind::LineSegment => self.plan_segment(t, e, base)?,
-            ComponentKind::Polygon => self.plan_polygon(t, e, base)?,
+        let mut ch = match component_type {
+            ComponentType::Point => self.plan_point(t, e, base)?,
+            ComponentType::Circle => self.plan_circle(t, e, base)?,
+            ComponentType::Line => self.plan_line(t, e, base)?,
+            ComponentType::LineSegment => self.plan_segment(t, e, base)?,
+            ComponentType::Polygon => self.plan_polygon(t, e, base)?,
             _ => unreachable!(),
         };
         // Essential state the copy did not override is the original's: the
@@ -261,12 +265,12 @@ impl<'a> Compiler<'a> {
         }
         let Some(e) = e else { return Ok(None) };
         let el = &self.compiled.templates[cur_t].elems[e];
-        let Some(items) = el.kind.array_prop(prop) else {
+        let Some(items) = el.component_type.array_prop(prop) else {
             return Ok(None);
         };
-        let n = match el.kind {
-            ComponentKind::Polygon => self.count_points_in_attr(el.node, "vertices")?,
-            ComponentKind::Circle => self.count_points_in_attr(el.node, "through")?,
+        let n = match el.component_type {
+            ComponentType::Polygon => self.count_points_in_attr(el.node, "vertices")?,
+            ComponentType::Circle => self.count_points_in_attr(el.node, "through")?,
             _ => items.len(),
         };
         Ok(Some(n.min(items.len())))
@@ -318,7 +322,7 @@ impl<'a> Compiler<'a> {
                     return id;
                 };
                 // The math may come later in the document and not be planned yet.
-                if self.compiled.templates[t].elems[target].kind == ComponentKind::Math
+                if self.compiled.templates[t].elems[target].component_type == ComponentType::Math
                     && self.compiled.templates[t].elems[target].props.is_empty()
                     && self.plan_elem(t, target).is_err()
                 {
