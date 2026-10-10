@@ -101,7 +101,6 @@ pub(in crate::build) struct Builder<'c, 'a> {
     /// Per component: index into `repeats` for a repeat component.
     pub(in crate::build) comp_repeat: Vec<u32>,
     pub(in crate::build) repeats: Vec<Repeat>,
-    pub(in crate::build) counts_used: Vec<u32>,
     /// `$ref` children awaiting a kind: (component, plan, scope, has index).
     pub(in crate::build) pending: Vec<(CompIdx, RefId, ScopeId, bool)>,
     /// Collect components awaiting expansion.
@@ -160,7 +159,6 @@ impl<'c, 'a> Builder<'c, 'a> {
             instances: Vec::with_capacity(guess),
             comp_repeat: Vec::with_capacity(guess),
             repeats: Vec::new(),
-            counts_used: Vec::new(),
             pending: Vec::new(),
             collects: Vec::new(),
             pointlists: Vec::new(),
@@ -338,7 +336,6 @@ impl<'c, 'a> Builder<'c, 'a> {
                         iter_scopes,
                         iterations: n,
                     });
-                    self.counts_used.push(n);
                     kids
                 }
                 Body::Collect { .. } => {

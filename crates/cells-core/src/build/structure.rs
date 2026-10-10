@@ -91,7 +91,6 @@ pub struct Structure {
     /// reappears returns as it was left. Rows fill lazily.
     pub essential_values: Vec<Vec<Option<f64>>>,
     pub repeats: Vec<Repeat>,
-    pub counts_used: Vec<u32>,
     /// Per repeat (same order as `repeats`): how many repeats must be
     /// expanded in sequence before this one's count is known, plus one.
     /// Nesting adds one; a count that reads a cell inside another repeat's

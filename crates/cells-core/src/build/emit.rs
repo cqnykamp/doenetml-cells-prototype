@@ -220,7 +220,6 @@ impl<'c, 'a> Builder<'c, 'a> {
             repeat_depths: depths,
             repeat_cross_reads: cross_reads,
             repeats: self.repeats,
-            counts_used: self.counts_used,
             seed: self.carryover.structure.seed,
             sample_with_engine: self.carryover.structure.sample_with_engine,
         };
