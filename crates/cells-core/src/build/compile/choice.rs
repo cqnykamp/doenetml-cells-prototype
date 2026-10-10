@@ -18,8 +18,8 @@
 use super::*;
 
 /// `Choose` reads the choice cell and one cell per branch; `First` one
-/// condition per case. Vector operators read at most `geo::MAX_VEC_IN`.
-const MAX_CASES: usize = crate::program::geo::MAX_VEC_IN - 1;
+/// condition per case. Vector operators read at most `MAX_VEC_IN`.
+const MAX_CASES: usize = crate::program::MAX_VEC_IN - 1;
 
 impl<'a> Compiler<'a> {
     /// Give a choice element its branch templates. `<group rendered="c">`

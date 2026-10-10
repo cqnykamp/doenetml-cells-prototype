@@ -3,7 +3,7 @@
 //! runs verbatim; these are the core-level checks.
 #![allow(dead_code)]
 
-use cells_core::reference;
+use cells_core::testing::reference;
 use cells_core::{Document, PointRequest, Request, Tick};
 
 pub fn req(doc: &Document, name: &str, prop: &str, value: f64) -> Request {

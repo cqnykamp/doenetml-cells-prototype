@@ -5,8 +5,8 @@
 mod common;
 
 use cells_core::Document;
-use cells_core::reference;
-use cells_core::test_utils::load;
+use cells_core::testing::reference;
+use cells_core::testing::test_utils::load;
 use common::{req, type_into};
 
 fn text(doc: &Document, name: &str) -> String {
@@ -103,7 +103,7 @@ fn function_and_derivative_curves_resample_on_a_drag() {
     .unwrap();
     let ys = |doc: &Document, name: &str| {
         let c = doc.cell(name, "samples").unwrap() as usize;
-        doc.cells[c..c + cells_core::ops::SAMPLES].to_vec()
+        doc.cells[c..c + cells_core::program::SAMPLES].to_vec()
     };
     let (f, df) = (ys(&doc, "f"), ys(&doc, "df"));
     assert_eq!((f[0], *f.last().unwrap()), (12.0, 12.0));

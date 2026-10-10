@@ -226,8 +226,7 @@ impl Document {
     pub fn memory_estimate(&self) -> MemoryEstimate {
         MemoryEstimate {
             cells: self.cells.capacity() * 8,
-            program: self.program.instrs.capacity()
-                * std::mem::size_of::<crate::program::ops::Instr>()
+            program: self.program.instrs.capacity() * std::mem::size_of::<crate::program::Instr>()
                 + self.program.producer.capacity() * 4
                 + self.program.sym.engine.borrow().heap_bytes(),
             components: self.comps.heap_bytes(),

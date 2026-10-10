@@ -3,8 +3,8 @@
 
 mod common;
 
-use cells_core::reference;
-use cells_core::test_utils::{dast_json, load};
+use cells_core::testing::reference;
+use cells_core::testing::test_utils::{dast_json, load};
 use cells_core::{Document, Error};
 use common::{set, v};
 

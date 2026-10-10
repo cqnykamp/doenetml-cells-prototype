@@ -1,6 +1,6 @@
 use cells_core::components::ComponentKind;
-use cells_core::reference;
-use cells_core::test_utils::{load, load_via_binary};
+use cells_core::testing::reference;
+use cells_core::testing::test_utils::{load, load_via_binary};
 use cells_core::{Child, Document, Error};
 
 fn load_ok(src: &str) -> Document {
@@ -232,7 +232,7 @@ fn error_cases() {
 
 #[test]
 fn load_reports_stages() {
-    let json = cells_core::test_utils::dast_json(
+    let json = cells_core::testing::test_utils::dast_json(
         r#"<numberInput name="a" value="2"/><op kind="negate" args="$a"/>"#,
     );
     let (doc, t) = Document::load(json.as_bytes(), Default::default()).unwrap();
@@ -270,7 +270,7 @@ fn binary_wire_format_rejects_garbage() {
         Error::WireFormat(_)
     ));
     let mut good =
-        cells_core::dast::Dast::from_json(&cells_core::test_utils::dast_json("<point/>"))
+        cells_core::dast::Dast::from_json(&cells_core::testing::test_utils::dast_json("<point/>"))
             .unwrap()
             .to_binary();
     // Corrupt a child index.

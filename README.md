@@ -13,7 +13,7 @@ vocabulary, and `docs/adr/` for recorded decisions.
   (`build/compile/`, into the types in `plan.rs`), stamps them per scope
   (`build/expand/`) and emits cells and the program (`build/emit.rs`), rebuilding the whole document on
   structural change (ADR 0004); `program/` is the instruction set the build
-  emits and a tick runs: `ops.rs` and `geo.rs` hold the operators and their
+  emits and a tick runs: `instr.rs`, `scalar.rs` and `vector.rs` hold the instructions, operators and their
   inverses (ADR 0003, 0006), `program/mod.rs` the scheduled program; `tick/`
   holds the run-time machinery, `eval.rs` the evaluators, `invert.rs` the
   request engine and `snap.rs` the sticky rule; `document/` loads the

@@ -4,7 +4,7 @@
 //! every kind of inverse.
 
 use cells_core::Request;
-use cells_core::test_utils::load;
+use cells_core::testing::test_utils::load;
 
 const DOCS: &[&str] = &[
     r#"<numberInput name="n" value="1"/><op name="a" kind="offset" k="1" args="$n"/><op name="b" kind="scale" k="2" args="$a"/><op name="c" kind="negate" args="$b"/><op name="d" kind="clamp" lo="-9" hi="9" args="$c"/><op name="e" kind="round" args="$d"/><op name="f" kind="add" args="$e $n"/><op name="g" kind="div" args="$f $b"/><op name="h" kind="default" args="$g $n"/><op name="i" kind="lerp" t="0.25" args="$h $a"/><graph><point name="p" x="$i" y="$e"/></graph>"#,

@@ -5,7 +5,7 @@
 mod common;
 
 use cells_core::Document;
-use cells_core::test_utils::load;
+use cells_core::testing::test_utils::load;
 use common::req;
 
 fn v(doc: &Document, name: &str) -> f64 {

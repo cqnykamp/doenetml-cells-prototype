@@ -177,7 +177,7 @@ fn main() {
                 .program
                 .instrs
                 .iter()
-                .filter(|i| matches!(i.op, cells_core::Op::Sym(..)))
+                .filter(|i| matches!(i.op, cells_core::program::Op::Sym(..)))
                 .count();
             let mut row = json!({ "spec": spec, "engine": name, "cells": base.cells.len(), "instrs": base.program.len(), "sym_instrs": n_sym, "load_ms": load });
             print!(

@@ -52,8 +52,8 @@ use crate::components::{ComponentKind, PropFrom, prop};
 use crate::dast::{Dast, NodeId, NodeKind, StrId, StringTable};
 use crate::document::{CellIdx, CompIdx, ComponentTable, Document, NONE, TEXT_BIT};
 use crate::error::{Error, Result};
-use crate::program::geo::{Pivot, RigidOpts, VecOp};
-use crate::program::ops::{Instr, OpSpec, Post, SymKind};
+use crate::program::{Instr, OpSpec, Post, SymKind};
+use crate::program::{Pivot, RigidOpts, VecOp};
 use crate::program::{Program, Sym};
 use compile::expr::{Arena, Expr, ExprId, Parser, Token};
 

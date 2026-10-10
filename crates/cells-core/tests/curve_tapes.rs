@@ -2,9 +2,10 @@
 //! tape compiled at build time instead of asking the engine on each tick.
 //! The tapes must sample what the engine samples.
 
-use cells_core::ops::{SAMPLES, SymKind};
-use cells_core::test_utils::dast_json;
-use cells_core::{Document, LoadOptions, Op, Request};
+use cells_core::program::Op;
+use cells_core::program::{SAMPLES, SymKind};
+use cells_core::testing::test_utils::dast_json;
+use cells_core::{Document, LoadOptions, Request};
 
 const SRC: &str = r#"<numberInput name="a" value="1.5"/><numberInput name="b" value="-2"/><mathInput name="mi" prefill="x^3"/>
 <graph xmin="-3" xmax="4">
@@ -76,5 +77,5 @@ fn tapes_sample_what_the_engine_samples() {
             fast.math_text(fast.cell("df", "expr").unwrap())
         );
     }
-    assert_eq!(cells_core::reference::check(&fast), None);
+    assert_eq!(cells_core::testing::reference::check(&fast), None);
 }

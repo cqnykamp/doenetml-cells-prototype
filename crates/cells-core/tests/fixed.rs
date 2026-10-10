@@ -7,7 +7,7 @@ mod common;
 use common::*;
 
 use cells_core::Document;
-use cells_core::test_utils::load;
+use cells_core::testing::test_utils::load;
 
 fn set(doc: &mut Document, name: &str, prop: &str, value: f64) -> usize {
     let r = req(doc, name, prop, value);

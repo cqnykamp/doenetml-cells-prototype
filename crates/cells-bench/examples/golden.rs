@@ -179,7 +179,7 @@ fn fingerprint(doc: &Document) -> u64 {
 
 fn run(source: &str, programs: &mut String, name: &str) -> String {
     let mut out = String::new();
-    let json = cells_core::test_utils::dast_json(source);
+    let json = cells_core::testing::test_utils::dast_json(source);
     let mut doc = match Document::from_bytes(json.as_bytes()) {
         Ok(d) => d,
         Err(e) => return format!("load error: {e}\n"),
@@ -252,7 +252,7 @@ fn sources(root: &Path) -> Vec<(String, PathBuf)> {
 fn main() {
     let dir = PathBuf::from(std::env::args().nth(1).expect("usage: golden <out-dir>"));
     std::fs::create_dir_all(&dir).unwrap();
-    let root = cells_core::test_utils::repo_root();
+    let root = cells_core::testing::test_utils::repo_root();
     let mut programs = String::new();
     for (name, path) in sources(&root) {
         let text = run(

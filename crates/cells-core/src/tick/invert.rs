@@ -28,9 +28,9 @@ type HashMap<K, V> = std::collections::HashMap<K, V, BuildHasherDefault<IndexHas
 type HashSet<K> = std::collections::HashSet<K, BuildHasherDefault<IndexHasher>>;
 
 use crate::document::CellIdx;
+use crate::program::Produced;
 use crate::program::Program;
-use crate::program::geo::Produced;
-use crate::program::ops::{Op, SymKind};
+use crate::program::{Op, SymKind};
 use crate::tick::Request;
 
 /// A request on both cells of a point, issued together with others as a

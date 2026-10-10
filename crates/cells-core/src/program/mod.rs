@@ -1,7 +1,8 @@
-//! The instruction set: what the build emits and a tick runs. Scalar
-//! operators are in `ops.rs`, vector operators in `geo.rs`, each with its
-//! inverse rule; this file holds the instruction list and its topological
-//! schedule. The inversion engine that drives the inverses is
+//! The instruction set: what the build emits and a tick runs. An
+//! instruction and its unbound spec are in `instr.rs`; the operator, with
+//! the scalar operators' evaluation and inverse rules, in `scalar.rs`; the
+//! vector operators and theirs in `vector.rs`. This file holds the
+//! instruction list and its topological schedule. The inversion engine that drives the inverses is
 //! `tick/invert.rs`.
 
 use std::cell::{Cell, RefCell};
@@ -9,10 +10,13 @@ use std::cell::{Cell, RefCell};
 use cells_sym::{Handle, SymEngine};
 
 use crate::document::CellIdx;
-pub mod geo;
-pub mod ops;
+mod instr;
+mod scalar;
+mod vector;
 
-use ops::{Instr, Op, SAMPLES, SymKind};
+pub use instr::{Instr, OpSpec, Post, SAMPLES, SymKind};
+pub use scalar::{EQ_TOL, Op, js_round};
+pub use vector::{MAX_VEC_IN, Pivot, Produced, RigidOpts, VecOp};
 
 /// The document's symbolic engine and the memo of every symbolic
 /// instruction. Interior mutability because instructions run through
@@ -368,9 +372,9 @@ fn run_sym(
         SymKind::Instantiate { template, post } => {
             let h = engine.instantiate(template, cells);
             let h = match post {
-                crate::program::ops::Post::None => h,
-                crate::program::ops::Post::Simplify => engine.simplify(h),
-                crate::program::ops::Post::Expand => engine.expand(h),
+                crate::program::Post::None => h,
+                crate::program::Post::Simplify => engine.simplify(h),
+                crate::program::Post::Expand => engine.expand(h),
             };
             out[0] = h as f64;
         }

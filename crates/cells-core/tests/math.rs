@@ -4,9 +4,10 @@
 
 mod common;
 
-use cells_core::reference;
-use cells_core::test_utils::load;
-use cells_core::{Document, Op};
+use cells_core::Document;
+use cells_core::program::Op;
+use cells_core::testing::reference;
+use cells_core::testing::test_utils::load;
 use common::req;
 
 fn has_evaluate(doc: &Document) -> bool {

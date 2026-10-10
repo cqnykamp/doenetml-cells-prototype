@@ -3,7 +3,7 @@
 //! one difference Plan 5 measures, that R gives every recomputed expression
 //! a new handle so nothing downstream is cut off.
 
-use cells_core::test_utils::dast_json;
+use cells_core::testing::test_utils::dast_json;
 use cells_core::{Document, LoadOptions, Request};
 use cells_sym_mer::Mer;
 
@@ -50,7 +50,7 @@ fn simplify_and_math_inputs() {
     let h = doc.parse_math("y").unwrap();
     doc.request(&[req(&doc, "mi", "expr", h)]);
     assert!(expr_is(&doc, "d", "2y"));
-    assert_eq!(cells_core::reference::check(&doc), None);
+    assert_eq!(cells_core::testing::reference::check(&doc), None);
 }
 
 #[test]

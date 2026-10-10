@@ -5,7 +5,7 @@
 //! stdout: {"initial": [..], "steps": [{"values": [..], "dropped": n}, ...]}
 //! Values are `value` props of the observed components; NaN prints as null.
 use cells_core::Request;
-use cells_core::test_utils::load;
+use cells_core::testing::test_utils::load;
 use std::io::Read;
 
 fn main() {

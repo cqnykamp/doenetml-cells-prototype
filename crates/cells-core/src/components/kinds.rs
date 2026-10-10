@@ -4,7 +4,7 @@ use super::{
     ArrayProp, CONTAINER, COPYABLE, ComponentKind, INTERNAL, KindInfo, MAX_VERTICES, PLANNED,
     PropDef, PropFrom, SYMBOLIC, prop,
 };
-use crate::program::ops::{OpSpec, SymKind};
+use crate::program::{OpSpec, SymKind};
 
 const fn attr(name: &'static str, default: f64) -> PropDef {
     PropDef {

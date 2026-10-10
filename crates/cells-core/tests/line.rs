@@ -2,8 +2,8 @@
 //! with point lists and constrained points.
 
 mod common;
-use cells_core::reference;
-use cells_core::test_utils::load;
+use cells_core::testing::reference;
+use cells_core::testing::test_utils::load;
 use cells_core::{PointRequest, Request};
 use common::*;
 

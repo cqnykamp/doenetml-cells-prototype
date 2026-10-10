@@ -12,7 +12,7 @@
 //! the data (every kind's prop table and its row in [`KINDS`]); `prop.rs`
 //! names prop positions for code that reads or sets a prop by position.
 
-use crate::program::ops::OpSpec;
+use crate::program::OpSpec;
 
 mod kinds;
 pub mod prop;

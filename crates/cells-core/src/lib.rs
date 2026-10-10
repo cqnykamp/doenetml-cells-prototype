@@ -24,21 +24,15 @@ pub mod components;
 pub mod dast;
 mod document;
 mod error;
-mod program;
+pub mod program;
 pub mod testing;
 pub mod tick;
 
-pub use program::ops;
-pub use testing::{reference, test_utils};
-
-pub use build::{Repeat, ScopeId, ScopeTable, Structure};
+// The API of a loaded document: load it, read it, send it requests.
 pub use document::{
     CellIdx, Child, CompIdx, ComponentTable, Document, LoadOptions, LoadTimings, NONE, TEXT_BIT,
 };
 pub use error::{Error, Result};
-pub use program::Program;
-pub use program::geo::{Pivot, Produced, RigidOpts, VecOp};
-pub use program::ops::{Instr, Op, OpSpec};
 pub use tick::eval::{DirtyClosure, Evaluator, FullRecompute};
-pub use tick::invert::{Inversion, PointRequest};
+pub use tick::invert::PointRequest;
 pub use tick::{Request, Tick};
