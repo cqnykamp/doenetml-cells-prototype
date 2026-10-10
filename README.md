@@ -58,3 +58,8 @@ Restrict a run with `CELLS_FIXTURES=chain-1000,points-100 cargo bench ...` or
 The current-core baseline is `cd web && node baseline/measure.mjs`; the slider
 differential test against the current core is `cd web && node baseline/slider-diff.mjs`
 (after `cargo build --release -p cells-bench --example scenario_run`).
+
+## License
+
+Copyright (C) 2026 Charles Nykamp. Licensed under the GNU Affero General Public
+License, version 3 or (at your option) any later version. See [LICENSE](LICENSE).

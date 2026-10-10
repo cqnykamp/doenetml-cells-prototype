@@ -1,6 +1,7 @@
 {
   "name": "cells-web",
   "private": true,
+  "license": "AGPL-3.0-or-later",
   "type": "module",
   "scripts": {
     "wasm": "wasm-pack build ../crates/cells-wasm --target web --release --out-dir ../../web/src/wasm --out-name cells_wasm",
