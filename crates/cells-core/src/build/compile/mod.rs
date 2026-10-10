@@ -12,7 +12,10 @@ pub(in crate::build) mod expr;
 mod fix;
 mod geometry;
 pub(in crate::build) mod plan;
+mod planner;
 mod refs;
+
+use planner::Planner;
 
 pub(in crate::build) struct Compiler<'a> {
     pub(in crate::build) compiled: Compiled<'a>,
@@ -29,15 +32,8 @@ enum ElemShape {
     Synthetic,
     ExtendProp(RefId),
     ContainerCopy(RefId),
-    Planned(Option<RefId>),
-    Math,
-    /// `<function>`, `<derivative>`, `<answer>` (`plan_symbolic`).
-    Symbolic,
-    Collect,
-    /// `<conditionalContent>`, `<select>` (`choice.rs`).
-    Choice,
-    Text,
-    Generic(Option<RefId>),
+    /// Planned as its type's entry in `planner` says.
+    ByType(Option<RefId>),
 }
 
 impl<'a> Compiler<'a> {
@@ -329,13 +325,7 @@ impl<'a> Compiler<'a> {
     }
 
     pub(in crate::build) fn plan_elem(&mut self, t: TemplateId, e: ElemId) -> Result<()> {
-        let d = self.compiled.dast;
-        let Elem {
-            node: el,
-            component_type,
-            name_scope: scope,
-            ..
-        } = self.compiled.templates[t].elems[e];
+        let component_type = self.compiled.templates[t].elems[e].component_type;
         match self.elem_shape(t, e)? {
             // Every public prop aliases the original's; nothing else to plan.
             ElemShape::Cloned => {
@@ -347,68 +337,82 @@ impl<'a> Compiler<'a> {
             ElemShape::Synthetic => Ok(()),
             ElemShape::ExtendProp(p) => self.plan_extend_prop(t, e, p),
             ElemShape::ContainerCopy(p) => self.plan_container_copy(t, e, p),
-            ElemShape::Planned(extend) => self.plan_geo(t, e, extend),
-            ElemShape::Math => {
-                // A tuple-valued math (`<math>(a, b)</math>`) is a point for
-                // the cells core: two cells, draggable as a direction source.
-                let nodes: Vec<NodeId> = d.children(el).to_vec();
-                let (toks, _) = self.math_tokens(t, scope, &nodes)?;
-                if let Some(inner) = expr::unwrap_parens(&toks)
-                    && expr::split_top(inner, &Token::Comma).len() == 2
-                {
-                    let [x, y] = self.plan_tuple(t, scope, &nodes)?;
-                    let hide = ComponentType::Point.prop_defs()[prop::point::HIDE].default;
-                    self.compiled.templates[t].elems[e].component_type = ComponentType::Point;
-                    self.compiled.templates[t].elems[e].props =
-                        vec![x, y, SourcePlan::Default(hide)];
-                    return Ok(());
-                }
-                let id = self.plan_sym_math(t, scope, &nodes)?;
-                let post = if self.attr_on(el, "expand") {
-                    Post::Expand
-                } else if self.attr_on(el, "simplify") {
-                    Post::Simplify
-                } else {
-                    Post::None
-                };
-                self.compiled.templates[t].elems[e].props =
-                    vec![SourcePlan::MathHandle(id, post), SourcePlan::MathValue(id)];
-                Ok(())
-            }
-            ElemShape::Symbolic => self.plan_symbolic(t, e),
-            ElemShape::Choice => self.plan_choice(t, e),
-            ElemShape::Text => self.plan_text(t, e),
-            ElemShape::Collect => {
-                let from = d
-                    .attr(el, "from")
-                    .and_then(|a| self.single_macro(a))
-                    .ok_or(Error::BadCollect)?;
-                let type_text = d
-                    .attr(el, "componentType")
-                    .and_then(|a| self.attr_text(a))
-                    .ok_or(Error::BadCollect)?;
-                let ck = ComponentType::from_tag(type_text.trim())
-                    .filter(|k| k.copyable())
-                    .ok_or_else(|| Error::BadCollectType(type_text.trim().into()))?;
-                let p = self.plan_ref(t, scope, from)?;
-                if self.compiled.refs[p].prop.is_some() {
-                    return Err(Error::BadCollect);
-                }
-                self.compiled.templates[t].elems[e].body = Body::Collect {
-                    from: p,
-                    component_type: ck,
-                };
-                // `count` is set when the collect expands.
-                self.compiled.templates[t].elems[e].props = vec![SourcePlan::Fixed(f64::NAN)];
-                Ok(())
-            }
-            ElemShape::Generic(extend) => self.plan_attrs(t, e, extend),
+            ElemShape::ByType(extend) => match Self::planner(component_type) {
+                Planner::Props | Planner::PropsThen(_) => self.plan_attrs(t, e, extend),
+                Planner::Geometric(plan) => self.plan_geo(t, e, extend, plan),
+                Planner::Whole(plan) => plan(self, t, e),
+            },
         }
     }
 
-    /// Which way an element is planned, decided from its type and its
-    /// `extend` attribute before any prop is looked at. Records the extend
-    /// plan on the element.
+    /// `<math>`. A tuple-valued math (`<math>(a, b)</math>`) is a point for
+    /// the cells core: two cells, draggable as a direction source.
+    fn plan_math_elem(&mut self, t: TemplateId, e: ElemId) -> Result<()> {
+        let d = self.compiled.dast;
+        let Elem {
+            node: el,
+            name_scope: scope,
+            ..
+        } = self.compiled.templates[t].elems[e];
+        let nodes: Vec<NodeId> = d.children(el).to_vec();
+        let (toks, _) = self.math_tokens(t, scope, &nodes)?;
+        if let Some(inner) = expr::unwrap_parens(&toks)
+            && expr::split_top(inner, &Token::Comma).len() == 2
+        {
+            let [x, y] = self.plan_tuple(t, scope, &nodes)?;
+            let hide = ComponentType::Point.prop_defs()[prop::point::HIDE].default;
+            self.compiled.templates[t].elems[e].component_type = ComponentType::Point;
+            self.compiled.templates[t].elems[e].props = vec![x, y, SourcePlan::Default(hide)];
+            return Ok(());
+        }
+        let id = self.plan_sym_math(t, scope, &nodes)?;
+        let post = if self.attr_on(el, "expand") {
+            Post::Expand
+        } else if self.attr_on(el, "simplify") {
+            Post::Simplify
+        } else {
+            Post::None
+        };
+        self.compiled.templates[t].elems[e].props =
+            vec![SourcePlan::MathHandle(id, post), SourcePlan::MathValue(id)];
+        Ok(())
+    }
+
+    /// `<collect>`: what it collects is resolved when it expands.
+    fn plan_collect(&mut self, t: TemplateId, e: ElemId) -> Result<()> {
+        let d = self.compiled.dast;
+        let Elem {
+            node: el,
+            name_scope: scope,
+            ..
+        } = self.compiled.templates[t].elems[e];
+        let from = d
+            .attr(el, "from")
+            .and_then(|a| self.single_macro(a))
+            .ok_or(Error::BadCollect)?;
+        let type_text = d
+            .attr(el, "componentType")
+            .and_then(|a| self.attr_text(a))
+            .ok_or(Error::BadCollect)?;
+        let ck = ComponentType::from_tag(type_text.trim())
+            .filter(|k| k.copyable())
+            .ok_or_else(|| Error::BadCollectType(type_text.trim().into()))?;
+        let p = self.plan_ref(t, scope, from)?;
+        if self.compiled.refs[p].prop.is_some() {
+            return Err(Error::BadCollect);
+        }
+        self.compiled.templates[t].elems[e].body = Body::Collect {
+            from: p,
+            component_type: ck,
+        };
+        // `count` is set when the collect expands.
+        self.compiled.templates[t].elems[e].props = vec![SourcePlan::Fixed(f64::NAN)];
+        Ok(())
+    }
+
+    /// Which way an element is planned, decided from its `extend` attribute
+    /// (and whether its type is a container) before any prop is looked at.
+    /// Records the extend plan on the element.
     fn elem_shape(&mut self, t: TemplateId, e: ElemId) -> Result<ElemShape> {
         let d = self.compiled.dast;
         let Elem {
@@ -442,32 +446,9 @@ impl<'a> Compiler<'a> {
             None => None,
         };
         self.compiled.templates[t].elems[e].extend = extend;
-        if matches!(
-            component_type,
-            ComponentType::ConditionalContent | ComponentType::Select
-        ) {
-            if extend.is_some() {
-                return Err(Error::Banned(format!(
-                    "extend on a <{}>: reference its interface names instead",
-                    component_type.tag()
-                )));
-            }
-            return Ok(ElemShape::Choice);
-        }
-        Ok(match (component_type, extend) {
-            (k, Some(p)) if k.container() => ElemShape::ContainerCopy(p),
-            (ComponentType::PointList, _) => {
-                return Err(Error::BadValue {
-                    attr: "extend".into(),
-                    text: "<pointList> needs extend=\"$shape.points\"".into(),
-                });
-            }
-            (k, _) if k.planned() => ElemShape::Planned(extend),
-            (ComponentType::Math, _) => ElemShape::Math,
-            (k, _) if k.symbolic() => ElemShape::Symbolic,
-            (ComponentType::Collect, _) => ElemShape::Collect,
-            (ComponentType::Text, None) => ElemShape::Text,
-            _ => ElemShape::Generic(extend),
+        Ok(match extend {
+            Some(p) if component_type.container() => ElemShape::ContainerCopy(p),
+            _ => ElemShape::ByType(extend),
         })
     }
 

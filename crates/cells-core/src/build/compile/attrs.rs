@@ -114,16 +114,13 @@ impl<'a> Compiler<'a> {
                 {
                     SourcePlan::Fixed(f64::NAN)
                 }
-                (None, PropFrom::Planned) => unreachable!("planned component_types take plan_geo"),
+                (None, PropFrom::Planned) => unreachable!("geometric types take plan_geo"),
             };
             props[pi] = Some(plan);
         }
         let mut props: Vec<Option<SourcePlan>> = props;
-        if component_type == ComponentType::MathInput {
-            self.plan_math_input(el, &mut props)?;
-        }
-        if component_type == ComponentType::Section {
-            self.plan_section_flags(el, &mut props)?;
+        if let Planner::PropsThen(then) = Self::planner(component_type) {
+            then(self, el, &mut props)?;
         }
         let fix_attrs: &[&str] = if component_type == ComponentType::Graph {
             &["fixed", "fixAxes"]
@@ -138,7 +135,11 @@ impl<'a> Compiler<'a> {
     /// A section's `aggregateScores`, `includeParentNumber` and `label`:
     /// literals, defaulted by tag as in the current core, since they decide
     /// how credit and numbers are wired.
-    fn plan_section_flags(&mut self, el: NodeId, props: &mut [Option<SourcePlan>]) -> Result<()> {
+    pub(super) fn plan_section_flags(
+        &mut self,
+        el: NodeId,
+        props: &mut [Option<SourcePlan>],
+    ) -> Result<()> {
         let d = self.compiled.dast;
         let tag = match d.str(el) {
             "division" => d
@@ -176,7 +177,11 @@ impl<'a> Compiler<'a> {
     /// A mathInput bound to a cell (a reference child or `bindValueTo`)
     /// stays a numeric input. Unbound, its `expr` is an essential math cell
     /// holding the prefill (or its children's text) and `value` evaluates it.
-    fn plan_math_input(&mut self, el: NodeId, props: &mut [Option<SourcePlan>]) -> Result<()> {
+    pub(super) fn plan_math_input(
+        &mut self,
+        el: NodeId,
+        props: &mut [Option<SourcePlan>],
+    ) -> Result<()> {
         let d = self.compiled.dast;
         let nodes = match d.attr(el, "prefill") {
             Some(a) => d.attr_children(a),

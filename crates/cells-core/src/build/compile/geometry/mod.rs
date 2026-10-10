@@ -3,7 +3,7 @@
 //! operator chain that produces the type's public props (ADR 0006). The
 //! inverse rules of the operators it uses are in `program/vector.rs`.
 //!
-//! This file holds the dispatcher (`plan_geo`) and what the types share:
+//! This file holds `plan_geo`, which runs each type's planner, and what the types share:
 //! point slots and roles, point lists, and inherited attributes. Each type's
 //! planner is in its own file.
 
@@ -15,12 +15,15 @@ mod point;
 mod polygon;
 
 impl<'a> Compiler<'a> {
-    /// Dispatch for the geometric types.
+    /// Runs a geometric type's planner (`plan`, from `planner`) with what
+    /// the types share around it: a bare copy aliases every prop, and a copy
+    /// with its own attributes merges them over the referent's.
     pub(in crate::build) fn plan_geo(
         &mut self,
         t: TemplateId,
         e: ElemId,
         extend: Option<RefId>,
+        plan: planner::GeoFn<'a>,
     ) -> Result<()> {
         let d = self.compiled.dast;
         let Elem {
@@ -46,14 +49,7 @@ impl<'a> Compiler<'a> {
             .and_then(|p| self.plan_elem_target(t, p))
             .filter(|&r| self.compiled.templates[t].elems[r].node != NONE);
         let base = base_elem.map(|r| self.compiled.templates[t].elems[r].node);
-        let mut ch = match component_type {
-            ComponentType::Point => self.plan_point(t, e, base)?,
-            ComponentType::Circle => self.plan_circle(t, e, base)?,
-            ComponentType::Line => self.plan_line(t, e, base)?,
-            ComponentType::LineSegment => self.plan_segment(t, e, base)?,
-            ComponentType::Polygon => self.plan_polygon(t, e, base)?,
-            _ => unreachable!(),
-        };
+        let mut ch = plan(self, t, e, base)?;
         // Essential state the copy did not override is the original's: the
         // current core's copies share their essential state variables.
         if let Some(r) = base_elem {

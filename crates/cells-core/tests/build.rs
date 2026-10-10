@@ -330,3 +330,9 @@ fn a_copys_own_hide_wins_over_the_inherited_one() {
     assert_eq!(doc.value("r", "hide"), Some(1.0));
     assert_eq!(doc.value("s", "hide"), Some(1.0));
 }
+
+#[test]
+fn point_list_needs_extend_of_an_array_prop() {
+    let e = load(r#"<graph><pointList name="ps"/></graph>"#).unwrap_err();
+    assert!(matches!(e, Error::BadValue { .. }), "{e}");
+}
