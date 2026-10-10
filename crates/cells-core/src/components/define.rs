@@ -3,8 +3,8 @@
 //! and `at` for named prop positions.
 
 use super::{
-    Args, ArrayProp, CONTAINER, COPYABLE, ComponentTypeInfo, INTERNAL, MAX_ARGS, PLANNED, PropDef,
-    PropFrom, SYMBOLIC,
+    Args, ArrayProp, CONTAINER, COPYABLE, ComponentTypeInfo, INTERNAL, MAX_ARGS, PropDef, PropFrom,
+    SYMBOLIC,
 };
 pub(super) use crate::program::OpSpec;
 
@@ -190,10 +190,6 @@ impl ComponentTypeInfo {
     /// See [`super::ComponentType::container`].
     pub(super) const fn container(self) -> Self {
         self.flag(CONTAINER)
-    }
-    /// See [`super::ComponentType::planned`].
-    pub(super) const fn planned(self) -> Self {
-        self.flag(PLANNED)
     }
     /// See [`super::ComponentType::symbolic`].
     pub(super) const fn symbolic(self) -> Self {

@@ -260,9 +260,9 @@ impl<'a> Compiler<'a> {
                 self.add_choice(t, e, el)?
             }
             // A number's children are its value, not rendered children; the
-            // planned types read their children themselves (a line's equation,
-            // a point's constraints).
-            _ if component_type.planned()
+            // geometric types read their children themselves (a line's
+            // equation, a point's constraints).
+            _ if matches!(Self::planner(component_type), Planner::Geometric(_))
                 || component_type
                     .prop_defs()
                     .iter()

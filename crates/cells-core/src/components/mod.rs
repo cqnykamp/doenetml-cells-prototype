@@ -153,9 +153,6 @@ pub struct ArrayProp {
 const COPYABLE: u8 = 1;
 /// The children are rendered; `extend` copies them deeply.
 const CONTAINER: u8 = 2;
-/// The builder plans the props from the element's attributes and children
-/// rather than from `PropFrom` (the geometric types).
-const PLANNED: u8 = 4;
 /// Planned as math cells (`plan_symbolic`); not allowed in a branch
 /// interface.
 const SYMBOLIC: u8 = 8;
@@ -248,12 +245,6 @@ impl ComponentType {
     /// Containers whose children are rendered; `extend` copies them deeply.
     pub fn container(self) -> bool {
         self.info().flags & CONTAINER != 0
-    }
-
-    /// Types whose prop sources the builder plans from the element's
-    /// attributes and children rather than from `PropFrom`.
-    pub fn planned(self) -> bool {
-        self.info().flags & PLANNED != 0
     }
 
     /// Function, derivative and answer: planned as math cells.

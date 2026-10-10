@@ -1,6 +1,7 @@
 //! Point, circle, line, line segment, polygon and point list. All but the
-//! point list are `planned`: the builder chooses each prop's source from
-//! the attributes the author gave (`build/compile/geometry/`).
+//! point list have a geometric planner (`build/compile/planner.rs`) that
+//! chooses each prop's source from the attributes the author gave
+//! (`build/compile/geometry/`).
 
 use super::define::*;
 use super::{ArrayProp, ComponentTypeInfo, PropDef};
@@ -12,7 +13,6 @@ pub const MAX_VERTICES: usize = 16;
 /// `<point>`. `coords` is a view over `x` and `y`.
 pub(super) const POINT: ComponentTypeInfo = info(&["point"], POINT_PROPS)
     .copyable()
-    .planned()
     .default_prop("coords")
     .views(&[("coords", ["x", "y"])])
     .sticky(Shape::Point, point::X, 1);
@@ -34,7 +34,6 @@ pub mod point {
 /// `build/compile/geometry/circle.rs`).
 pub(super) const CIRCLE: ComponentTypeInfo = info(&["circle"], CIRCLE_PROPS)
     .copyable()
-    .planned()
     .views(&[
         ("center", ["centerX", "centerY"]),
         ("numericalCenter", ["cx", "cy"]),
@@ -108,10 +107,8 @@ const LINE_POINTS: &[ArrayProp] = &[ArrayProp {
 
 /// `<line>`: its own two points are derived cells (ADR 0006); slope,
 /// intercepts and coefficients follow from them or from the equation.
-pub(super) const LINE: ComponentTypeInfo = info(&["line"], LINE_PROPS)
-    .copyable()
-    .planned()
-    .arrays(LINE_POINTS);
+pub(super) const LINE: ComponentTypeInfo =
+    info(&["line"], LINE_PROPS).copyable().arrays(LINE_POINTS);
 
 /// The first four props are the line's own points (ADR 0006).
 /// `basedOnDirection` is 1 when the second point is derived from a slope or
@@ -148,7 +145,6 @@ pub mod line {
 /// `<lineSegment endpoints="$a $b">`.
 pub(super) const LINE_SEGMENT: ComponentTypeInfo = info(&["lineSegment"], LINE_SEGMENT_PROPS)
     .copyable()
-    .planned()
     .arrays(LINE_POINTS)
     .sticky(Shape::Open, segment::X1, 2);
 
@@ -166,7 +162,6 @@ pub mod segment {
 /// `<polygon vertices="...">`, optionally rigid. Up to `MAX_VERTICES`.
 pub(super) const POLYGON: ComponentTypeInfo = info(&["polygon", "triangle"], POLYGON_PROPS)
     .copyable()
-    .planned()
     .arrays(&[ArrayProp {
         names: &["vertices"],
         item: "vertex",
