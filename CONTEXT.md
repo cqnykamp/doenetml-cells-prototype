@@ -67,6 +67,12 @@ essential cells, recompute derived cells, report changed cells. What a tick
 reports is its **tick outcome** (`TickOutcome`): the changed cells, dropped
 requests, and whether the document was rebuilt.
 
+**Renderer** — The view layer as a whole: it reads cells, draws the
+document, and turns user actions into requests. The prototype has several
+interchangeable renderers (plain SVG, JSXGraph). The code that draws one
+component type is a **component renderer**.
+_Avoid_: renderer for a single component type's view (say component renderer)
+
 **Request** — A renderer's ask to change a cell to a value. Requests are
 cell-addressed. The core resolves a request by inverting through operators
 until essential cells are reached, then recomputes.
