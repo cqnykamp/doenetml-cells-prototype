@@ -42,7 +42,7 @@ impl Compiler<'_> {
         // area goes through a hidden square.
         for (i, def) in component_type.prop_defs().iter().enumerate() {
             if let PropFrom::Computed { op, args } = def.from {
-                ch.set(i, SourcePlan::from_def(op, args));
+                ch.set(i, SourcePlan::from_def(op, &args));
             }
         }
         let r2 = ch.hidden(SourcePlan::computed(

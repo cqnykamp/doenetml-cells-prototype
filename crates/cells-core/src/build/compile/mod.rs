@@ -247,7 +247,7 @@ impl<'a> Compiler<'a> {
                         let PropFrom::Computed { op, args } = def.from else {
                             unreachable!()
                         };
-                        props.push(SourcePlan::from_def(op, args));
+                        props.push(SourcePlan::from_def(op, &args));
                     }
                     self.compiled.templates[sub].elems[v].props = props;
                 }

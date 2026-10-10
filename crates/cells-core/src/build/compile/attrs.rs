@@ -60,7 +60,7 @@ impl<'a> Compiler<'a> {
                     }
                     None => SourcePlan::own(alias as usize),
                 },
-                (None, PropFrom::Computed { op, args }) => SourcePlan::from_def(op, args),
+                (None, PropFrom::Computed { op, args }) => SourcePlan::from_def(op, &args),
                 (None, PropFrom::Children) => {
                     let blank = d.children(el).iter().all(|&n| self.is_blank(n));
                     // A mathInput's `prefill` stands in for blank children.

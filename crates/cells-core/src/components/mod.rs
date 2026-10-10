@@ -161,19 +161,63 @@ pub struct ArrayProp {
 
 /// `$name` as a child may produce a copy of the component, and
 /// `<collect componentType>` may name the type.
-pub const COPYABLE: u8 = 1;
+const COPYABLE: u8 = 1;
 /// The children are rendered; `extend` copies them deeply.
-pub const CONTAINER: u8 = 2;
+const CONTAINER: u8 = 2;
 /// The builder plans the props from the element's attributes and children
 /// rather than from `PropFrom` (the geometric types).
-pub const PLANNED: u8 = 4;
+const PLANNED: u8 = 4;
 /// Planned as math cells (`plan_symbolic`); not allowed in a branch
 /// interface.
-pub const SYMBOLIC: u8 = 8;
+const SYMBOLIC: u8 = 8;
 /// Made by the builder, never by a tag in the source.
-pub const INTERNAL: u8 = 16;
+const INTERNAL: u8 = 16;
+
+/// A row of `COMPONENT_TYPES`, to be finished with the builder methods:
+/// `info(..).copyable().default_prop("value")`.
+const fn info(
+    component_type: ComponentType,
+    tags: &'static [&'static str],
+    props: &'static [PropDef],
+) -> ComponentTypeInfo {
+    ComponentTypeInfo {
+        component_type,
+        tags,
+        props,
+        default_prop: None,
+        views: &[],
+        arrays: &[],
+        aliases: &[],
+        flags: 0,
+        sticky: None,
+    }
+}
 
 impl ComponentTypeInfo {
+    const fn flag(mut self, flag: u8) -> Self {
+        self.flags |= flag;
+        self
+    }
+    /// See [`ComponentType::copyable`].
+    const fn copyable(self) -> Self {
+        self.flag(COPYABLE)
+    }
+    /// See [`ComponentType::container`].
+    const fn container(self) -> Self {
+        self.flag(CONTAINER)
+    }
+    /// See [`ComponentType::planned`].
+    const fn planned(self) -> Self {
+        self.flag(PLANNED)
+    }
+    /// See [`ComponentType::symbolic`].
+    const fn symbolic(self) -> Self {
+        self.flag(SYMBOLIC)
+    }
+    /// Made by the builder, never by a tag in the source.
+    const fn internal(self) -> Self {
+        self.flag(INTERNAL)
+    }
     const fn default_prop(mut self, prop: &'static str) -> Self {
         self.default_prop = Some(prop);
         self
@@ -319,12 +363,31 @@ pub enum PropFrom {
     /// Value computed by an operator from the `<op>` element's `args`.
     Derived,
     /// Value computed by `op` from the component's own props at `args`.
-    Computed { op: OpSpec, args: &'static [u8] },
+    Computed { op: OpSpec, args: Args },
     /// Value given by the attribute if present, else an alias of the
     /// component's own prop at `alias`.
     AttributeOr { alias: u8 },
     /// Planned by the builder from the whole element (geometric types).
     Planned,
+}
+
+/// The positions of a computed prop's inputs among its component's props.
+/// Written as prop names in the tables and resolved when compiled
+/// (`props` in `types.rs`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Args {
+    at: [u8; MAX_ARGS],
+    len: u8,
+}
+
+/// The most inputs a computed prop's operator takes.
+const MAX_ARGS: usize = 4;
+
+impl std::ops::Deref for Args {
+    type Target = [u8];
+    fn deref(&self) -> &[u8] {
+        &self.at[..self.len as usize]
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -341,6 +404,22 @@ pub struct PropDef {
     /// the referent instead of its default prop (`function="$m"` wants the
     /// math's `expr`, not its `value`).
     pub ref_prop: Option<&'static str>,
+}
+
+/// `a == b`, usable in `const`.
+const fn str_eq(a: &str, b: &str) -> bool {
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut i = 0;
+    while i < a.len() {
+        if a[i] != b[i] {
+            return false;
+        }
+        i += 1;
+    }
+    true
 }
 
 impl PropDef {

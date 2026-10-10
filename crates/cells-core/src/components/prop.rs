@@ -2,21 +2,14 @@
 //! prop by position. Each is looked up by name when compiled, so renaming
 //! or reordering a table cannot silently break a reader.
 
-use super::PropDef;
 use super::types::*;
+use super::{PropDef, str_eq};
 
 const fn at(defs: &[PropDef], name: &str) -> usize {
     let mut i = 0;
     while i < defs.len() {
-        let (a, b) = (defs[i].name.as_bytes(), name.as_bytes());
-        if a.len() == b.len() {
-            let mut j = 0;
-            while j < a.len() && a[j] == b[j] {
-                j += 1;
-            }
-            if j == a.len() {
-                return i;
-            }
+        if str_eq(defs[i].name, name) {
+            return i;
         }
         i += 1;
     }
