@@ -14,10 +14,10 @@ vocabulary, and `docs/adr/` for recorded decisions.
   (`build/expand/`) and emits cells and the program (`build/emit.rs`), rebuilding the whole document on
   structural change (ADR 0004); `program/` is the instruction set the build
   emits and a tick runs: `ops.rs` and `geo.rs` hold the operators and their
-  inverses (ADR 0003, 0006), `program.rs` the scheduled program; `tick/`
+  inverses (ADR 0003, 0006), `program/mod.rs` the scheduled program; `tick/`
   holds the run-time machinery, `eval.rs` the evaluators, `invert.rs` the
   request engine and `snap.rs` the sticky rule; `document/` loads the
-  document (`load.rs`), runs ticks (`document.rs`, with the sticky pre-pass
+  document (`load.rs`), runs ticks (`request.rs`, with the sticky pre-pass
   in `sticky.rs`) and answers questions about it (`table.rs`,
   `sections.rs`, `paths.rs`); `testing/` holds the reference oracle and test
   helpers. Math cells are handles into a symbolic engine

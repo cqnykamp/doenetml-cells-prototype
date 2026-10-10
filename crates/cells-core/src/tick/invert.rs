@@ -27,10 +27,11 @@ impl Hasher for IndexHasher {
 type HashMap<K, V> = std::collections::HashMap<K, V, BuildHasherDefault<IndexHasher>>;
 type HashSet<K> = std::collections::HashSet<K, BuildHasherDefault<IndexHasher>>;
 
-use crate::document::{CellIdx, Request};
+use crate::document::CellIdx;
 use crate::program::Program;
 use crate::program::geo::Produced;
 use crate::program::ops::{Op, SymKind};
+use crate::tick::Request;
 
 /// A request on both cells of a point, issued together with others as a
 /// point group: the renderer's whole-shape drag, or the points one inverse
@@ -54,98 +55,95 @@ pub struct Inversion {
     pub dropped: Vec<Request>,
 }
 
-impl Program {
-    /// Resolve requests to essential writes. Requests are gathered per
-    /// producing instruction, highest schedule position first, so every
-    /// request on an instruction's outputs is known before it is inverted
-    /// once; the input requests an inverse produces join the queue. Cells
-    /// below `n_essential` are essential; a request landing on another
-    /// producer-less cell (a fixed cell) is dropped.
-    ///
-    /// `groups` are points requested together (ADR 0006): before such a
-    /// group is queued the engine asks what each point would actually
-    /// become, and if a strict subset is held back, all by the same shift,
-    /// the shift is applied to the rest, so a shape dragged against a
-    /// constrained point keeps its shape. The same happens to the point
-    /// groups an inverse produces.
-    pub fn invert_requests(
-        &self,
-        cells: &[f64],
-        n_essential: usize,
-        requests: &[Request],
-        groups: &[Vec<PointRequest>],
-    ) -> Inversion {
-        let mut engine = RequestEngine {
-            program: self,
-            cells,
-            n_essential,
-            pending: HashMap::default(),
-            heap: BinaryHeap::new(),
-            queued: HashSet::default(),
-            write_index: HashMap::default(),
-            inversion: Inversion::default(),
-            origin: HashMap::default(),
-        };
-        if let ([r], []) = (requests, groups) {
-            engine.walk(r.cell, r.value, *r);
-        } else {
-            for &r in requests {
-                engine.push(r.cell, r.value, r);
-            }
+/// Resolve requests to essential writes. Requests are gathered per
+/// producing instruction, highest schedule position first, so every
+/// request on an instruction's outputs is known before it is inverted
+/// once; the input requests an inverse produces join the queue. Cells
+/// below `n_essential` are essential; a request landing on another
+/// producer-less cell (a fixed cell) is dropped.
+///
+/// `groups` are points requested together (ADR 0006): before such a
+/// group is queued the engine asks what each point would actually
+/// become, and if a strict subset is held back, all by the same shift,
+/// the shift is applied to the rest, so a shape dragged against a
+/// constrained point keeps its shape. The same happens to the point
+/// groups an inverse produces.
+pub fn invert_requests(
+    program: &Program,
+    cells: &[f64],
+    n_essential: usize,
+    requests: &[Request],
+    groups: &[Vec<PointRequest>],
+) -> Inversion {
+    let mut engine = RequestEngine {
+        program,
+        cells,
+        n_essential,
+        pending: HashMap::default(),
+        heap: BinaryHeap::new(),
+        queued: HashSet::default(),
+        write_index: HashMap::default(),
+        inversion: Inversion::default(),
+        origin: HashMap::default(),
+    };
+    if let ([r], []) = (requests, groups) {
+        engine.walk(r.cell, r.value, *r);
+    } else {
+        for &r in requests {
+            engine.push(r.cell, r.value, r);
         }
-        for g in groups {
-            let origin = g
-                .first()
-                .map(|p| Request {
-                    cell: p.cells[0],
-                    value: p.values[0],
-                })
-                .unwrap_or(Request {
-                    cell: 0,
-                    value: f64::NAN,
-                });
-            engine.push_group(g.clone(), origin);
-        }
-        engine.run();
-        engine.inversion
     }
-
-    /// What `cells` would hold for each requested cell if the requests were
-    /// applied: invert, overlay the essential writes on a copy, and evaluate
-    /// forward the instructions that read a changed value, up to the last
-    /// requested cell. Nothing is written.
-    pub fn realize(
-        &self,
-        cells: &[f64],
-        n_essential: usize,
-        requests: &[(CellIdx, f64)],
-        out: &mut Vec<f64>,
-    ) {
-        let reqs: Vec<Request> = requests
-            .iter()
-            .map(|&(cell, value)| Request { cell, value })
-            .collect();
-        let inv = self.invert_requests(cells, n_essential, &reqs, &[]);
-        let mut scratch = cells.to_vec();
-        for &(c, v) in &inv.writes {
-            scratch[c as usize] = v;
-        }
-        let hi = requests
-            .iter()
-            .map(|&(c, _)| self.producer[c as usize])
-            .filter(|&p| p != u32::MAX)
-            .max();
-        if let Some(hi) = hi {
-            for ins in &self.instrs[..=hi as usize] {
-                if self.any_input_differs(ins, &scratch, cells) {
-                    self.step(ins, &mut scratch, None);
-                }
-            }
-        }
-        out.extend(requests.iter().map(|&(c, _)| scratch[c as usize]));
+    for g in groups {
+        let origin = g
+            .first()
+            .map(|p| Request {
+                cell: p.cells[0],
+                value: p.values[0],
+            })
+            .unwrap_or(Request {
+                cell: 0,
+                value: f64::NAN,
+            });
+        engine.push_group(g.clone(), origin);
     }
+    engine.run();
+    engine.inversion
 }
 
+/// What `cells` would hold for each requested cell if the requests were
+/// applied: invert, overlay the essential writes on a copy, and evaluate
+/// forward the instructions that read a changed value, up to the last
+/// requested cell. Nothing is written.
+pub fn realize(
+    program: &Program,
+    cells: &[f64],
+    n_essential: usize,
+    requests: &[(CellIdx, f64)],
+    out: &mut Vec<f64>,
+) {
+    let reqs: Vec<Request> = requests
+        .iter()
+        .map(|&(cell, value)| Request { cell, value })
+        .collect();
+    let inv = invert_requests(program, cells, n_essential, &reqs, &[]);
+    let mut scratch = cells.to_vec();
+    for &(c, v) in &inv.writes {
+        scratch[c as usize] = v;
+    }
+    let hi = requests
+        .iter()
+        .map(|&(c, _)| program.producer[c as usize])
+        .filter(|&p| p != u32::MAX)
+        .max();
+    if let Some(hi) = hi {
+        for ins in &program.instrs[..=hi as usize] {
+            if program.any_input_differs(ins, &scratch, cells) {
+                program.step(ins, &mut scratch, None);
+            }
+        }
+    }
+    out.extend(requests.iter().map(|&(c, _)| scratch[c as usize]));
+}
 /// One run of the inversion engine.
 struct RequestEngine<'a> {
     program: &'a Program,
@@ -223,8 +221,13 @@ impl RequestEngine<'_> {
                 .flat_map(|p| p.cells.into_iter().zip(p.values))
                 .collect();
             let mut realized = Vec::with_capacity(reqs.len());
-            self.program
-                .realize(self.cells, self.n_essential, &reqs, &mut realized);
+            realize(
+                self.program,
+                self.cells,
+                self.n_essential,
+                &reqs,
+                &mut realized,
+            );
             let mut shift: Option<(f64, f64)> = None;
             let mut n_held = 0;
             let mut consistent = true;

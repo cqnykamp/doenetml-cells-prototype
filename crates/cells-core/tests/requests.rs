@@ -196,9 +196,13 @@ fn evaluators_agree() {
         let mut doc = base.clone();
         let mut tick = Tick::default();
         for &r in &reqs {
-            let inv = doc
-                .program
-                .invert_requests(&doc.cells, doc.n_essential, &[r], &[]);
+            let inv = cells_core::tick::invert::invert_requests(
+                &doc.program,
+                &doc.cells,
+                doc.n_essential,
+                &[r],
+                &[],
+            );
             let (cell, value) = inv.writes[0];
             doc.cells[cell as usize] = value;
             tick.changed.push(cell);

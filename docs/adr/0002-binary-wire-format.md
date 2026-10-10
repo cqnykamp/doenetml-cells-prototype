@@ -14,7 +14,7 @@ of the JSON size (most of the remaining bytes are the unique component
 names) and loads as a handful of `memcpy`s plus bounds checks. It also
 fixes the in-memory shape: the builder walks node indices rather than a
 tree of heap-allocated enums, which is what made the components layer
-columnar as well (see `Components` in `document.rs`).
+columnar as well (see `ComponentTable` in `document/table.rs`).
 
 ## Considered options
 

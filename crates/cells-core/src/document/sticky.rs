@@ -12,6 +12,7 @@ use std::collections::HashSet;
 use super::*;
 use crate::program::geo::VecOp;
 use crate::program::ops::Op;
+use crate::tick::invert::PointRequest;
 use crate::tick::snap::{Member, Params, Pt, snap_group};
 
 /// One group as cells.

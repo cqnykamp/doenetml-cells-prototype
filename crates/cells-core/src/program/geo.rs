@@ -70,7 +70,7 @@ impl RigidOpts {
 }
 
 /// What an inverse produces: scalar input requests, and point groups that
-/// the engine moves together (see `Program::invert_requests`).
+/// the engine moves together (see `tick::invert::invert_requests`).
 #[derive(Debug, Default)]
 pub struct Produced {
     pub writes: Vec<(CellIdx, f64)>,
