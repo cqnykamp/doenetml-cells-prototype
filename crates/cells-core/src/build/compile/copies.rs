@@ -6,7 +6,12 @@ use super::*;
 
 impl<'a> Compiler<'a> {
     /// `extend="$c.prop"`: the element's value props alias the named prop.
-    pub(super) fn plan_extend_prop(&mut self, t: TemplateId, e: ElemId, p: RefId) -> Result<()> {
+    pub(in crate::build) fn plan_extend_prop(
+        &mut self,
+        t: TemplateId,
+        e: ElemId,
+        p: RefId,
+    ) -> Result<()> {
         let kind = self.c.templates[t].elems[e].kind;
         let display = self.c.refs[p].display.clone();
         let props = match kind {
@@ -42,7 +47,12 @@ impl<'a> Compiler<'a> {
 
     /// `<graph extend="$g" name="g2"/>`: the copy's props alias the
     /// original's and its children are clones, named under the copy.
-    pub(super) fn plan_container_copy(&mut self, t: TemplateId, e: ElemId, p: RefId) -> Result<()> {
+    pub(in crate::build) fn plan_container_copy(
+        &mut self,
+        t: TemplateId,
+        e: ElemId,
+        p: RefId,
+    ) -> Result<()> {
         let r = self
             .plan_elem_target(t, p)
             .ok_or_else(|| Error::UncopyableKind("graph from another scope".into()))?;
@@ -53,7 +63,7 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    pub(super) fn clone_children(
+    pub(in crate::build) fn clone_children(
         &mut self,
         t: TemplateId,
         from: ElemId,

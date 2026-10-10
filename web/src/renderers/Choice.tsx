@@ -41,7 +41,7 @@ function numberCells(store: ReturnType<typeof useStore>, idx: number): number[] 
 }
 
 /** A section: its automatic title, then its children. The number follows
- * the cases that are active before it (`build/scoring.rs`). */
+ * the cases that are active before it (`build/expand/scoring.rs`). */
 export function SectionView({ idx, inGraph }: { idx: number; inGraph: boolean }) {
   const store = useStore();
   const cells = useMemo(() => numberCells(store, idx), [store, store.comps, idx]);

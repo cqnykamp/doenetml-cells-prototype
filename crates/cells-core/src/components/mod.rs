@@ -56,7 +56,7 @@ pub enum ComponentKind {
     /// evaluates it; a request on `value` writes a constant expression.
     MathInput = 13,
     /// `<circle>`: center and radius are derived or essential depending on
-    /// how the circle is specified (plan 3). Chains are planned in `build.rs`.
+    /// how the circle is specified (plan 3). Chains are planned in `build/compile/geometry/`.
     Circle = 14,
     /// `<line>`: its own two points are derived cells (ADR 0006); slope,
     /// intercepts and coefficients follow from them or from the equation.
@@ -107,7 +107,7 @@ pub enum ComponentKind {
     /// `<exercise>`, `<example>`: a rendered container that is numbered
     /// among its sibling sections and, when it aggregates scores, holds the
     /// weighted credit of the answers and sections inside it. Both are
-    /// wired after expansion (`build/scoring.rs`).
+    /// wired after expansion (`build/expand/scoring.rs`).
     Section = 30,
 }
 

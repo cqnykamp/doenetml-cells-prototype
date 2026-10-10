@@ -1,8 +1,27 @@
 //! Compile: walk the DAST once per template and plan every element's
 //! props (literals, references, operators, math), with name lookup and
-//! reference paths. See the module docs in `build.rs`.
+//! reference paths. See the module docs in `build/mod.rs`.
 
 use super::*;
+
+mod attrs;
+mod choice;
+mod condition;
+mod copies;
+pub(in crate::build) mod expr;
+mod fix;
+mod geometry;
+pub(in crate::build) mod plan;
+mod refs;
+
+pub(in crate::build) struct Compiler<'a> {
+    pub(in crate::build) c: Compiled<'a>,
+    /// Elements whose attribute plans are computed once every name exists.
+    pub(in crate::build) pending_elems: Vec<(TemplateId, ElemId)>,
+    /// Macro children awaiting plans: (template, owning element or None for
+    /// the template's own children, index in that child list, node).
+    pub(in crate::build) pending_macros: Vec<(TemplateId, Option<ElemId>, usize, NodeId)>,
+}
 
 /// The ways an element is planned; see `Compiler::elem_shape`.
 enum ElemShape {
@@ -22,7 +41,7 @@ enum ElemShape {
 }
 
 impl<'a> Compiler<'a> {
-    pub(super) fn compile(dast: &'a Dast) -> Result<Compiled<'a>> {
+    pub(in crate::build) fn compile(dast: &'a Dast) -> Result<Compiled<'a>> {
         let mut cp = Compiler {
             c: Compiled {
                 dast,
@@ -91,11 +110,11 @@ impl<'a> Compiler<'a> {
     }
 
     /// Children of element `e` have `e` as their parent.
-    pub(super) fn child_scope(&self, _t: TemplateId, e: ElemId) -> ElemId {
+    pub(in crate::build) fn child_scope(&self, _t: TemplateId, e: ElemId) -> ElemId {
         e
     }
 
-    pub(super) fn push_elem(
+    pub(in crate::build) fn push_elem(
         &mut self,
         t: TemplateId,
         node: NodeId,
@@ -109,7 +128,7 @@ impl<'a> Compiler<'a> {
     /// `push_elem` whose name is registered only up to ancestor `stop`
     /// (inclusive): a container copy's children are reached through the
     /// copy's name, never bare, so they do not make the original ambiguous.
-    pub(super) fn push_elem_visible_to(
+    pub(in crate::build) fn push_elem_visible_to(
         &mut self,
         t: TemplateId,
         node: NodeId,
@@ -156,7 +175,7 @@ impl<'a> Compiler<'a> {
         Ok(e)
     }
 
-    pub(super) fn add_synthetic(
+    pub(in crate::build) fn add_synthetic(
         &mut self,
         t: TemplateId,
         kind: ComponentKind,
@@ -166,7 +185,7 @@ impl<'a> Compiler<'a> {
             .expect("synthetic names are unique")
     }
 
-    pub(super) fn attr_name_str(&self, el: NodeId, attr: &str) -> Option<StrId> {
+    pub(in crate::build) fn attr_name_str(&self, el: NodeId, attr: &str) -> Option<StrId> {
         let d = self.c.dast;
         let a = d.attr(el, attr)?;
         match d.attr_children(a) {
@@ -176,7 +195,7 @@ impl<'a> Compiler<'a> {
     }
 
     /// Create an element (and, for a repeat, its template) from a DAST element.
-    pub(super) fn add_elem(
+    pub(in crate::build) fn add_elem(
         &mut self,
         t: TemplateId,
         el: NodeId,
@@ -260,7 +279,7 @@ impl<'a> Compiler<'a> {
 
     /// A plan naming prop `prop` of element `e` in the parent template, as
     /// seen from the repeat's own template (one hop up).
-    pub(super) fn own_prop_plan(&mut self, e: ElemId, prop: &str) -> RefId {
+    pub(in crate::build) fn own_prop_plan(&mut self, e: ElemId, prop: &str) -> RefId {
         self.c.refs.push(RefPlan {
             hops: 1,
             steps: vec![Step::Elem(e)],
@@ -270,7 +289,7 @@ impl<'a> Compiler<'a> {
         self.c.refs.len() - 1
     }
 
-    pub(super) fn add_children(
+    pub(in crate::build) fn add_children(
         &mut self,
         t: TemplateId,
         owner: Option<ElemId>,
@@ -307,7 +326,7 @@ impl<'a> Compiler<'a> {
         Ok(kids)
     }
 
-    pub(super) fn plan_elem(&mut self, t: TemplateId, e: ElemId) -> Result<()> {
+    pub(in crate::build) fn plan_elem(&mut self, t: TemplateId, e: ElemId) -> Result<()> {
         let d = self.c.dast;
         let Elem {
             node: el,
@@ -332,8 +351,8 @@ impl<'a> Compiler<'a> {
                 // the cells core: two cells, draggable as a direction source.
                 let nodes: Vec<NodeId> = d.children(el).to_vec();
                 let (toks, _) = self.math_tokens(t, scope, &nodes)?;
-                if let Some(inner) = super::expr::unwrap_parens(&toks)
-                    && super::expr::split_top(inner, &Token::Comma).len() == 2
+                if let Some(inner) = expr::unwrap_parens(&toks)
+                    && expr::split_top(inner, &Token::Comma).len() == 2
                 {
                     let [x, y] = self.plan_tuple(t, scope, &nodes)?;
                     let hide = ComponentKind::Point.prop_defs()[prop::point::HIDE].default;
@@ -446,7 +465,7 @@ impl<'a> Compiler<'a> {
         })
     }
 
-    pub(super) fn elem_label(&self, t: TemplateId, e: ElemId) -> String {
+    pub(in crate::build) fn elem_label(&self, t: TemplateId, e: ElemId) -> String {
         let el = &self.c.templates[t].elems[e];
         if el.name != NONE {
             self.c.dast.strings.get(el.name).trim().to_string()

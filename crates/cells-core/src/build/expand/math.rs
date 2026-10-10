@@ -8,7 +8,7 @@ impl<'c, 'a> Builder<'c, 'a> {
     /// A math cell from a template's math text: a fixed handle when it has
     /// no cell leaves, an alias when it is one math leaf and nothing else,
     /// else an `Instantiate` over its leaves (each a number or a math cell).
-    pub(super) fn sym_source(
+    pub(in crate::build) fn sym_source(
         &mut self,
         expr: ExprId,
         post: Post,
@@ -134,7 +134,7 @@ impl<'c, 'a> Builder<'c, 'a> {
     /// mathInput, a math with a free symbol or a reference to an
     /// expression. A copy is symbolic when its referent is. A reference
     /// cycle counts as numeric (the cycle is reported later).
-    pub(super) fn is_symbolic(&mut self, comp: CompIdx) -> bool {
+    pub(in crate::build) fn is_symbolic(&mut self, comp: CompIdx) -> bool {
         if self.math_mode.len() < self.comps.len() {
             self.math_mode.resize(self.comps.len(), MathMode::Unknown);
         }
@@ -203,7 +203,11 @@ impl<'c, 'a> Builder<'c, 'a> {
 
     /// Copy an expression template into the document's arena with its plan
     /// leaves resolved to slots in `scope`.
-    pub(super) fn instantiate_expr(&mut self, id: ExprId, scope: ScopeId) -> Result<ExprId> {
+    pub(in crate::build) fn instantiate_expr(
+        &mut self,
+        id: ExprId,
+        scope: ScopeId,
+    ) -> Result<ExprId> {
         let e = self.c.arena.get(id).clone();
         let out = match e {
             Expr::Num(v) => Expr::Num(v),
@@ -237,7 +241,7 @@ impl<'c, 'a> Builder<'c, 'a> {
     /// Lower a numeric expression to operator slots. Literals fold into
     /// `Scale`/`Offset` parameters where an operator has one; otherwise they
     /// become fixed cells.
-    pub(super) fn lower(&mut self, id: ExprId) -> SlotId {
+    pub(in crate::build) fn lower(&mut self, id: ExprId) -> SlotId {
         let num = |a: &Arena, e: ExprId| match a.get(e) {
             Expr::Num(v) => Some(*v),
             _ => None,

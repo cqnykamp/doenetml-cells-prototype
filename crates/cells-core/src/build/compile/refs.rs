@@ -6,7 +6,7 @@ use super::*;
 
 impl<'a> Compiler<'a> {
     /// A copy of plan `p` naming `prop` instead of its own (`$l` -> `$l.x2`).
-    pub(super) fn plan_with_prop(&mut self, p: RefId, prop: &str) -> RefId {
+    pub(in crate::build) fn plan_with_prop(&mut self, p: RefId, prop: &str) -> RefId {
         let mut plan = self.c.refs[p].clone();
         plan.prop = Some(prop.to_string());
         plan.display = format!("{}.{prop}", plan.display);
@@ -16,7 +16,7 @@ impl<'a> Compiler<'a> {
 
     /// The element a plan names, if it is in template `t` itself (a path of
     /// names without indices, no prop).
-    pub(super) fn plan_elem_target(&self, _t: TemplateId, p: RefId) -> Option<ElemId> {
+    pub(in crate::build) fn plan_elem_target(&self, _t: TemplateId, p: RefId) -> Option<ElemId> {
         let plan = &self.c.refs[p];
         if plan.hops != 0 || plan.prop.is_some() {
             return None;
@@ -36,7 +36,7 @@ impl<'a> Compiler<'a> {
     /// at each, the ancestor's own name wins, then a unique descendant with
     /// the name; several descendants are an ambiguity. Then continue in the
     /// enclosing template from the repeat element. Returns (hops, element).
-    pub(super) fn lookup(
+    pub(in crate::build) fn lookup(
         &self,
         mut t: TemplateId,
         mut from: ElemId,
@@ -74,7 +74,7 @@ impl<'a> Compiler<'a> {
     }
 
     /// A unique descendant of `e` with `name`, for a dotted path.
-    pub(super) fn child_named(
+    pub(in crate::build) fn child_named(
         &self,
         t: TemplateId,
         e: ElemId,
@@ -91,7 +91,12 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    pub(super) fn plan_ref(&mut self, t: TemplateId, scope: ElemId, m: NodeId) -> Result<RefId> {
+    pub(in crate::build) fn plan_ref(
+        &mut self,
+        t: TemplateId,
+        scope: ElemId,
+        m: NodeId,
+    ) -> Result<RefId> {
         let d = self.c.dast;
         let display = d.macro_display(m);
         let names = d.macro_path(m);
@@ -337,7 +342,7 @@ impl<'a> Compiler<'a> {
 
     /// A literal integer index (array props are static, so `[$n]` is not
     /// supported on them).
-    pub(super) fn literal_index(&self, expr: &[NodeId], display: &str) -> Result<i64> {
+    pub(in crate::build) fn literal_index(&self, expr: &[NodeId], display: &str) -> Result<i64> {
         let d = self.c.dast;
         let mut text = String::new();
         for &n in expr {
@@ -353,7 +358,7 @@ impl<'a> Compiler<'a> {
     }
 
     /// An index expression: a sum of literal integers and iteration indices.
-    pub(super) fn plan_index(
+    pub(in crate::build) fn plan_index(
         &self,
         t: TemplateId,
         expr: &[NodeId],

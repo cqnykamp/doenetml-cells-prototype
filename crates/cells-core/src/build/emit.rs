@@ -5,7 +5,7 @@
 use super::*;
 
 impl<'c, 'a> Builder<'c, 'a> {
-    pub(super) fn finish(mut self) -> Result<Unscheduled> {
+    pub(in crate::build) fn finish(mut self) -> Result<Unscheduled> {
         let profile = std::env::var_os("CELLS_BUILD_PROFILE").is_some();
         let clock = web_time::Instant::now();
         let lap = |what: &str| {
@@ -317,7 +317,7 @@ impl<'c, 'a> Builder<'c, 'a> {
 
     /// The (scope, template slot) an essential slot's value is saved under.
     /// Only template elements have essential slots; copies alias theirs.
-    pub(super) fn template_slot(&self, slot: SlotId) -> (ScopeId, u32) {
+    pub(in crate::build) fn template_slot(&self, slot: SlotId) -> (ScopeId, u32) {
         let comp = self.slot_comp[slot as usize];
         let inst = self.instances[self.comp_instance[comp as usize] as usize];
         let pi = slot - self.slot_base[comp as usize];
@@ -331,7 +331,7 @@ impl<'c, 'a> Builder<'c, 'a> {
     /// sequence, before its count can be computed, plus one. Nesting adds
     /// one; a count that reads a cell inside another repeat's iterations adds
     /// one, and is flagged (`cross`) since authors can avoid it.
-    pub(super) fn structural_depths(&self) -> (Vec<u32>, Vec<bool>) {
+    pub(in crate::build) fn structural_depths(&self) -> (Vec<u32>, Vec<bool>) {
         let count_pi = ComponentKind::RepeatForSequence
             .prop_index("count")
             .unwrap();

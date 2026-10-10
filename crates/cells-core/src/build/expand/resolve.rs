@@ -5,7 +5,7 @@ use super::*;
 
 impl<'c, 'a> Builder<'c, 'a> {
     /// The slot an `Arg` names for component `comp` in `scope`.
-    pub(super) fn arg_slot(
+    pub(in crate::build) fn arg_slot(
         &mut self,
         arg: Arg,
         comp: CompIdx,
@@ -50,7 +50,7 @@ impl<'c, 'a> Builder<'c, 'a> {
 
     /// Walk a plan from `scope`. Returns where it arrived and the prop it
     /// named, if any. Every step is an array read.
-    pub(super) fn resolve(
+    pub(in crate::build) fn resolve(
         &self,
         plan: RefId,
         scope: ScopeId,
@@ -128,7 +128,7 @@ impl<'c, 'a> Builder<'c, 'a> {
         Ok((cur, p.prop.as_deref()))
     }
 
-    pub(super) fn index_value(&self, ip: &IndexPlan, scope: ScopeId) -> i64 {
+    pub(in crate::build) fn index_value(&self, ip: &IndexPlan, scope: ScopeId) -> i64 {
         let mut total = 0i64;
         for t in &ip.terms {
             total += match t {
@@ -146,7 +146,11 @@ impl<'c, 'a> Builder<'c, 'a> {
     }
 
     /// The one component an unindexed path or `$r[k]` denotes.
-    pub(super) fn single_component(&self, target: Resolved, plan: RefId) -> Result<CompIdx> {
+    pub(in crate::build) fn single_component(
+        &self,
+        target: Resolved,
+        plan: RefId,
+    ) -> Result<CompIdx> {
         match target {
             Resolved::Comp(c) => Ok(c),
             Resolved::Iter(repeat, s) => {
@@ -165,7 +169,7 @@ impl<'c, 'a> Builder<'c, 'a> {
     }
 
     /// Slots named by a resolved path, using the default prop when none was given.
-    pub(super) fn targets_of(
+    pub(in crate::build) fn targets_of(
         &mut self,
         target: Resolved,
         prop: Option<&str>,
@@ -199,7 +203,7 @@ impl<'c, 'a> Builder<'c, 'a> {
         Ok(vec![self.slot(comp, pi)])
     }
 
-    pub(super) fn resolve_ref(
+    pub(in crate::build) fn resolve_ref(
         &mut self,
         plan: RefId,
         scope: ScopeId,
@@ -212,7 +216,7 @@ impl<'c, 'a> Builder<'c, 'a> {
     /// The one slot a reference names, without allocating. Errors with a
     /// placeholder `ArityMismatch` (callers fill in kind and prop) when the
     /// reference names several cells.
-    pub(super) fn resolve_one(&mut self, plan: RefId, scope: ScopeId) -> Result<SlotId> {
+    pub(in crate::build) fn resolve_one(&mut self, plan: RefId, scope: ScopeId) -> Result<SlotId> {
         let (target, prop) = self.resolve(plan, scope)?;
         let comp = match target {
             Resolved::Missing => return Ok(self.missing_slot()),

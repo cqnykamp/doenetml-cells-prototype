@@ -21,7 +21,7 @@ impl Document {
 
     /// A section's full number, such as "2.1": its own `number` cell,
     /// after its nearest section ancestor's full number when it includes
-    /// its parent's (`build/scoring.rs`). None for other components.
+    /// its parent's (`build/expand/scoring.rs`). None for other components.
     pub fn section_number(&self, c: CompIdx) -> Option<String> {
         if self.kind(c) != ComponentKind::Section {
             return None;

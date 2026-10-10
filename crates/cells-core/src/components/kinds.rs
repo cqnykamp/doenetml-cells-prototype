@@ -42,7 +42,7 @@ const fn planned(name: &'static str) -> PropDef {
 
 /// `<circle>`. `cx`, `cy`, `radius` are the numerical center and radius;
 /// how they are produced depends on which of `center`, `radius` and
-/// `through` the author gave (see `plan_circle` in `build.rs`).
+/// `through` the author gave (see `plan_circle` in `build/compile/geometry/circle.rs`).
 pub(super) const CIRCLE_PROPS: &[PropDef] = &[
     /* 0 */ planned("cx"),
     /* 1 */ planned("cy"),

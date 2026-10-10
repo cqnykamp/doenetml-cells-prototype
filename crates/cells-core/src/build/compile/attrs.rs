@@ -7,7 +7,7 @@ use crate::components::prop::{math_input, section};
 impl<'a> Compiler<'a> {
     /// Plans for a kind described by `PropFrom`: attributes, bindings,
     /// computed chains, children.
-    pub(super) fn plan_attrs(
+    pub(in crate::build) fn plan_attrs(
         &mut self,
         t: TemplateId,
         e: ElemId,
@@ -207,7 +207,7 @@ impl<'a> Compiler<'a> {
 
     /// `<function>`, `<derivative>`, `<answer>`. A curve samples over the
     /// x-range of the graph it sits in, else [-10, 10].
-    pub(super) fn plan_symbolic(&mut self, t: TemplateId, e: ElemId) -> Result<()> {
+    pub(in crate::build) fn plan_symbolic(&mut self, t: TemplateId, e: ElemId) -> Result<()> {
         let d = self.c.dast;
         let Elem {
             node: el,
@@ -286,7 +286,7 @@ impl<'a> Compiler<'a> {
 
     /// `<text>`: literal text is a fixed cell holding its string id; a lone
     /// reference aliases another text's value.
-    pub(super) fn plan_text(&mut self, t: TemplateId, e: ElemId) -> Result<()> {
+    pub(in crate::build) fn plan_text(&mut self, t: TemplateId, e: ElemId) -> Result<()> {
         let d = self.c.dast;
         let Elem {
             node: el,
@@ -317,7 +317,7 @@ impl<'a> Compiler<'a> {
 
     /// An on/off attribute that may also take a value: present and not
     /// `false` or `none` (`simplify`, `simplify="full"`).
-    pub(super) fn attr_on(&self, el: NodeId, name: &str) -> bool {
+    pub(in crate::build) fn attr_on(&self, el: NodeId, name: &str) -> bool {
         match self.c.dast.attr(el, name) {
             None => false,
             Some(a) => {
@@ -328,7 +328,7 @@ impl<'a> Compiler<'a> {
     }
 
     /// A literal number or a single reference.
-    pub(super) fn plan_value(
+    pub(in crate::build) fn plan_value(
         &mut self,
         t: TemplateId,
         scope: ElemId,
@@ -374,7 +374,7 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    pub(super) fn plan_op(
+    pub(in crate::build) fn plan_op(
         &mut self,
         t: TemplateId,
         scope: ElemId,
@@ -444,7 +444,7 @@ impl<'a> Compiler<'a> {
 
     /// Math text and `$ref` children to an expression template whose cell
     /// leaves are plan ids.
-    pub(super) fn plan_math(
+    pub(in crate::build) fn plan_math(
         &mut self,
         t: TemplateId,
         scope: ElemId,
@@ -455,7 +455,7 @@ impl<'a> Compiler<'a> {
     }
 
     /// Parse math tokens into the arena; `text` is for the error.
-    pub(super) fn parse_tokens(&mut self, toks: &[Token], text: &str) -> Result<ExprId> {
+    pub(in crate::build) fn parse_tokens(&mut self, toks: &[Token], text: &str) -> Result<ExprId> {
         Parser::parse(toks, &mut self.c.arena).map_err(|reason| Error::BadMath {
             text: text.to_string(),
             reason,
@@ -464,7 +464,7 @@ impl<'a> Compiler<'a> {
 
     /// Math text and `$ref` children to an expression template, recording
     /// the text for the symbolic engine in case the math turns out symbolic.
-    pub(super) fn plan_sym_math(
+    pub(in crate::build) fn plan_sym_math(
         &mut self,
         t: TemplateId,
         scope: ElemId,
@@ -477,7 +477,7 @@ impl<'a> Compiler<'a> {
     }
 
     /// Tokenize math text with `$ref` children as cell leaves holding plan ids.
-    pub(super) fn math_tokens(
+    pub(in crate::build) fn math_tokens(
         &mut self,
         t: TemplateId,
         scope: ElemId,
@@ -531,7 +531,7 @@ impl<'a> Compiler<'a> {
     }
 
     /// A boolean attribute: present and empty, or `true`.
-    pub(super) fn attr_flag(&self, el: NodeId, name: &str) -> bool {
+    pub(in crate::build) fn attr_flag(&self, el: NodeId, name: &str) -> bool {
         match self.c.dast.attr(el, name) {
             None => false,
             Some(a) => {
@@ -543,7 +543,7 @@ impl<'a> Compiler<'a> {
     }
 
     /// The source for one scalar attribute value: literal, reference, or math.
-    pub(super) fn plan_scalar(
+    pub(in crate::build) fn plan_scalar(
         &mut self,
         t: TemplateId,
         scope: ElemId,
@@ -562,7 +562,7 @@ impl<'a> Compiler<'a> {
 
     /// A plan from an expression template: a constant is an essential
     /// literal, a lone reference an alias, anything else a lowered math.
-    pub(super) fn plan_from_expr(&mut self, id: ExprId) -> SourcePlan {
+    pub(in crate::build) fn plan_from_expr(&mut self, id: ExprId) -> SourcePlan {
         match self.c.arena.get(id) {
             Expr::Num(v) => SourcePlan::Literal(*v),
             Expr::Cell(p) => SourcePlan::reference(*p as RefId),
@@ -571,7 +571,7 @@ impl<'a> Compiler<'a> {
     }
 
     /// `(a, b)`: two scalar plans from tuple text, with `$ref` leaves.
-    pub(super) fn plan_tuple(
+    pub(in crate::build) fn plan_tuple(
         &mut self,
         t: TemplateId,
         scope: ElemId,
@@ -600,7 +600,7 @@ impl<'a> Compiler<'a> {
     }
 
     /// The inside of `(a, b)`, as two scalar plans.
-    pub(super) fn tuple_from_tokens(
+    pub(in crate::build) fn tuple_from_tokens(
         &mut self,
         inner: &[Token],
         text: &str,
@@ -617,7 +617,7 @@ impl<'a> Compiler<'a> {
     }
 
     /// A point-valued attribute: a reference (`center="$p"`) or a tuple.
-    pub(super) fn plan_point_attr(
+    pub(in crate::build) fn plan_point_attr(
         &mut self,
         t: TemplateId,
         scope: ElemId,
@@ -633,7 +633,7 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    pub(super) fn attr_text(&self, a: u32) -> Option<String> {
+    pub(in crate::build) fn attr_text(&self, a: u32) -> Option<String> {
         let d = self.c.dast;
         let mut s = String::new();
         for &n in d.attr_children(a) {
@@ -646,7 +646,7 @@ impl<'a> Compiler<'a> {
         Some(s)
     }
 
-    pub(super) fn single_macro(&self, a: u32) -> Option<NodeId> {
+    pub(in crate::build) fn single_macro(&self, a: u32) -> Option<NodeId> {
         let d = self.c.dast;
         let mut found = None;
         for &n in d.attr_children(a) {
@@ -661,7 +661,7 @@ impl<'a> Compiler<'a> {
         found
     }
 
-    pub(super) fn is_blank(&self, n: NodeId) -> bool {
+    pub(in crate::build) fn is_blank(&self, n: NodeId) -> bool {
         match self.c.dast.kind(n) {
             NodeKind::Text => self.c.dast.str(n).trim().is_empty(),
             NodeKind::Other => true,

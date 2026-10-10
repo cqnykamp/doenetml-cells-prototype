@@ -9,11 +9,9 @@ vocabulary, and `docs/adr/` for recorded decisions.
 - `crates/cells-core` — the core. `dast/` reads the DAST (JSON or the
   binary `CDST` wire format, ADR 0002); `components/` describes each kind
   (one `KINDS` row: tags, props, flags) and names prop positions
-  (`components::prop`); `build.rs` is the build's entry point and
-  `build/` compiles templates once (`compile.rs`, `attrs.rs`, `refs.rs`,
-  `geometry/`, `choice.rs`, into the types in `plan.rs`), stamps them per
-  scope (`expand.rs`, `resolve.rs`, `expand_math.rs`, `scoring.rs`) and emits
-  cells and the program (`emit.rs`), rebuilding the whole document on
+  (`components::prop`); `build/` compiles templates once
+  (`build/compile/`, into the types in `plan.rs`), stamps them per scope
+  (`build/expand/`) and emits cells and the program (`build/emit.rs`), rebuilding the whole document on
   structural change (ADR 0004); `program/` is the instruction set the build
   emits and a tick runs: `ops.rs` and `geo.rs` hold the operators and their
   inverses (ADR 0003, 0006), `program.rs` the scheduled program; `tick/`
@@ -47,7 +45,7 @@ plan 3 to 5 added `line`, `lineSegment`, `circle`, `polygon`, `pointList`,
 `answer`; plan 6 added `conditionalContent` (`case`, `else`), `select`
 (`option`), `group` and literal `text` (see ADR 0009); sections
 (`section`, `subsection`, `subsubsection`, `problem`, `exercise`,
-`example`) with credit and numbering through choices (`build/scoring.rs`).
+`example`) with credit and numbering through choices (`build/expand/scoring.rs`).
 See `docs/history/plan-2.md` for the second round's scope and decisions.
 - `scripts/parse-dast.mjs` — runs the existing TypeScript DoenetML parser from
   a sibling DoenetML checkout (`DOENETML_DIR`, default `../../ml`) and prints

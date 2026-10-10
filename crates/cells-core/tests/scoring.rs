@@ -1,4 +1,4 @@
-//! Credit and section numbers (`build/scoring.rs`). The scenarios follow
+//! Credit and section numbers (`build/expand/scoring.rs`). The scenarios follow
 //! the current core's `document.test.ts`, `sectioning.test.ts` and the
 //! paginator Cypress test, whose answers sit in conditional content.
 

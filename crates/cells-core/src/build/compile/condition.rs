@@ -9,7 +9,7 @@ impl<'a> Compiler<'a> {
     /// 1 or 0. Comparisons (`< <= > >= = !=`), `and`/`&&`, `or`/`||`,
     /// `not`/`!`, parentheses, `true`, `false`, and numeric math operands;
     /// a bare operand holds when it is nonzero.
-    pub(super) fn plan_condition(
+    pub(in crate::build) fn plan_condition(
         &mut self,
         t: TemplateId,
         e: ElemId,

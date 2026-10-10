@@ -36,7 +36,7 @@ impl<'c, 'a> Builder<'c, 'a> {
     /// Wire the document's and every section's `creditAchieved`, and every
     /// section's `number`. Runs after every prop has its source, replacing
     /// the placeholders the planner left.
-    pub(super) fn scoring_sources(&mut self) {
+    pub(in crate::build) fn scoring_sources(&mut self) {
         let root = self.root;
         self.set_credit(root);
         for c in 0..self.comps.len() as CompIdx {

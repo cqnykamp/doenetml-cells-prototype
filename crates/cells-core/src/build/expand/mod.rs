@@ -4,12 +4,17 @@
 
 use super::*;
 
+mod choice;
+mod math;
+mod resolve;
+mod scoring;
+
 // ---------------------------------------------------------------------------
 // Expansion state
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
-pub(super) enum Source {
+pub(in crate::build) enum Source {
     Unset,
     Literal(f64),
     Default(f64),
@@ -26,7 +31,7 @@ pub(super) enum Source {
 
 /// `Builder::is_symbolic`'s memo for one component.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
-pub(super) enum MathMode {
+pub(in crate::build) enum MathMode {
     #[default]
     Unknown,
     Numeric,
@@ -37,7 +42,7 @@ pub(super) enum MathMode {
 
 /// Where a reference path has arrived after walking its steps.
 #[derive(Debug, Clone, Copy)]
-pub(super) enum Resolved {
+pub(in crate::build) enum Resolved {
     Comp(CompIdx),
     /// An iteration of a repeat, named by `$r[k]`.
     Iter(CompIdx, ScopeId),
@@ -47,73 +52,73 @@ pub(super) enum Resolved {
 
 /// One expanded choice.
 #[derive(Debug, Clone)]
-pub(super) struct ChoiceInst {
-    pub(super) def: ChoiceId,
-    pub(super) comp: CompIdx,
+pub(in crate::build) struct ChoiceInst {
+    pub(in crate::build) def: ChoiceId,
+    pub(in crate::build) comp: CompIdx,
     /// The scope of each built branch (a select's picks in order; every
     /// case of a reactive choice).
-    pub(super) scopes: Vec<ScopeId>,
+    pub(in crate::build) scopes: Vec<ScopeId>,
     /// The branch each of `scopes` instantiates.
-    pub(super) branch_of: Vec<usize>,
+    pub(in crate::build) branch_of: Vec<usize>,
     /// Reactive choice: one `Choose` component per `ChoiceDef::used`.
-    pub(super) iface_comps: Vec<CompIdx>,
+    pub(in crate::build) iface_comps: Vec<CompIdx>,
 }
 
 /// One instantiated template element.
 #[derive(Debug, Clone, Copy)]
-pub(super) struct Instance {
-    pub(super) scope: ScopeId,
-    pub(super) template: TemplateId,
-    pub(super) elem: ElemId,
-    pub(super) comp: CompIdx,
+pub(in crate::build) struct Instance {
+    pub(in crate::build) scope: ScopeId,
+    pub(in crate::build) template: TemplateId,
+    pub(in crate::build) elem: ElemId,
+    pub(in crate::build) comp: CompIdx,
 }
 
-pub(super) struct Builder<'c, 'a> {
-    pub(super) c: &'c Compiled<'a>,
-    pub(super) prior: &'c Prior,
-    pub(super) engine: &'c mut dyn SymEngine,
+pub(in crate::build) struct Builder<'c, 'a> {
+    pub(in crate::build) c: &'c Compiled<'a>,
+    pub(in crate::build) prior: &'c Prior,
+    pub(in crate::build) engine: &'c mut dyn SymEngine,
     /// Templates of `Instantiate` instructions, cell leaves holding slots
     /// until emit rebinds them to cells and imports them.
-    pub(super) sym_templates: Vec<Tree>,
+    pub(in crate::build) sym_templates: Vec<Tree>,
     /// Slots that hold expression handles without being an instruction's
     /// output (essential and fixed math cells).
-    pub(super) math_slots: Vec<SlotId>,
+    pub(in crate::build) math_slots: Vec<SlotId>,
     /// Per component, whether its `expr` is a math cell (`is_symbolic`).
-    pub(super) math_mode: Vec<MathMode>,
-    pub(super) comps: ComponentTable,
-    pub(super) slot_base: Vec<u32>,
-    pub(super) sources: Vec<Source>,
+    pub(in crate::build) math_mode: Vec<MathMode>,
+    pub(in crate::build) comps: ComponentTable,
+    pub(in crate::build) slot_base: Vec<u32>,
+    pub(in crate::build) sources: Vec<Source>,
     /// Owning component of each slot (prop index = slot - slot_base[comp]).
-    pub(super) slot_comp: Vec<CompIdx>,
-    pub(super) op_inputs: Vec<SlotId>,
+    pub(in crate::build) slot_comp: Vec<CompIdx>,
+    pub(in crate::build) op_inputs: Vec<SlotId>,
     /// Carried over from the prior build and extended.
-    pub(super) scopes: ScopeTable,
+    pub(in crate::build) scopes: ScopeTable,
     /// Per scope: element -> component, for the scope's template.
-    pub(super) scope_comps: Vec<Vec<CompIdx>>,
+    pub(in crate::build) scope_comps: Vec<Vec<CompIdx>>,
     /// Per component: index into `instances`, or NONE for synthesized ones.
-    pub(super) comp_instance: Vec<u32>,
-    pub(super) instances: Vec<Instance>,
+    pub(in crate::build) comp_instance: Vec<u32>,
+    pub(in crate::build) instances: Vec<Instance>,
     /// Per component: index into `repeats` for a repeat component.
-    pub(super) comp_repeat: Vec<u32>,
-    pub(super) repeats: Vec<Repeat>,
-    pub(super) counts_used: Vec<u32>,
+    pub(in crate::build) comp_repeat: Vec<u32>,
+    pub(in crate::build) repeats: Vec<Repeat>,
+    pub(in crate::build) counts_used: Vec<u32>,
     /// `$ref` children awaiting a kind: (component, plan, scope, has index).
-    pub(super) pending: Vec<(CompIdx, RefId, ScopeId, bool)>,
+    pub(in crate::build) pending: Vec<(CompIdx, RefId, ScopeId, bool)>,
     /// Collect components awaiting expansion.
-    pub(super) collects: Vec<CompIdx>,
+    pub(in crate::build) collects: Vec<CompIdx>,
     /// Point lists awaiting their synthesized children.
-    pub(super) pointlists: Vec<CompIdx>,
-    pub(super) collected: HashMap<CompIdx, Vec<CompIdx>>,
+    pub(in crate::build) pointlists: Vec<CompIdx>,
+    pub(in crate::build) collected: HashMap<CompIdx, Vec<CompIdx>>,
     /// Expanded choices, and the instance each choice component owns.
-    pub(super) choice_insts: Vec<ChoiceInst>,
-    pub(super) comp_choice: HashMap<CompIdx, usize>,
-    pub(super) missing: Option<SlotId>,
-    pub(super) arena: Arena,
-    pub(super) root: CompIdx,
+    pub(in crate::build) choice_insts: Vec<ChoiceInst>,
+    pub(in crate::build) comp_choice: HashMap<CompIdx, usize>,
+    pub(in crate::build) missing: Option<SlotId>,
+    pub(in crate::build) arena: Arena,
+    pub(in crate::build) root: CompIdx,
 }
 
 impl<'c, 'a> Builder<'c, 'a> {
-    pub(super) fn new(
+    pub(in crate::build) fn new(
         c: &'c Compiled<'a>,
         prior: &'c Prior,
         engine: &'c mut dyn SymEngine,
@@ -172,7 +177,7 @@ impl<'c, 'a> Builder<'c, 'a> {
 
     /// `n_slots` is the public prop count plus any hidden slots the
     /// element's plan added.
-    pub(super) fn new_component(
+    pub(in crate::build) fn new_component(
         &mut self,
         kind: ComponentKind,
         name: StrId,
@@ -196,18 +201,18 @@ impl<'c, 'a> Builder<'c, 'a> {
         idx
     }
 
-    pub(super) fn allocate_slots(&mut self, comp: CompIdx, n: usize) {
+    pub(in crate::build) fn allocate_slots(&mut self, comp: CompIdx, n: usize) {
         self.slot_base[comp as usize] = self.sources.len() as u32;
         self.sources.extend(std::iter::repeat_n(Source::Unset, n));
         self.slot_comp.extend(std::iter::repeat_n(comp, n));
     }
 
     #[inline]
-    pub(super) fn slot(&self, comp: CompIdx, prop_index: usize) -> SlotId {
+    pub(in crate::build) fn slot(&self, comp: CompIdx, prop_index: usize) -> SlotId {
         self.slot_base[comp as usize] + prop_index as u32
     }
 
-    pub(super) fn set_children(&mut self, comp: CompIdx, kids: &[u32]) {
+    pub(in crate::build) fn set_children(&mut self, comp: CompIdx, kids: &[u32]) {
         self.comps.child_start[comp as usize] = self.comps.child_list.len() as u32;
         self.comps.child_count[comp as usize] = kids.len() as u32;
         self.comps.child_list.extend_from_slice(kids);
@@ -215,14 +220,14 @@ impl<'c, 'a> Builder<'c, 'a> {
 
     /// A slot that belongs to no component: a lowered math subexpression, a
     /// literal inside one, the missing-referent cell.
-    pub(super) fn anon_slot(&mut self, source: Source) -> SlotId {
+    pub(in crate::build) fn anon_slot(&mut self, source: Source) -> SlotId {
         let s = self.sources.len() as SlotId;
         self.sources.push(source);
         self.slot_comp.push(NONE);
         s
     }
 
-    pub(super) fn missing_slot(&mut self) -> SlotId {
+    pub(in crate::build) fn missing_slot(&mut self) -> SlotId {
         if let Some(s) = self.missing {
             return s;
         }
@@ -231,7 +236,7 @@ impl<'c, 'a> Builder<'c, 'a> {
         s
     }
 
-    pub(super) fn comp_label(&self, comp: CompIdx) -> String {
+    pub(in crate::build) fn comp_label(&self, comp: CompIdx) -> String {
         let name = self.comps.name[comp as usize];
         if name != NONE {
             self.c.dast.strings.get(name).trim().to_string()
@@ -240,7 +245,7 @@ impl<'c, 'a> Builder<'c, 'a> {
         }
     }
 
-    pub(super) fn slot_label(&self, slot: SlotId) -> String {
+    pub(in crate::build) fn slot_label(&self, slot: SlotId) -> String {
         let comp = self.slot_comp[slot as usize];
         if comp == NONE {
             return format!("(anonymous slot {slot})");
@@ -256,11 +261,11 @@ impl<'c, 'a> Builder<'c, 'a> {
 
     /// The stable id of iteration `k` of repeat element `node` under
     /// `parent`, created on first use.
-    pub(super) fn scope_for(&mut self, parent: ScopeId, node: NodeId, k: u32) -> ScopeId {
+    pub(in crate::build) fn scope_for(&mut self, parent: ScopeId, node: NodeId, k: u32) -> ScopeId {
         self.scopes.get_or_insert(parent, node, k)
     }
 
-    pub(super) fn enter_scope(&mut self, scope: ScopeId, template: TemplateId) {
+    pub(in crate::build) fn enter_scope(&mut self, scope: ScopeId, template: TemplateId) {
         let s = scope as usize;
         if self.scope_comps.len() <= s {
             self.scope_comps.resize(s + 1, Vec::new());
@@ -270,7 +275,7 @@ impl<'c, 'a> Builder<'c, 'a> {
 
     // ---- expansion -----------------------------------------------------------
 
-    pub(super) fn expand_all(&mut self) -> Result<()> {
+    pub(in crate::build) fn expand_all(&mut self) -> Result<()> {
         self.enter_scope(0, 0);
         let kids = self.expand(0, 0, NONE)?;
         self.root = kids
@@ -283,7 +288,7 @@ impl<'c, 'a> Builder<'c, 'a> {
 
     /// Instantiate template `t` in `scope`; returns the child entries of the
     /// template's own children (the repeat body, or the document).
-    pub(super) fn expand(
+    pub(in crate::build) fn expand(
         &mut self,
         t: TemplateId,
         scope: ScopeId,
@@ -367,7 +372,7 @@ impl<'c, 'a> Builder<'c, 'a> {
         Ok(out)
     }
 
-    pub(super) fn child_entries(
+    pub(in crate::build) fn child_entries(
         &mut self,
         t: TemplateId,
         e: ElemId,
@@ -383,7 +388,12 @@ impl<'c, 'a> Builder<'c, 'a> {
         kids
     }
 
-    pub(super) fn child_entry(&mut self, ch: &Child, scope: ScopeId, parent: CompIdx) -> u32 {
+    pub(in crate::build) fn child_entry(
+        &mut self,
+        ch: &Child,
+        scope: ScopeId,
+        parent: CompIdx,
+    ) -> u32 {
         match *ch {
             Child::Elem(e) => self.scope_comps[scope as usize][e],
             Child::Text(s) => TEXT_BIT | s,
@@ -401,7 +411,7 @@ impl<'c, 'a> Builder<'c, 'a> {
     /// Placeholders without an index first (a collect may gather copies),
     /// then collects in document order, then indexed placeholders (which may
     /// name a collect's items), then every prop source.
-    pub(super) fn resolve_all(&mut self) -> Result<()> {
+    pub(in crate::build) fn resolve_all(&mut self) -> Result<()> {
         let pending = std::mem::take(&mut self.pending);
         for &(idx, plan, scope, _) in pending.iter().filter(|p| !p.3) {
             self.place(idx, plan, scope)?;
@@ -428,7 +438,12 @@ impl<'c, 'a> Builder<'c, 'a> {
 
     /// Give a `$ref` child its kind: a copy of a component, a number aliasing
     /// one prop, or a number holding the missing-referent cell.
-    pub(super) fn place(&mut self, idx: CompIdx, plan: RefId, scope: ScopeId) -> Result<()> {
+    pub(in crate::build) fn place(
+        &mut self,
+        idx: CompIdx,
+        plan: RefId,
+        scope: ScopeId,
+    ) -> Result<()> {
         let (target, prop) = self.resolve(plan, scope)?;
         match (target, prop) {
             (Resolved::Missing, _) => {
@@ -475,7 +490,7 @@ impl<'c, 'a> Builder<'c, 'a> {
     }
 
     /// Make `idx` a copy of `referent`: same kind, every slot aliased.
-    pub(super) fn copy_into(&mut self, idx: CompIdx, referent: CompIdx) {
+    pub(in crate::build) fn copy_into(&mut self, idx: CompIdx, referent: CompIdx) {
         let kind = self.comps.kind[referent as usize];
         self.comps.kind[idx as usize] = kind;
         self.allocate_slots(idx, kind.prop_defs().len());
@@ -487,7 +502,7 @@ impl<'c, 'a> Builder<'c, 'a> {
 
     /// The coordinate slots of each item of an array prop a plan names
     /// (`$l.points`, `$pg.vertices`), trimmed to the live item count.
-    pub(super) fn resolve_items(
+    pub(in crate::build) fn resolve_items(
         &mut self,
         plan: RefId,
         scope: ScopeId,
@@ -524,7 +539,7 @@ impl<'c, 'a> Builder<'c, 'a> {
     /// Give a point list its children: one synthesized point per item of
     /// the array prop it extends, or copies of the children of the point
     /// list it is a copy of.
-    pub(super) fn expand_pointlist(&mut self, comp: CompIdx) -> Result<()> {
+    pub(in crate::build) fn expand_pointlist(&mut self, comp: CompIdx) -> Result<()> {
         let inst = self.instances[self.comp_instance[comp as usize] as usize];
         let el = &self.c.templates[inst.template].elems[inst.elem];
         let mut kids = Vec::new();
@@ -573,7 +588,7 @@ impl<'c, 'a> Builder<'c, 'a> {
         Ok(())
     }
 
-    pub(super) fn expand_collect(&mut self, comp: CompIdx) -> Result<()> {
+    pub(in crate::build) fn expand_collect(&mut self, comp: CompIdx) -> Result<()> {
         let inst = self.instances[self.comp_instance[comp as usize] as usize];
         let Body::Collect { from, kind } = self.c.templates[inst.template].elems[inst.elem].body
         else {
@@ -610,7 +625,7 @@ impl<'c, 'a> Builder<'c, 'a> {
 
     /// Descendants of `c` of `kind`, in document order, not recursing into
     /// a match (as the current core's `recurseToMatchedChildren: false`).
-    pub(super) fn collect_descendants(
+    pub(in crate::build) fn collect_descendants(
         &self,
         c: CompIdx,
         kind: ComponentKind,
@@ -635,7 +650,11 @@ impl<'c, 'a> Builder<'c, 'a> {
 
     /// The template components of one iteration: children of the repeat
     /// created in that scope.
-    pub(super) fn iteration_components(&self, repeat: CompIdx, scope: ScopeId) -> Vec<CompIdx> {
+    pub(in crate::build) fn iteration_components(
+        &self,
+        repeat: CompIdx,
+        scope: ScopeId,
+    ) -> Vec<CompIdx> {
         let (s, n) = (
             self.comps.child_start[repeat as usize] as usize,
             self.comps.child_count[repeat as usize] as usize,
@@ -648,7 +667,7 @@ impl<'c, 'a> Builder<'c, 'a> {
     }
 
     /// Sources for every prop of one instantiated element.
-    pub(super) fn instance_sources(&mut self, inst: Instance) -> Result<()> {
+    pub(in crate::build) fn instance_sources(&mut self, inst: Instance) -> Result<()> {
         let comp = inst.comp;
         let (kind, extend_plan) = {
             let el = &self.c.templates[inst.template].elems[inst.elem];
@@ -756,20 +775,20 @@ impl<'c, 'a> Builder<'c, 'a> {
     }
 
     /// An operator source over `inputs` (at most 255).
-    pub(super) fn op_source(&mut self, spec: OpSpec, inputs: &[SlotId]) -> Source {
+    pub(in crate::build) fn op_source(&mut self, spec: OpSpec, inputs: &[SlotId]) -> Source {
         let start = self.op_inputs.len() as u32;
         self.op_inputs.extend_from_slice(inputs);
         Source::Op(spec, start, inputs.len() as u8)
     }
 
-    pub(super) fn op_slot(&mut self, spec: OpSpec, inputs: &[SlotId]) -> SlotId {
+    pub(in crate::build) fn op_slot(&mut self, spec: OpSpec, inputs: &[SlotId]) -> SlotId {
         let source = self.op_source(spec, inputs);
         self.anon_slot(source)
     }
 
     /// `x`, times `gate` when there is one (the product of the enclosing
     /// cases' `active` cells).
-    pub(super) fn gated(&mut self, gate: Option<SlotId>, x: SlotId) -> SlotId {
+    pub(in crate::build) fn gated(&mut self, gate: Option<SlotId>, x: SlotId) -> SlotId {
         match gate {
             None => x,
             Some(g) => self.op_slot(OpSpec::Mul, &[g, x]),

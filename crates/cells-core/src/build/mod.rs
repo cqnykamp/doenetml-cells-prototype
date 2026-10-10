@@ -2,7 +2,7 @@
 //! expand them into components, resolve references, merge aliased props into
 //! shared cells, and emit the instruction list.
 //!
-//! The build has two halves.
+//! The build has three stages, one module each.
 //!
 //! **Compile** walks the DAST once and produces one [`Template`] per repeat
 //! (plus one for the document itself). A template holds, per element, the
@@ -29,16 +29,20 @@
 //! instruction list is scheduled, with a fast path when creation order is
 //! already a valid evaluation order.
 //!
-//! **Compile** lives in `compile.rs` (the walk and each element's shape),
-//! `attrs.rs` (attribute and math sources), `refs.rs` (names and reference
-//! paths), `expr.rs` (the parse arena for math text), `geometry/` (the
-//! planned kinds), `choice.rs` with `condition.rs`, `copies.rs`
-//! (`extend`) and `fix.rs` (`fixed`); what it produces is in `plan.rs`.
-//! **Expand** lives in `expand.rs` (with the builder's state),
-//! `expand_math.rs` and `resolve.rs`, with `scoring.rs` for credit and
-//! section numbers; **Emit** in `emit.rs`. `choice.rs` has a compile half
-//! and an expand half. This file holds the entry point, [`build`], what it
-//! returns ([`Unscheduled`]) and what one build hands the next ([`Prior`]).
+//! **`compile/`**: `mod.rs` walks the DAST and decides each element's
+//! shape; `attrs.rs` plans attribute and math sources, `refs.rs` names and
+//! reference paths, `expr.rs` the parse arena for math text, `geometry/` the
+//! planned kinds, `choice.rs` with `condition.rs` the choices, `copies.rs`
+//! `extend`, and `fix.rs` `fixed`. What compile produces is in `plan.rs`.
+//! **`expand/`**: `mod.rs` holds the builder's state and stamps templates;
+//! `resolve.rs` follows reference plans, `math.rs` gives math its source per
+//! instance, `choice.rs` picks and wires branches, and `scoring.rs` wires
+//! credit and section numbers. **`emit.rs`** makes cells and instructions.
+//!
+//! This file holds the entry point, [`build`], what it returns
+//! ([`Unscheduled`]) and what one build hands the next ([`Prior`]);
+//! `structure.rs` holds what a build records about the document's shape
+//! ([`Structure`], [`ScopeTable`], [`Repeat`]).
 
 use std::collections::HashMap;
 
@@ -46,31 +50,19 @@ use cells_sym::{SymEngine, Tree};
 
 use crate::components::{ComponentKind, PropFrom, prop};
 use crate::dast::{Dast, NodeId, NodeKind, StrId, StringTable};
-use crate::document::{
-    CellIdx, CompIdx, ComponentTable, Document, NONE, Repeat, ScopeId, ScopeTable, Structure,
-    TEXT_BIT,
-};
+use crate::document::{CellIdx, CompIdx, ComponentTable, Document, NONE, TEXT_BIT};
 use crate::error::{Error, Result};
 use crate::program::geo::{Pivot, RigidOpts, VecOp};
 use crate::program::ops::{Instr, OpSpec, Post, SymKind};
 use crate::program::{Program, Sym};
-use expr::{Arena, Expr, ExprId, Parser, Token};
+use compile::expr::{Arena, Expr, ExprId, Parser, Token};
 
-mod attrs;
-mod choice;
 mod compile;
-mod condition;
-mod copies;
 mod emit;
 mod expand;
-mod expand_math;
-mod expr;
-mod fix;
-mod geometry;
-mod plan;
-mod refs;
-mod resolve;
-mod scoring;
+mod structure;
+
+pub use structure::{Repeat, ScopeId, ScopeTable, Structure};
 
 type SlotId = u32;
 type TemplateId = usize;
@@ -78,8 +70,9 @@ type ElemId = usize;
 type RefId = usize;
 type ChoiceId = usize;
 
+use compile::Compiler;
+use compile::plan::*;
 use expand::*;
-use plan::*;
 
 /// Build with `engine` holding the document's expressions (the same engine
 /// across rebuilds, so essential math cells keep valid handles).

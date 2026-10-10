@@ -31,9 +31,10 @@ mod tick;
 pub use program::ops;
 pub use testing::{reference, test_utils};
 
+pub use build::{Repeat, ScopeId, ScopeTable, Structure};
 pub use document::{
-    CellIdx, Child, CompIdx, ComponentTable, Document, LoadOptions, LoadTimings, NONE, Repeat,
-    Request, ScopeId, ScopeTable, Structure, TEXT_BIT, Tick,
+    CellIdx, Child, CompIdx, ComponentTable, Document, LoadOptions, LoadTimings, NONE, Request,
+    TEXT_BIT, Tick,
 };
 pub use error::{Error, Result};
 pub use program::Program;
