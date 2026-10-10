@@ -1,4 +1,4 @@
-//! Plan 3: `<polygon>`, rigid and free, and shapes whose vertices refer to
+//! `<polygon>`, rigid and free, and shapes whose vertices refer to
 //! their own siblings.
 
 mod common;

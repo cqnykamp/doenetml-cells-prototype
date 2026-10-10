@@ -8,11 +8,11 @@ use super::*;
 pub struct LoadOptions {
     /// The symbolic engine; engine A when None.
     pub engine: Option<Box<dyn SymEngine>>,
-    /// The document seed load-time choices draw from (plan 6): one seed
+    /// The document seed load-time choices draw from (ADR 0009): one seed
     /// gives one variant of the document.
     pub seed: u64,
     /// Sample curves through the engine instead of tapes compiled at build
-    /// time (plan 5, change 1); for checking the tapes and for measuring.
+    /// time; for checking the tapes and for measuring.
     pub sample_with_engine: bool,
 }
 

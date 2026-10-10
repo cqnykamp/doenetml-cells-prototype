@@ -1,4 +1,4 @@
-//! Plan 4: `<stickyGroup>`. The first scene is the current core's
+//! `<stickyGroup>` (ADR 0007). The first scene is the current core's
 //! "attract polygons and point when translating", step for step; the rest
 //! are the prototype's own rules (repeat members, shared points, what the
 //! pre-pass does and does not see).

@@ -1,5 +1,5 @@
 // Line, line segment, circle and polygon: SVG renderers that drag the way
-// the current core's actions do (plan 3). A whole-shape drag requests the
+// the current core's actions do (ADR 0006). A whole-shape drag requests the
 // shape's own point cells, so the core's shape-preserving inverse (ADR 0006)
 // decides where the defining points go; a vertex handle drags one point.
 import { useRef } from "react";

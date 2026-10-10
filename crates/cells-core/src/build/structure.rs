@@ -102,7 +102,7 @@ pub struct Structure {
     pub repeat_cross_reads: Vec<bool>,
     /// The largest `repeat_depths` entry; 0 without repeats.
     pub structural_depth: u32,
-    /// The document seed load-time choices draw from (plan 6).
+    /// The document seed load-time choices draw from (ADR 0009).
     pub seed: u64,
     /// Curves sample through the engine, not compiled tapes (see
     /// `LoadOptions`).

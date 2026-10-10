@@ -1,4 +1,4 @@
-//! Plan 4: sticky groups as a pre-pass on the requests a tick receives
+//! Sticky groups as a pre-pass on the requests a tick receives
 //! (ADR 0007). After every build the document records each group's members
 //! as cells; a request that names a member's cell is snapped before it is
 //! inverted. Requests that reach a member's cells only through inversion

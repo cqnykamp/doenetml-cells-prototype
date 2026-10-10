@@ -193,7 +193,7 @@ fn error_cases() {
         load(r#"<point name="a"/><point name="a"/>"#).unwrap_err(),
         Error::DuplicateName(_)
     ));
-    // Math in an attribute lowers (plan 2); a constant folds to an essential.
+    // Math in an attribute lowers (ADR 0005); a constant folds to an essential.
     assert_eq!(
         load(r#"<point name="p" x="1+2"/>"#)
             .unwrap()

@@ -1,4 +1,4 @@
-//! Symbolic instructions in the tick (Plan 5, ADR 0008): simplify on leaf
+//! Symbolic instructions in the tick (ADR 0008): simplify on leaf
 //! changes, mathInputs as essential math cells, answers, function curves,
 //! gating, and the equal-handle cutoff of engine A.
 

@@ -20,7 +20,7 @@ pub use vector::{MAX_VEC_IN, Pivot, Produced, RigidOpts, VecOp};
 
 /// The document's symbolic engine and the memo of every symbolic
 /// instruction. Interior mutability because instructions run through
-/// `&Program`; the engine only grows (Plan 5 measures by how much).
+/// `&Program`; the engine only grows (see `SymEngine`).
 #[derive(Debug, Clone)]
 pub struct Sym {
     pub engine: RefCell<Box<dyn SymEngine>>,

@@ -1,4 +1,4 @@
-//! Plan 3: `<circle>` in its nine specifications, dragged as the current
+//! `<circle>` in its nine specifications, dragged as the current
 //! core's tests drag it.
 
 mod common;

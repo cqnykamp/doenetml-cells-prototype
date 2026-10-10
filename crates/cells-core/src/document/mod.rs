@@ -52,7 +52,7 @@ pub struct Document {
     pub structure: Structure,
     /// The document as loaded, kept for rebuilds.
     pub dast: Arc<Dast>,
-    /// Sticky groups as cells, for the request pre-pass (plan 4).
+    /// Sticky groups as cells, for the request pre-pass (ADR 0007).
     sticky: Vec<sticky::StickyTable>,
 }
 

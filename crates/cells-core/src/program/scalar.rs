@@ -45,7 +45,7 @@ pub enum Op {
     /// `fixAxes`. The flag is still an input, so the hold is an edge in the
     /// graph, like `Shape`'s pivot.
     Hold(CellIdx, CellIdx),
-    /// Comparisons for conditions (plan 6): 1 or 0, and 0 when either side
+    /// Comparisons for conditions (ADR 0009): 1 or 0, and 0 when either side
     /// is NaN. `Eq` allows a relative error of `EQ_TOL`. No inverses.
     Lt(CellIdx, CellIdx),
     Le(CellIdx, CellIdx),
@@ -221,11 +221,11 @@ impl Op {
                 }
                 (a, desired)
             }
-            // Symbolic inverses are out of scope (plan 5); `Evaluate`'s
+            // Symbolic operators have no inverse rule (ADR 0008); `Evaluate`'s
             // constant-expression inverse needs the engine, so the request
             // engine handles it (`tick/invert.rs`).
             Op::Pow(..) | Op::Sym(..) => return None,
-            // A request cannot change a condition (plan 6).
+            // A request cannot change a condition (ADR 0009).
             Op::Lt(..) | Op::Le(..) | Op::Eq(..) | Op::Truthy(..) | Op::Not(..) => return None,
             Op::Vec(..) => unreachable!("vector operators are inverted jointly by the program"),
         })

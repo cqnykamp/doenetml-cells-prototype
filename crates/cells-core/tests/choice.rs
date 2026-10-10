@@ -1,4 +1,4 @@
-//! Choices (plan 6, ADR 0009): `<conditionalContent>` under both
+//! Choices (ADR 0009): `<conditionalContent>` under both
 //! mechanisms, the branch interface, conditions, and `<select>` picks.
 
 mod common;

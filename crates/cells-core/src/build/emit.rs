@@ -118,8 +118,8 @@ impl<'c, 'a> Builder<'c, 'a> {
         let mut bound: Vec<CellIdx> = Vec::with_capacity(8);
         let mut is_math = vec![false; cells.len()];
         let mut tapes = Vec::new();
-        // Compile curves whose expression has a fixed shape (plan 5, change
-        // 1), unless the load asked for engine sampling.
+        // Compile curves whose expression has a fixed shape into tapes, unless
+        // the load asked for engine sampling.
         let compile = !self.carryover.structure.sample_with_engine;
         let mut fixed_shape: HashMap<SlotId, Option<cells_sym::Handle>> = HashMap::new();
         for &s in &derived_defs {

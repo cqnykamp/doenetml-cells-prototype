@@ -111,7 +111,7 @@ pub enum VecOp {
     ProjectCircle,
     /// Inputs (x, y, x1, y1, x2, y2); outputs (x', y').
     ProjectLine,
-    /// A reactive choice's choice cell (plan 6): inputs are its `n`
+    /// A reactive choice's choice cell (ADR 0009): inputs are its `n`
     /// condition cells; the output is the 1-based position of the first
     /// that holds (nonzero, not NaN), or 0. No inverse: a request cannot
     /// flip a branch.

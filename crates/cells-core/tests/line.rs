@@ -1,4 +1,4 @@
-//! Plan 3: `<line>` in its modes (two points, slope, direction, equation),
+//! `<line>` in its modes (two points, slope, direction, equation),
 //! with point lists and constrained points.
 
 mod common;

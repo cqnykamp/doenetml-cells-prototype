@@ -56,7 +56,7 @@ pub enum ComponentKind {
     /// evaluates it; a request on `value` writes a constant expression.
     MathInput = 13,
     /// `<circle>`: center and radius are derived or essential depending on
-    /// how the circle is specified (plan 3). Chains are planned in `build/compile/geometry/`.
+    /// how the circle is specified (ADR 0006). Chains are planned in `build/compile/geometry/`.
     Circle = 14,
     /// `<line>`: its own two points are derived cells (ADR 0006); slope,
     /// intercepts and coefficients follow from them or from the equation.
@@ -73,7 +73,7 @@ pub enum ComponentKind {
     /// `<setup>`: an unrendered container.
     Setup = 20,
     /// `<stickyGroup>`: a container whose members snap to one another when
-    /// dragged (plan 4). `threshold` NaN means the default.
+    /// dragged (ADR 0007). `threshold` NaN means the default.
     StickyGroup = 21,
     /// `<function>`: a math cell `expr` (variable `x`) and, as a curve, the
     /// `SAMPLES` cells from `samples` on, filled by a `Sample` instruction
@@ -87,10 +87,10 @@ pub enum ComponentKind {
     /// `credit` compares it with `correct` (`symbolicEquality`: as written).
     Answer = 24,
     /// `<text>` with literal content: `value` is a fixed cell holding the
-    /// string id of its text (plan 6). A cell's meaning is a property of
+    /// string id of its text (ADR 0009). A cell's meaning is a property of
     /// the operators around it, so a text value never reaches a numeric one.
     Text = 25,
-    /// `<conditionalContent>`, a reactive choice (plan 6, ADR 0009). Its
+    /// `<conditionalContent>`, a reactive choice (ADR 0009). Its
     /// `choice` cell is the 1-based position of the first case whose
     /// condition holds, or 0. Its children are `Case` components.
     ConditionalContent = 26,

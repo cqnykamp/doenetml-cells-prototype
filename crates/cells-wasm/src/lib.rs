@@ -34,7 +34,7 @@ impl Core {
         Core::with_engine_seeded(dast, engine, 0.0)
     }
 
-    /// Load with the document seed load-time choices draw from (plan 6).
+    /// Load with the document seed load-time choices draw from (ADR 0009).
     pub fn with_seed(dast: &[u8], seed: f64) -> Result<Core, JsError> {
         Core::with_engine_seeded(dast, "A", seed)
     }
@@ -250,7 +250,7 @@ impl Core {
     // ---- test adapter -----------------------------------------------------
     //
     // The current core's vitest suites run against this core through an
-    // adapter (plan 3). These calls answer by name so the adapter needs no
+    // adapter. These calls answer by name so the adapter needs no
     // knowledge of the column layout.
 
     /// Component index of a dotted path as the tests write it

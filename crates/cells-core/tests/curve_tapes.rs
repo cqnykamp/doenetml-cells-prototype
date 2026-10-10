@@ -1,4 +1,4 @@
-//! Plan 5, change 1: a curve whose expression has a fixed shape samples a
+//! A curve whose expression has a fixed shape samples a
 //! tape compiled at build time instead of asking the engine on each tick.
 //! The tapes must sample what the engine samples.
 

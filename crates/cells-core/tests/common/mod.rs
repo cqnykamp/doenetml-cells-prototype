@@ -1,4 +1,4 @@
-//! Helpers shared by the integration tests. The plan 3 geometry tests'
+//! Helpers shared by the integration tests. The geometry tests'
 //! scenarios mirror the current core's vitest suites, which the adapter
 //! runs verbatim; these are the core-level checks.
 #![allow(dead_code)]

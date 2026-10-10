@@ -1,4 +1,4 @@
-//! Choices (plan 6, ADR 0009): `<conditionalContent>` and `<select>`.
+//! Choices (ADR 0009): `<conditionalContent>` and `<select>`.
 //!
 //! Each branch (a case or an option) is its own template, so the names
 //! inside it are private, as a repeat's are. What the rest of the document
@@ -11,8 +11,8 @@
 //! content's `choice` cell is the first case whose condition holds. Every
 //! case is built, inside a `Case` component whose `active` cell says
 //! whether it is shown, and an interface name is a `Choose` over the
-//! branches' cells, so a flip is an ordinary tick. (Plan 6 also built the
-//! other mechanism, rebuilding with only the active case; it lost on every
+//! branches' cells, so a flip is an ordinary tick. (An earlier version also
+//! built the other mechanism, rebuilding with only the active case; it lost on every
 //! tick and was removed. See ADR 0009.)
 
 use super::*;

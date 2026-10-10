@@ -38,7 +38,7 @@ pub enum Tree {
 pub const FUNCTIONS: &[&str] = &["sin", "cos", "tan", "exp", "ln", "log", "sqrt", "abs"];
 
 /// What the core needs from a symbolic engine. Handles stay valid for the
-/// life of the engine; nothing is reclaimed (Plan 5 measures the growth).
+/// life of the engine; nothing is reclaimed.
 pub trait SymEngine {
     fn name(&self) -> &'static str;
     /// Bring a builder tree in. Cell leaves are kept as leaves.

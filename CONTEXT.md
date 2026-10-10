@@ -75,7 +75,7 @@ requests on several inputs at once (a circle's radius moving both coordinates
 of its through point). Each resulting request is then inverted on its own.
 
 **Local inverse** — An inverse that uses only the operator's own inputs, their
-current values and the requested value. Plan 3's finding: every inverse is
+current values and the requested value. Every inverse in the core is
 local; the one other thing a *request* needs is the realized value of the
 points requested with it (see point group, lookahead), never state saved
 from an earlier tick.

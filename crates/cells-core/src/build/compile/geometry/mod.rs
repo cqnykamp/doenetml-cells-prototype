@@ -1,6 +1,6 @@
 //! Planned kinds: point, circle, line, line segment and polygon. Each
 //! planner reads the element's attributes and children and chooses the
-//! operator chain that produces the kind's public props (plan 3). The
+//! operator chain that produces the kind's public props (ADR 0006). The
 //! inverse rules of the operators it uses are in `program/vector.rs`.
 //!
 //! This file holds the dispatcher (`plan_geo`) and what the kinds share:

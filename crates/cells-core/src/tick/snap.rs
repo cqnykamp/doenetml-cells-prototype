@@ -1,4 +1,4 @@
-//! Sticky groups (plan 4): the snapping rule. A member a request moves is
+//! Sticky groups (ADR 0007): the snapping rule. A member a request moves is
 //! pulled onto the vertices and edges of the group's other members when it
 //! comes within the threshold. This file is the rule only: a pure function
 //! of the dragged member's requested vertices and the other members'

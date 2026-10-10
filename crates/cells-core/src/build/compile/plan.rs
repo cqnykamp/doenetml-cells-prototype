@@ -122,11 +122,11 @@ pub(in crate::build) enum Body {
     PointList {
         from: RefId,
     },
-    /// A `<conditionalContent>` or `<select>` (plan 6): `Compiled::choices`.
+    /// A `<conditionalContent>` or `<select>` (ADR 0009): `Compiled::choices`.
     Choice(ChoiceId),
 }
 
-/// A choice as compiled (plan 6, ADR 0009): one template per branch, its
+/// A choice as compiled (ADR 0009): one template per branch, its
 /// branch interface, and how it chooses.
 #[derive(Debug, Clone)]
 pub(in crate::build) struct ChoiceDef {
