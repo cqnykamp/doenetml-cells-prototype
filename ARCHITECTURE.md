@@ -75,8 +75,9 @@ component table (`document/sticky.rs`).
 
 **A document loads** (`Document::load`, `document/load.rs`). The bytes become
 a `Dast`. Then `build::build` runs: **compile** walks the DAST once and plans
-every element (`build/compile/mod.rs`; attributes and math in `attrs.rs`,
-references in `refs.rs`, geometric component types in `geometry/`, choices in
+every element with the planner `planner.rs` names for its type
+(`build/compile/mod.rs`; attributes and math in `attrs.rs`, references in
+`refs.rs`, geometric component types in `geometry/`, choices in
 `choice.rs`). **Expand** stamps each template into components once per
 scope and resolves references to slots (`build/expand/`). **Emit** merges
 aliased slots into cells with a union-find, numbers cells (essential,
@@ -133,15 +134,19 @@ const CLAMPED_PROPS: &[PropDef] = &props([
 ```
 
 Then add one line to the `component_types!` list in `components/mod.rs`
-(`Clamped => values::CLAMPED,` with a one-line doc). If code reads a prop
-by position, name it beside the table
+(`Clamped => values::CLAMPED,` with a one-line doc). The build then fails
+until the type has an arm in `Compiler::planner`
+(`build/compile/planner.rs`); for this one it is `K::Clamped => Props`,
+planned from its prop table. If code reads a prop by position, name it
+beside the table
 (`pub mod clamped { pub const VALUE: usize = at(CLAMPED_PROPS, "value"); }`)
 and re-export it from `components/prop.rs`. A type whose props are
 attributes, children, defaults or chains of operators over its other props
 needs nothing else: a request on `clamped` inverts through the chain by
 the operators' own inverses. A type whose wiring depends on which
-attributes the author gave is `.planned()`, and its planner goes in
-`build/compile/` (see `geometry/` for examples). The renderer side is in
+attributes the author gave gets a planner of its own, named in its
+`planner` arm: `Geometric` for a shape (see `geometry/`), `PropsThen` to
+adjust the table's plan, or `Whole`. The renderer side is in
 `web/src/renderers/`.
 
 **Add an operator.** Add the bound form to `Op` in `program/scalar.rs` with
