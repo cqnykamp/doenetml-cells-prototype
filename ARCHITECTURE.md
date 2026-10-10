@@ -59,7 +59,7 @@ component table (`document/sticky.rs`).
 | Type | Where | What it is |
 |---|---|---|
 | `Dast` | `dast/mod.rs` | The parsed source in parallel arrays indexed by `NodeId`. Loaded from JSON (`json.rs`) or the binary wire format (`binary.rs`, ADR 0002). |
-| `ComponentType`, `ComponentTypeInfo`, `PropDef` | `components/` | The tag vocabulary: each component type's props, where each prop's value comes from (attribute, default, computed from other props, or planned by the build), and flags. The data is the `COMPONENT_TYPES` table in `types.rs`. |
+| `ComponentType`, `ComponentTypeInfo`, `PropDef` | `components/` | The tag vocabulary: each component type's props, where each prop's value comes from (attribute, default, computed from other props, or planned by the build), and flags. The list of types is `component_types!` in `mod.rs`; each type's definition is in a family file (`geometry.rs`, `inputs.rs`, ...). |
 | `Compiler`, `Compiled`, `Template` | `build/compile/` | Compile's state and output: one template per repeat body, choice branch and the document, with a *plan* for every prop and reference. Nothing in a plan names an iteration. |
 | `Builder` | `build/expand/mod.rs` | The state of expand and emit: components and slots per scope, then cells and instructions. |
 | `BuildOutput` | `build/mod.rs` | Cells, instructions and the component table, before scheduling. `schedule` turns it into a `Document`. |
@@ -113,14 +113,36 @@ is an ordinary request: the response handle is copied into the answer's
 
 ## Where to change things
 
-**Add a component type.** Add a variant to `ComponentType`
-(`components/mod.rs`), a prop table and a `COMPONENT_TYPES` row
-(`components/types.rs`) in discriminant order, and prop positions in
-`components/prop.rs` if code reads props by position. A component type
-whose props are attributes, defaults or chains of operators over its other
-props needs nothing else. A component type whose wiring depends on which attributes the author gave is `PLANNED`, and its
-planner goes in `build/compile/` (see `geometry/` for examples). The
-renderer side is in `web/src/renderers/`.
+**Add a component type.** A type is defined in one of the family files in
+`components/` (`containers.rs`, `geometry.rs`, `inputs.rs`, `structure.rs`,
+`values.rs`), written with the builders in `components/define.rs`:
+
+```rust
+/// `<clamped lo="0" hi="1">`: its `value` held between `lo` and `hi`.
+pub(super) const CLAMPED: ComponentTypeInfo = info(&["clamped"], CLAMPED_PROPS)
+    .copyable()
+    .default_prop("clamped");
+
+const CLAMPED_PROPS: &[PropDef] = &props([
+    attr("value", 0.0),
+    attr("lo", 0.0),
+    attr("hi", 1.0),
+    computed("atLeastLo", OpSpec::Max, &["value", "lo"]),
+    computed("clamped", OpSpec::Min, &["atLeastLo", "hi"]),
+]);
+```
+
+Then add one line to the `component_types!` list in `components/mod.rs`
+(`Clamped => values::CLAMPED,` with a one-line doc). If code reads a prop
+by position, name it beside the table
+(`pub mod clamped { pub const VALUE: usize = at(CLAMPED_PROPS, "value"); }`)
+and re-export it from `components/prop.rs`. A type whose props are
+attributes, children, defaults or chains of operators over its other props
+needs nothing else: a request on `clamped` inverts through the chain by
+the operators' own inverses. A type whose wiring depends on which
+attributes the author gave is `.planned()`, and its planner goes in
+`build/compile/` (see `geometry/` for examples). The renderer side is in
+`web/src/renderers/`.
 
 **Add an operator.** Add the bound form to `Op` in `program/scalar.rs` with
 its `eval` and `invert` arms, and the unbound form to `OpSpec` in

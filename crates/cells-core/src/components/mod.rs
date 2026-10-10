@@ -13,7 +13,8 @@
 //! prop table, its row and its named prop positions) is in a family file:
 //! `containers.rs`, `geometry.rs`, `inputs.rs`, `structure.rs`,
 //! `values.rs`. `define.rs` has the builders they are written with, and
-//! `prop.rs` gathers the named positions.
+//! `prop.rs` gathers the named positions. ARCHITECTURE.md walks through
+//! adding a type.
 
 use crate::program::OpSpec;
 
@@ -284,7 +285,7 @@ pub enum PropFrom {
 
 /// The positions of a computed prop's inputs among its component's props.
 /// Written as prop names in the tables and resolved when compiled
-/// (`props` in `types.rs`).
+/// (`props` in `define.rs`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Args {
     at: [u8; MAX_ARGS],
