@@ -9,7 +9,7 @@
 //! Documents: `crates/cells-bench/golden/*.doenet` plus the smallest fixture
 //! of each shape in `fixtures/`.
 use cells_core::components::ComponentKind;
-use cells_core::{Child, CompIdx, Document, PointRequest, Request, Tick};
+use cells_core::{Child, CompIdx, Document, PointRequest, Request, TickOutcome};
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -116,7 +116,7 @@ fn plan(doc: &Document) -> Vec<(String, Action)> {
     steps
 }
 
-fn apply(doc: &mut Document, path: &str, action: &Action) -> Option<Tick> {
+fn apply(doc: &mut Document, path: &str, action: &Action) -> Option<TickOutcome> {
     let c = tree(doc).into_iter().find(|(p, _)| p == path)?.1;
     let v = |doc: &Document, cell: u32| doc.cells[cell as usize];
     Some(match *action {

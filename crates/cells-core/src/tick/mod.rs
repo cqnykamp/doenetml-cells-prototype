@@ -5,7 +5,7 @@
 //!
 //! The entry point is [`Document::request`](crate::Document::request) and
 //! its variants (`document/request.rs`), which run these stages in order and
-//! return a [`Tick`]. The sticky pre-pass lives beside them in
+//! return a [`TickOutcome`]. The sticky pre-pass lives beside them in
 //! `document/sticky.rs` because it reads the component table.
 
 use crate::document::CellIdx;
@@ -23,7 +23,7 @@ pub struct Request {
 
 /// What one tick changed.
 #[derive(Debug, Clone, Default, PartialEq)]
-pub struct Tick {
+pub struct TickOutcome {
     /// Cells whose value changed, essential ones first in request order,
     /// then derived ones in schedule order. No duplicates within each part.
     pub changed: Vec<CellIdx>,

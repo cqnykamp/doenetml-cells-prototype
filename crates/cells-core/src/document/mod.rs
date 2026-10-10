@@ -13,7 +13,7 @@ use crate::build::{Repeat, ScopeId, Structure};
 use crate::components::{ComponentKind, prop};
 use crate::dast::{Dast, StrId, StringTable};
 use crate::program::Program;
-use crate::tick::{Request, Tick};
+use crate::tick::{Request, TickOutcome};
 
 mod load;
 mod paths;

@@ -4,7 +4,7 @@
 #![allow(dead_code)]
 
 use cells_core::testing::reference;
-use cells_core::{Document, PointRequest, Request, Tick};
+use cells_core::{Document, PointRequest, Request, TickOutcome};
 
 pub fn req(doc: &Document, name: &str, prop: &str, value: f64) -> Request {
     Request {
@@ -19,7 +19,7 @@ pub fn v(doc: &Document, name: &str, prop: &str) -> f64 {
 }
 
 /// Request `value` on `name.prop`.
-pub fn set(doc: &mut Document, name: &str, prop: &str, value: f64) -> Tick {
+pub fn set(doc: &mut Document, name: &str, prop: &str, value: f64) -> TickOutcome {
     let cell = doc
         .cell(name, prop)
         .unwrap_or_else(|| panic!("no {name}.{prop}"));
@@ -27,7 +27,7 @@ pub fn set(doc: &mut Document, name: &str, prop: &str, value: f64) -> Tick {
 }
 
 /// Type math text into a mathInput: a request on its `expr` cell.
-pub fn type_into(doc: &mut Document, name: &str, s: &str) -> Tick {
+pub fn type_into(doc: &mut Document, name: &str, s: &str) -> TickOutcome {
     let h = doc.parse_math(s).unwrap();
     doc.request(&[req(doc, name, "expr", h)])
 }

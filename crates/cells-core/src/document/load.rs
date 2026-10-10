@@ -56,10 +56,10 @@ impl Document {
         let mut engine = options
             .engine
             .unwrap_or_else(|| Box::new(cells_sym::flat::Flat::new()));
-        let mut prior = crate::build::Prior::new(options.seed, options.sample_with_engine);
+        let mut carryover = crate::build::Carryover::new(options.seed, options.sample_with_engine);
         for _ in 0..MAX_PASSES {
             let clock = web_time::Instant::now();
-            let unscheduled = crate::build::build(&dast, &prior, &mut *engine)?;
+            let unscheduled = crate::build::build(&dast, &carryover, &mut *engine)?;
             t.build += clock.elapsed();
 
             let clock = web_time::Instant::now();
@@ -74,7 +74,7 @@ impl Document {
                 t.structural_depth = doc.structure.structural_depth;
                 return Ok(doc);
             }
-            prior = crate::build::Prior::take_from(&mut doc);
+            carryover = crate::build::Carryover::take_from(&mut doc);
             engine = doc.take_engine();
         }
         Err(crate::Error::UnstableStructure(MAX_PASSES))
@@ -146,15 +146,15 @@ impl Document {
         let clock = web_time::Instant::now();
         // The value store and the engine move into the new build; on
         // failure they move back.
-        let mut prior = crate::build::Prior::take_from(self);
+        let mut carryover = crate::build::Carryover::take_from(self);
         let mut engine = self.take_engine();
         if profile {
-            eprintln!("rebuild/prior: {:.2?}", clock.elapsed());
+            eprintln!("rebuild/carryover: {:.2?}", clock.elapsed());
         }
         let result = (|| {
             for _ in 0..MAX_PASSES {
                 let clock = web_time::Instant::now();
-                let u = crate::build::build(&dast, &prior, &mut *engine)?;
+                let u = crate::build::build(&dast, &carryover, &mut *engine)?;
                 if profile {
                     eprintln!("rebuild/build: {:.2?}", clock.elapsed());
                 }
@@ -175,7 +175,7 @@ impl Document {
                 if doc.structure_settled() {
                     return Ok(doc);
                 }
-                prior = crate::build::Prior::take_from(&mut doc);
+                carryover = crate::build::Carryover::take_from(&mut doc);
                 engine = doc.take_engine();
             }
             Err(crate::Error::UnstableStructure(MAX_PASSES))
@@ -186,7 +186,7 @@ impl Document {
                 Ok(())
             }
             Err(e) => {
-                prior.restore(self);
+                carryover.restore(self);
                 self.put_engine(engine);
                 Err(e)
             }

@@ -1,7 +1,7 @@
 //! What a build knows about the document's shape: the scopes it made, the
 //! repeats it expanded, and the essential values it held. It is stored on the
 //! [`Document`](crate::Document) and handed to the next build (see
-//! [`Prior`](super::Prior)) so iteration counts and essential values carry
+//! [`Carryover`](super::Carryover)) so iteration counts and essential values carry
 //! over a rebuild.
 
 use std::collections::HashMap;

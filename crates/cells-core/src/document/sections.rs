@@ -6,7 +6,7 @@ use super::*;
 impl Document {
     /// Submit an answer: an ordinary request copying the live response
     /// handle into its `submitted` cell.
-    pub fn submit(&mut self, answer: CompIdx) -> Tick {
+    pub fn submit(&mut self, answer: CompIdx) -> TickOutcome {
         let cells = self.comp_cells(answer);
         let (response, submitted) = (
             cells[prop::answer::RESPONSE],

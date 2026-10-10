@@ -40,7 +40,7 @@
 //! credit and section numbers. **`emit.rs`** makes cells and instructions.
 //!
 //! This file holds the entry point, [`build`], what it returns
-//! ([`Unscheduled`]) and what one build hands the next ([`Prior`]);
+//! ([`BuildOutput`]) and what one build hands the next ([`Carryover`]);
 //! `structure.rs` holds what a build records about the document's shape
 //! ([`Structure`], [`ScopeTable`], [`Repeat`]).
 
@@ -76,7 +76,11 @@ use expand::*;
 
 /// Build with `engine` holding the document's expressions (the same engine
 /// across rebuilds, so essential math cells keep valid handles).
-pub fn build(dast: &Dast, prior: &Prior, engine: &mut dyn SymEngine) -> Result<Unscheduled> {
+pub fn build(
+    dast: &Dast,
+    carryover: &Carryover,
+    engine: &mut dyn SymEngine,
+) -> Result<BuildOutput> {
     let profile = std::env::var_os("CELLS_BUILD_PROFILE").is_some();
     let clock = web_time::Instant::now();
     let lap = |what: &str| {
@@ -86,7 +90,7 @@ pub fn build(dast: &Dast, prior: &Prior, engine: &mut dyn SymEngine) -> Result<U
     };
     let compiled = Compiler::compile(dast)?;
     lap("compile");
-    let mut b = Builder::new(&compiled, prior, engine);
+    let mut b = Builder::new(&compiled, carryover, engine);
     b.expand_all()?;
     lap("expand");
     b.resolve_all()?;
@@ -96,14 +100,8 @@ pub fn build(dast: &Dast, prior: &Prior, engine: &mut dyn SymEngine) -> Result<U
     Ok(u)
 }
 
-/// One build pass with nothing carried over: every repeat has zero
-/// iterations. `Document::load` iterates this to a fixed point.
-pub fn build_once(dast: &Dast, engine: &mut dyn SymEngine) -> Result<Unscheduled> {
-    build(dast, &Prior::default(), engine)
-}
-
 /// A built document whose program has not yet been scheduled.
-pub struct Unscheduled {
+pub struct BuildOutput {
     cells: Vec<f64>,
     n_essential: usize,
     n_fixed: usize,
@@ -120,7 +118,7 @@ pub struct Unscheduled {
     cell_label: Box<dyn Fn(CellIdx) -> String>,
 }
 
-impl Unscheduled {
+impl BuildOutput {
     /// Schedule the program, moving the symbolic engine the build used into
     /// it. On error the engine stays with the caller.
     pub fn schedule(
@@ -158,7 +156,7 @@ impl Unscheduled {
 }
 
 // ---------------------------------------------------------------------------
-// Prior: what earlier builds of the same document contribute
+// Carryover: what earlier builds of the same document contribute
 // ---------------------------------------------------------------------------
 
 /// Carried from one build of a document to the next: the stable scope table,
@@ -166,17 +164,17 @@ impl Unscheduled {
 /// held, stored per (scope, template slot) so an iteration that disappears
 /// and reappears comes back as it was left.
 #[derive(Debug, Clone, Default)]
-pub struct Prior {
+pub struct Carryover {
     /// The last build's structure: its scope table, seed and options, and in
     /// `values` every essential value it held.
     structure: Structure,
     counts: HashMap<(ScopeId, NodeId), u32>,
 }
 
-impl Prior {
-    /// The prior of a first build.
-    pub fn new(seed: u64, sample_with_engine: bool) -> Prior {
-        Prior {
+impl Carryover {
+    /// The carryover of a first build.
+    pub fn new(seed: u64, sample_with_engine: bool) -> Carryover {
+        Carryover {
             structure: Structure {
                 seed,
                 sample_with_engine,
@@ -186,9 +184,9 @@ impl Prior {
         }
     }
 
-    /// Build a prior from a document, moving its structure out (the
+    /// Build a carryover from a document, moving its structure out (the
     /// document is about to be replaced). `restore` puts it back on error.
-    pub fn take_from(doc: &mut Document) -> Prior {
+    pub fn take_from(doc: &mut Document) -> Carryover {
         let counts = doc
             .structure
             .repeats
@@ -208,7 +206,7 @@ impl Prior {
             }
             row[slot as usize] = Some(v);
         }
-        Prior { structure, counts }
+        Carryover { structure, counts }
     }
 
     pub fn restore(self, doc: &mut Document) {

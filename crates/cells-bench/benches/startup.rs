@@ -23,7 +23,12 @@ fn startup(c: &mut Criterion) {
         // settled total is in `total_from_*`.
         g.bench_with_input(BenchmarkId::new("build", &spec), &dast, |b, dast| {
             b.iter(|| {
-                cells_core::build::build_once(dast, &mut cells_sym::flat::Flat::new()).unwrap()
+                cells_core::build::build(
+                    dast,
+                    &Default::default(),
+                    &mut cells_sym::flat::Flat::new(),
+                )
+                .unwrap()
             })
         });
         g.bench_with_input(BenchmarkId::new("schedule", &spec), &dast, |b, dast| {
@@ -31,7 +36,10 @@ fn startup(c: &mut Criterion) {
                 || {
                     let mut e: Box<dyn cells_sym::SymEngine> =
                         Box::new(cells_sym::flat::Flat::new());
-                    (cells_core::build::build_once(dast, &mut *e).unwrap(), e)
+                    (
+                        cells_core::build::build(dast, &Default::default(), &mut *e).unwrap(),
+                        e,
+                    )
                 },
                 |(u, mut e)| u.schedule(dast.clone(), &mut e).unwrap(),
                 BatchSize::SmallInput,

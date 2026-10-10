@@ -2,7 +2,7 @@ mod common;
 
 use cells_core::testing::reference;
 use cells_core::testing::test_utils::load;
-use cells_core::{Document, Tick};
+use cells_core::{Document, TickOutcome};
 use common::req;
 
 /// Request `value` on `name.prop` and assert the forward pass reproduces it.
@@ -194,7 +194,7 @@ fn evaluators_agree() {
     let mut results = Vec::new();
     for ev in evs.iter_mut() {
         let mut doc = base.clone();
-        let mut tick = Tick::default();
+        let mut tick = TickOutcome::default();
         for &r in &reqs {
             let inv = cells_core::tick::invert::invert_requests(
                 &doc.program,

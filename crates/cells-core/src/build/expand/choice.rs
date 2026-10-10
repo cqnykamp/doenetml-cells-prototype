@@ -78,7 +78,7 @@ impl<'c, 'a> Builder<'c, 'a> {
                 def.num_to_select
             )));
         }
-        let mut h = splitmix(self.prior.structure.seed ^ 0x5eed_5e1e_c7ed_0001);
+        let mut h = splitmix(self.carryover.structure.seed ^ 0x5eed_5e1e_c7ed_0001);
         h = splitmix(h ^ node as u64);
         let mut s = scope;
         while s != 0 {

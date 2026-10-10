@@ -75,7 +75,7 @@ pub(in crate::build) struct Instance {
 
 pub(in crate::build) struct Builder<'c, 'a> {
     pub(in crate::build) c: &'c Compiled<'a>,
-    pub(in crate::build) prior: &'c Prior,
+    pub(in crate::build) carryover: &'c Carryover,
     pub(in crate::build) engine: &'c mut dyn SymEngine,
     /// Templates of `Instantiate` instructions, cell leaves holding slots
     /// until emit rebinds them to cells and imports them.
@@ -91,7 +91,7 @@ pub(in crate::build) struct Builder<'c, 'a> {
     /// Owning component of each slot (prop index = slot - slot_base[comp]).
     pub(in crate::build) slot_comp: Vec<CompIdx>,
     pub(in crate::build) op_inputs: Vec<SlotId>,
-    /// Carried over from the prior build and extended.
+    /// Carried over from the previous build and extended.
     pub(in crate::build) scopes: ScopeTable,
     /// Per scope: element -> component, for the scope's template.
     pub(in crate::build) scope_comps: Vec<Vec<CompIdx>>,
@@ -120,11 +120,11 @@ pub(in crate::build) struct Builder<'c, 'a> {
 impl<'c, 'a> Builder<'c, 'a> {
     pub(in crate::build) fn new(
         c: &'c Compiled<'a>,
-        prior: &'c Prior,
+        carryover: &'c Carryover,
         engine: &'c mut dyn SymEngine,
     ) -> Self {
         // Size the columns from the previous build when there was one.
-        let guess = prior
+        let guess = carryover
             .structure
             .values
             .iter()
@@ -133,7 +133,7 @@ impl<'c, 'a> Builder<'c, 'a> {
             .max(c.templates.iter().map(|t| t.elems.len()).sum::<usize>() * 2);
         Builder {
             c,
-            prior,
+            carryover,
             engine,
             sym_templates: Vec::new(),
             math_slots: Vec::new(),
@@ -154,7 +154,7 @@ impl<'c, 'a> Builder<'c, 'a> {
             sources: Vec::with_capacity(guess * 2),
             slot_comp: Vec::with_capacity(guess * 2),
             op_inputs: Vec::with_capacity(guess),
-            scopes: prior.structure.scopes.clone(),
+            scopes: carryover.structure.scopes.clone(),
             scope_comps: Vec::new(),
             comp_instance: Vec::with_capacity(guess),
             instances: Vec::with_capacity(guess),
@@ -315,7 +315,12 @@ impl<'c, 'a> Builder<'c, 'a> {
             let kids = match self.c.templates[t].elems[e].body {
                 Body::Repeat { template } => {
                     let node = self.c.templates[t].elems[e].node;
-                    let n = self.prior.counts.get(&(scope, node)).copied().unwrap_or(0);
+                    let n = self
+                        .carryover
+                        .counts
+                        .get(&(scope, node))
+                        .copied()
+                        .unwrap_or(0);
                     let mut kids = Vec::new();
                     let mut iter_scopes = Vec::with_capacity(n as usize);
                     for k in 1..=n {

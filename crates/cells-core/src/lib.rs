@@ -35,4 +35,4 @@ pub use document::{
 pub use error::{Error, Result};
 pub use tick::eval::{DirtyClosure, Evaluator, FullRecompute};
 pub use tick::invert::PointRequest;
-pub use tick::{Request, Tick};
+pub use tick::{Request, TickOutcome};

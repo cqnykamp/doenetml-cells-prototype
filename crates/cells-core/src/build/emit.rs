@@ -5,7 +5,7 @@
 use super::*;
 
 impl<'c, 'a> Builder<'c, 'a> {
-    pub(in crate::build) fn finish(mut self) -> Result<Unscheduled> {
+    pub(in crate::build) fn finish(mut self) -> Result<BuildOutput> {
         let profile = std::env::var_os("CELLS_BUILD_PROFILE").is_some();
         let clock = web_time::Instant::now();
         let lap = |what: &str| {
@@ -39,7 +39,7 @@ impl<'c, 'a> Builder<'c, 'a> {
         lap("union-find");
 
         // Number cells: essential classes first, then fixed, then derived.
-        // Essential values come from the prior build when the slot existed.
+        // Essential values come from the previous build when the slot existed.
         let roots: Vec<u32> = (0..n as SlotId).map(|s| uf.find(s)).collect();
         if let Some(s) = (0..n).find(|&s| class_def[roots[s] as usize] == NONE) {
             return Err(Error::Cycle(self.slot_label(s as SlotId)));
@@ -60,7 +60,7 @@ impl<'c, 'a> Builder<'c, 'a> {
                 Source::Literal(v) | Source::Default(v) => {
                     let (scope, tslot) = self.template_slot(s as SlotId);
                     let value = self
-                        .prior
+                        .carryover
                         .structure
                         .values
                         .get(scope as usize)
@@ -120,7 +120,7 @@ impl<'c, 'a> Builder<'c, 'a> {
         let mut tapes = Vec::new();
         // Compile curves whose expression has a fixed shape (plan 5, change
         // 1), unless the load asked for engine sampling.
-        let compile = !self.prior.structure.sample_with_engine;
+        let compile = !self.carryover.structure.sample_with_engine;
         let mut fixed_shape: HashMap<SlotId, Option<cells_sym::Handle>> = HashMap::new();
         for &s in &derived_defs {
             let (mut spec, start, count) = match &self.sources[s] {
@@ -209,7 +209,7 @@ impl<'c, 'a> Builder<'c, 'a> {
         lap("structural depth");
 
         // The value store grows with the scope table; rows fill lazily.
-        let mut values = self.prior.structure.values.clone();
+        let mut values = self.carryover.structure.values.clone();
         values.resize(self.scopes.len(), Vec::new());
 
         let structure = Structure {
@@ -221,8 +221,8 @@ impl<'c, 'a> Builder<'c, 'a> {
             repeat_cross_reads: cross_reads,
             repeats: self.repeats,
             counts_used: self.counts_used,
-            seed: self.prior.structure.seed,
-            sample_with_engine: self.prior.structure.sample_with_engine,
+            seed: self.carryover.structure.seed,
+            sample_with_engine: self.carryover.structure.sample_with_engine,
         };
 
         // Lazy labels for cycle errors.
@@ -261,7 +261,7 @@ impl<'c, 'a> Builder<'c, 'a> {
         comps.prop_cells.shrink_to_fit();
         comps.node.shrink_to_fit();
         comps.scope.shrink_to_fit();
-        Ok(Unscheduled {
+        Ok(BuildOutput {
             cells,
             n_essential,
             n_fixed,

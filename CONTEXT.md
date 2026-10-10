@@ -56,7 +56,9 @@ override individual props with attributes (`<point extend="$p1" y="3"/>`);
 overridden props get their own cells, the rest stay aliased.
 
 **Tick** — One pass of the core in response to an action: resolve requests to
-essential cells, recompute derived cells, report changed cells.
+essential cells, recompute derived cells, report changed cells. What a tick
+reports is its **tick outcome** (`TickOutcome`): the changed cells, dropped
+requests, and whether the document was rebuilt.
 
 **Request** — A renderer's ask to change a cell to a value. Requests are
 cell-addressed. The core resolves a request by inverting through operators
@@ -177,7 +179,7 @@ plan* (a literal, an alias, an operator over other props, a math) and each
 reference's *reference plan* (a path through names and indices). Expansion
 turns plans into slots per scope.
 
-**Prior** — What one build hands the next: the structure of the last build
+**Carryover** — What one build hands the next: the structure of the last build
 (its scope table, every essential value by key, the seed) and each repeat's
 iteration count.
 

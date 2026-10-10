@@ -7,18 +7,18 @@
 use super::Document;
 use crate::tick::eval::{Evaluator, FullRecompute};
 use crate::tick::invert::{PointRequest, invert_requests};
-use crate::tick::{Request, Tick};
+use crate::tick::{Request, TickOutcome};
 
 impl Document {
     /// Apply requests: invert each to an essential cell (later requests win
     /// when two land on one cell), recompute, and report what changed.
-    pub fn request(&mut self, requests: &[Request]) -> Tick {
+    pub fn request(&mut self, requests: &[Request]) -> TickOutcome {
         self.request_with_groups(&mut FullRecompute, requests, &[])
     }
 
     /// Apply a point group: points dragged together, which keep their shape
     /// when one of them is constrained (ADR 0006).
-    pub fn request_points(&mut self, points: &[PointRequest]) -> Tick {
+    pub fn request_points(&mut self, points: &[PointRequest]) -> TickOutcome {
         self.request_with_groups(&mut FullRecompute, &[], &[points.to_vec()])
     }
 
@@ -28,8 +28,8 @@ impl Document {
         evaluator: &mut (impl Evaluator + ?Sized),
         requests: &[Request],
         groups: &[Vec<PointRequest>],
-    ) -> Tick {
-        let mut tick = Tick::default();
+    ) -> TickOutcome {
+        let mut tick = TickOutcome::default();
         // An infinite ask is never meaningful state (NaN is: an emptied
         // input), and the current core rejects it; drop it before inverting.
         let (mut finite, infinite): (Vec<Request>, Vec<Request>) = requests
