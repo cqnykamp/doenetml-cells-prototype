@@ -306,7 +306,9 @@ pub struct PropDef {
     pub name: &'static str,
     pub default: f64,
     pub from: PropFrom,
-    /// Attribute to read instead of `name`, for `PropFrom::Attribute`.
+    /// Attribute to read instead of `name`, for `PropFrom::Attribute`; for
+    /// `PropFrom::Children`, the attribute that stands in for blank
+    /// children (a mathInput's `prefill`).
     pub attr: Option<&'static str>,
     /// An attribute whose reference, when present, this prop aliases
     /// (a slider's `bindValueTo`). Takes precedence over `attr`.

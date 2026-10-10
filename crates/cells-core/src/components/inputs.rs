@@ -28,10 +28,10 @@ pub(super) const MATH_INPUT: ComponentTypeInfo = info(&["mathInput"], MATH_INPUT
 
 // A mathInput's value is bound by a child reference or `bindValueTo`,
 // else it is the `prefill` (the builder reads it). The builder plans
-// `expr` from what `value` turned out to be.
+// `expr` from what `value` turned out to be (`plan_math_input`).
 const MATH_INPUT_PROPS: &[PropDef] = &props([
     children("value").attribute("prefill").bind("bindValueTo"),
-    attr("expr", f64::NAN).attribute("(planned)"),
+    planned("expr"),
 ]);
 
 pub mod math_input {
