@@ -31,7 +31,7 @@
 //!
 //! **Compile** lives in `compile.rs` (the walk and each element's shape),
 //! `attrs.rs` (attribute and math sources), `refs.rs` (names and reference
-//! paths), `expr.rs` (the parse arena for math text), `geometry.rs` (the
+//! paths), `expr.rs` (the parse arena for math text), `geometry/` (the
 //! planned kinds), `choice.rs` with `condition.rs`, `copies.rs`
 //! (`extend`) and `fix.rs` (`fixed`); what it produces is in `plan.rs`.
 //! **Expand** lives in `expand.rs` (with the builder's state),

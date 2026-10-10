@@ -6,12 +6,12 @@ vocabulary, and `docs/adr/` for recorded decisions.
 
 ## Layout
 
-- `crates/cells-core` — the core. `dast.rs` reads the DAST (JSON or the
-  binary `CDST` wire format, ADR 0002); `components.rs` describes each kind
+- `crates/cells-core` — the core. `dast/` reads the DAST (JSON or the
+  binary `CDST` wire format, ADR 0002); `components/` describes each kind
   (one `KINDS` row: tags, props, flags) and names prop positions
   (`components::prop`); `build.rs` is the build's entry point and
   `build/` compiles templates once (`compile.rs`, `attrs.rs`, `refs.rs`,
-  `geometry.rs`, `choice.rs`, into the types in `plan.rs`), stamps them per
+  `geometry/`, `choice.rs`, into the types in `plan.rs`), stamps them per
   scope (`expand.rs`, `resolve.rs`, `expand_math.rs`, `scoring.rs`) and emits
   cells and the program (`emit.rs`), rebuilding the whole document on
   structural change (ADR 0004); `program/` is the instruction set the build
