@@ -2,12 +2,15 @@
 //! running the TypeScript parser through node, mirroring how the current core
 //! gets its DAST.
 
+use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::io::Write;
 
 pub fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap()
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .unwrap()
 }
 
 /// Parse DoenetML source to DAST JSON via `scripts/parse-dast.mjs`.
@@ -20,7 +23,12 @@ pub fn dast_json(source: &str) -> String {
         .stderr(Stdio::inherit())
         .spawn()
         .expect("node must be on PATH to parse DoenetML");
-    child.stdin.take().unwrap().write_all(source.as_bytes()).unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(source.as_bytes())
+        .unwrap();
     let out = child.wait_with_output().unwrap();
     assert!(out.status.success(), "parse-dast.mjs failed");
     String::from_utf8(out.stdout).unwrap()

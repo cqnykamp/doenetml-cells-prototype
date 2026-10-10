@@ -8,7 +8,13 @@ impl<'a> Compiler<'a> {
     /// `fixed`-like attributes of an element. A literal true fixes it at
     /// build time; a reference is a flag cell, so the element is gated
     /// while the flag is nonzero. Several references gate on any of them.
-    pub(super) fn plan_fix(&mut self, t: TemplateId, scope: ElemId, el: NodeId, names: &[&str]) -> Result<Fix> {
+    pub(super) fn plan_fix(
+        &mut self,
+        t: TemplateId,
+        scope: ElemId,
+        el: NodeId,
+        names: &[&str],
+    ) -> Result<Fix> {
         let d = self.c.dast;
         let mut flags = Vec::new();
         for &name in names {
@@ -21,7 +27,11 @@ impl<'a> Compiler<'a> {
             }
             flags.push(self.plan_value(t, scope, name, d.attr_children(a), None)?);
         }
-        Ok(if flags.is_empty() { Fix::Off } else { Fix::Dynamic(flags) })
+        Ok(if flags.is_empty() {
+            Fix::Off
+        } else {
+            Fix::Dynamic(flags)
+        })
     }
 }
 
@@ -61,17 +71,30 @@ fn gate_slots(props: &mut Vec<Option<SourcePlan>>, flags: Vec<SourcePlan>) {
     let mut flag = push(props, flags.next().expect("a dynamic fix has a flag"));
     for f in flags {
         let g = push(props, f);
-        flag = push(props, SourcePlan::Op(OpSpec::Max, vec![Arg::Own(flag), Arg::Own(g)]));
+        flag = push(
+            props,
+            SourcePlan::Op(OpSpec::Max, vec![Arg::Own(flag), Arg::Own(g)]),
+        );
     }
     for i in 0..n {
         let moved = match &props[i] {
             Some(SourcePlan::Inherit) => SourcePlan::InheritFrom(i as u8),
-            Some(SourcePlan::Literal(_) | SourcePlan::Default(_) | SourcePlan::Alias(Arg::Ref(..) | Arg::Elem(..)) | SourcePlan::Math(_)) => props[i].take().unwrap(),
-            Some(SourcePlan::Op(_, args)) if args.iter().any(|a| !matches!(a, Arg::Own(_))) => props[i].take().unwrap(),
+            Some(
+                SourcePlan::Literal(_)
+                | SourcePlan::Default(_)
+                | SourcePlan::Alias(Arg::Ref(..) | Arg::Elem(..))
+                | SourcePlan::Math(_),
+            ) => props[i].take().unwrap(),
+            Some(SourcePlan::Op(_, args)) if args.iter().any(|a| !matches!(a, Arg::Own(_))) => {
+                props[i].take().unwrap()
+            }
             _ => continue,
         };
         let h = push(props, moved);
-        props[i] = Some(SourcePlan::Op(OpSpec::Hold, vec![Arg::Own(h), Arg::Own(flag)]));
+        props[i] = Some(SourcePlan::Op(
+            OpSpec::Hold,
+            vec![Arg::Own(h), Arg::Own(flag)],
+        ));
     }
 }
 

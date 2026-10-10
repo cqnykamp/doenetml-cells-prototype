@@ -4,8 +4,8 @@
 //! stdin:  {"doc": "<doenetml>", "steps": [{"target": "s", "value": 3.7}, ...], "observe": ["s", "n"]}
 //! stdout: {"initial": [..], "steps": [{"values": [..], "dropped": n}, ...]}
 //! Values are `value` props of the observed components; NaN prints as null.
-use cells_core::test_utils::load;
 use cells_core::Request;
+use cells_core::test_utils::load;
 use std::io::Read;
 
 fn main() {
@@ -19,9 +19,20 @@ fn main() {
             return;
         }
     };
-    let observe: Vec<&str> = scenario["observe"].as_array().unwrap().iter().map(|v| v.as_str().unwrap()).collect();
+    let observe: Vec<&str> = scenario["observe"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
     let read = |doc: &cells_core::Document| -> Vec<serde_json::Value> {
-        observe.iter().map(|n| match doc.value(n, "value") { Some(v) if v.is_finite() => serde_json::json!(v), _ => serde_json::Value::Null }).collect()
+        observe
+            .iter()
+            .map(|n| match doc.value(n, "value") {
+                Some(v) if v.is_finite() => serde_json::json!(v),
+                _ => serde_json::Value::Null,
+            })
+            .collect()
     };
     let initial = read(&doc);
     let mut steps = Vec::new();
@@ -36,5 +47,8 @@ fn main() {
         let tick = doc.request(&[Request { cell, value }]);
         steps.push(serde_json::json!({ "values": read(&doc), "dropped": tick.dropped.len() }));
     }
-    println!("{}", serde_json::json!({ "initial": initial, "steps": steps }));
+    println!(
+        "{}",
+        serde_json::json!({ "initial": initial, "steps": steps })
+    );
 }

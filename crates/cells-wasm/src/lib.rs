@@ -2,7 +2,9 @@
 //! over wasm memory (see `cells_ptr`/`cells_len`), receives a one-time render
 //! manifest, and writes with cell-addressed requests. See ADR 0001.
 
-use cells_core::{DirtyClosure, Document, LoadOptions, Evaluator, FullRecompute, PointRequest, Request};
+use cells_core::{
+    DirtyClosure, Document, Evaluator, FullRecompute, LoadOptions, PointRequest, Request,
+};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -43,11 +45,32 @@ impl Core {
             "A" => Box::new(cells_sym::flat::Flat::new()),
             #[cfg(feature = "engine-r")]
             "R" => Box::new(cells_sym_mer::Mer::new()),
-            other => return Err(JsError::new(&format!("no symbolic engine '{other}' in this build"))),
+            other => {
+                return Err(JsError::new(&format!(
+                    "no symbolic engine '{other}' in this build"
+                )));
+            }
         };
-        let (doc, timings) = Document::load(dast, LoadOptions { engine: Some(engine), seed: seed as u64, ..Default::default() }).map_err(|e| JsError::new(&e.to_string()))?;
-        let evaluator: Box<dyn Evaluator> = Box::new(DirtyClosure::new(&doc.program, doc.cells.len()));
-        Ok(Core { doc, evaluator, timings, last_dropped: 0, last_rebuilt: false, last_rebuild_error: None, last_rebuild_ms: 0.0 })
+        let (doc, timings) = Document::load(
+            dast,
+            LoadOptions {
+                engine: Some(engine),
+                seed: seed as u64,
+                ..Default::default()
+            },
+        )
+        .map_err(|e| JsError::new(&e.to_string()))?;
+        let evaluator: Box<dyn Evaluator> =
+            Box::new(DirtyClosure::new(&doc.program, doc.cells.len()));
+        Ok(Core {
+            doc,
+            evaluator,
+            timings,
+            last_dropped: 0,
+            last_rebuilt: false,
+            last_rebuild_error: None,
+            last_rebuild_ms: 0.0,
+        })
     }
 
     /// Parse what a student typed into the engine: the value to request on
@@ -111,12 +134,24 @@ impl Core {
 
     /// Tag names indexed by kind discriminant, JSON array.
     pub fn kind_tags(&self) -> String {
-        serde_json::to_string(&cells_core::components::ComponentKind::ALL.iter().map(|k| k.tag()).collect::<Vec<_>>()).unwrap()
+        serde_json::to_string(
+            &cells_core::components::ComponentKind::ALL
+                .iter()
+                .map(|k| k.tag())
+                .collect::<Vec<_>>(),
+        )
+        .unwrap()
     }
 
     /// Prop names per kind, JSON array of arrays, in the order of `kind_tags()`.
     pub fn kind_props(&self) -> String {
-        serde_json::to_string(&cells_core::components::ComponentKind::ALL.iter().map(|k| k.prop_defs().iter().map(|p| p.name).collect::<Vec<_>>()).collect::<Vec<_>>()).unwrap()
+        serde_json::to_string(
+            &cells_core::components::ComponentKind::ALL
+                .iter()
+                .map(|k| k.prop_defs().iter().map(|p| p.name).collect::<Vec<_>>())
+                .collect::<Vec<_>>(),
+        )
+        .unwrap()
     }
 
     pub fn comp_name_ptr(&self) -> *const u32 {
@@ -171,20 +206,33 @@ impl Core {
     /// the tick rebuilt the document (`last_rebuilt`), the list is empty and
     /// every pointer and length above must be re-read.
     pub fn request(&mut self, cells: &[u32], values: &[f64]) -> Vec<u32> {
-        let reqs: Vec<Request> = cells.iter().zip(values).map(|(&cell, &value)| Request { cell, value }).collect();
+        let reqs: Vec<Request> = cells
+            .iter()
+            .zip(values)
+            .map(|(&cell, &value)| Request { cell, value })
+            .collect();
         self.apply(&reqs, &[])
     }
 
     /// Points dragged together, as `x0, y0, x1, y1, ...`: one point group
     /// (ADR 0006), so a constrained point carries the others with it.
     pub fn request_points(&mut self, cells: &[u32], values: &[f64]) -> Vec<u32> {
-        let pts: Vec<PointRequest> = cells.chunks_exact(2).zip(values.chunks_exact(2)).map(|(c, v)| PointRequest { cells: [c[0], c[1]], values: [v[0], v[1]] }).collect();
+        let pts: Vec<PointRequest> = cells
+            .chunks_exact(2)
+            .zip(values.chunks_exact(2))
+            .map(|(c, v)| PointRequest {
+                cells: [c[0], c[1]],
+                values: [v[0], v[1]],
+            })
+            .collect();
         self.apply(&[], &[pts])
     }
 
     fn apply(&mut self, reqs: &[Request], groups: &[Vec<PointRequest>]) -> Vec<u32> {
         let clock = web_time::Instant::now();
-        let tick = self.doc.request_with_groups(self.evaluator.as_mut(), reqs, groups);
+        let tick = self
+            .doc
+            .request_with_groups(self.evaluator.as_mut(), reqs, groups);
         self.last_dropped = tick.dropped.len() as u32;
         self.last_rebuilt = tick.rebuilt;
         self.last_rebuild_error = tick.rebuild_error;
@@ -212,7 +260,11 @@ impl Core {
     }
 
     pub fn component_tag(&self, idx: u32) -> Option<String> {
-        if (idx as usize) < self.doc.n_components() { Some(self.doc.kind(idx).tag().to_string()) } else { None }
+        if (idx as usize) < self.doc.n_components() {
+            Some(self.doc.kind(idx).tag().to_string())
+        } else {
+            None
+        }
     }
 
     /// Cells of a prop by name, including virtual (`coords`, `center`) and
@@ -225,7 +277,11 @@ impl Core {
     }
 
     pub fn cell_value(&self, cell: u32) -> f64 {
-        self.doc.cells.get(cell as usize).copied().unwrap_or(f64::NAN)
+        self.doc
+            .cells
+            .get(cell as usize)
+            .copied()
+            .unwrap_or(f64::NAN)
     }
 
     /// Whether a cell is essential (state), fixed (a constant), or derived.
@@ -258,12 +314,20 @@ impl Core {
     /// The text a component shows (the current core's `text`), through the
     /// active case of a reactive choice only.
     pub fn component_text(&self, idx: u32) -> String {
-        if (idx as usize) < self.doc.n_components() { self.doc.rendered_text(idx) } else { String::new() }
+        if (idx as usize) < self.doc.n_components() {
+            self.doc.rendered_text(idx)
+        } else {
+            String::new()
+        }
     }
 
     /// The string a `<text>` value cell holds.
     pub fn text_value(&self, cell: u32) -> String {
-        if (cell as usize) < self.doc.cells.len() { self.doc.text_value(cell) } else { String::new() }
+        if (cell as usize) < self.doc.cells.len() {
+            self.doc.text_value(cell)
+        } else {
+            String::new()
+        }
     }
 
     /// Text of the expression a math cell holds, for display.

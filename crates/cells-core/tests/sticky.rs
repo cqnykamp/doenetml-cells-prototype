@@ -29,7 +29,9 @@ const SCENE: &str = r#"
 const XY: [(&str, &str); 4] = [("x1", "y1"), ("x2", "y2"), ("x3", "y3"), ("x4", "y4")];
 
 fn verts(doc: &cells_core::Document, path: &str, n: usize) -> Vec<[f64; 2]> {
-    (0..n).map(|i| [v(doc, path, XY[i].0), v(doc, path, XY[i].1)]).collect()
+    (0..n)
+        .map(|i| [v(doc, path, XY[i].0), v(doc, path, XY[i].1)])
+        .collect()
 }
 
 fn check(doc: &cells_core::Document, a: &[[f64; 2]], b: &[[f64; 2]], p: [f64; 2]) {
@@ -37,11 +39,17 @@ fn check(doc: &cells_core::Document, a: &[[f64; 2]], b: &[[f64; 2]], p: [f64; 2]
         for (path, want) in [(format!("{g}.sg.pg1"), a), (format!("{g}.sg.pg2"), b)] {
             let got = verts(doc, &path, want.len());
             for (x, y) in got.iter().zip(want) {
-                assert!(close(x[0], y[0]) && close(x[1], y[1]), "{path}: {got:?} != {want:?}");
+                assert!(
+                    close(x[0], y[0]) && close(x[1], y[1]),
+                    "{path}: {got:?} != {want:?}"
+                );
             }
         }
         let path = format!("{g}.sg.A");
-        assert!(close(v(doc, &path, "x"), p[0]) && close(v(doc, &path, "y"), p[1]), "{path}");
+        assert!(
+            close(v(doc, &path, "x"), p[0]) && close(v(doc, &path, "y"), p[1]),
+            "{path}"
+        );
     }
     assert_eq!(reference::check(doc), None);
 }
@@ -119,7 +127,10 @@ fn members_from_a_repeat_attract() {
     assert_eq!((v(&doc, "A", "x"), v(&doc, "A", "y")), (1.0, 2.0));
     move_point(&mut doc, "A", -5.0, -5.0);
     move_point(&mut doc, "r[3].q", -4.8, -5.1);
-    assert_eq!((v(&doc, "r[3].q", "x"), v(&doc, "r[3].q", "y")), (-5.0, -5.0));
+    assert_eq!(
+        (v(&doc, "r[3].q", "x"), v(&doc, "r[3].q", "y")),
+        (-5.0, -5.0)
+    );
     assert_eq!((v(&doc, "r[2].q", "x"), v(&doc, "r[2].q", "y")), (1.0, 2.0));
 }
 

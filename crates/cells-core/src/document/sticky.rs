@@ -42,16 +42,37 @@ impl Document {
             if self.kind(g) != ComponentKind::StickyGroup {
                 continue;
             }
-            let mut t = StickyTable { threshold: self.comp_cells(g)[prop::sticky_group::THRESHOLD], relative: self.comp_cells(g)[prop::sticky_group::RELATIVE], bounds: None, members: Vec::new(), points: Vec::new(), index: HashMap::new(), gates: Vec::new() };
-            if let Some(p) = self.parent(g).filter(|&p| self.kind(p) == ComponentKind::Graph) {
+            let mut t = StickyTable {
+                threshold: self.comp_cells(g)[prop::sticky_group::THRESHOLD],
+                relative: self.comp_cells(g)[prop::sticky_group::RELATIVE],
+                bounds: None,
+                members: Vec::new(),
+                points: Vec::new(),
+                index: HashMap::new(),
+                gates: Vec::new(),
+            };
+            if let Some(p) = self
+                .parent(g)
+                .filter(|&p| self.kind(p) == ComponentKind::Graph)
+            {
                 let c = self.comp_cells(p);
-                t.bounds = Some([c[prop::graph::XMIN], c[prop::graph::XMAX], c[prop::graph::YMIN], c[prop::graph::YMAX]]);
+                t.bounds = Some([
+                    c[prop::graph::XMIN],
+                    c[prop::graph::XMAX],
+                    c[prop::graph::YMIN],
+                    c[prop::graph::YMAX],
+                ]);
             }
             for (m, gates) in self.comps.sticky_members(g) {
                 let kind = self.kind(m);
                 let (shape, first, max) = kind.sticky_layout().unwrap();
                 let cells = self.comp_cells(m);
-                let n = if kind == ComponentKind::Polygon { (self.cells[cells[prop::polygon::NUM_VERTICES] as usize].max(0.0) as usize).min(max) } else { max };
+                let n = if kind == ComponentKind::Polygon {
+                    (self.cells[cells[prop::polygon::NUM_VERTICES] as usize].max(0.0) as usize)
+                        .min(max)
+                } else {
+                    max
+                };
                 let rigid = n > 0 && self.is_shape_output(cells[first]);
                 let mut ids = Vec::with_capacity(n);
                 for i in 0..n {
@@ -68,7 +89,11 @@ impl Document {
                     };
                     ids.push(id);
                 }
-                t.members.push(Member { shape, rigid, points: ids });
+                t.members.push(Member {
+                    shape,
+                    rigid,
+                    points: ids,
+                });
                 t.gates.push(gates);
             }
             let mut key: Vec<CellIdx> = t.points.iter().map(|p| p[0]).collect();
@@ -83,12 +108,20 @@ impl Document {
     /// A rigid polygon's vertices are outputs of its `Shape` instruction.
     fn is_shape_output(&self, cell: CellIdx) -> bool {
         let p = self.program.producer[cell as usize];
-        p != u32::MAX && matches!(self.program.instrs[p as usize].op, Op::Vec(VecOp::Shape { .. }, ..))
+        p != u32::MAX
+            && matches!(
+                self.program.instrs[p as usize].op,
+                Op::Vec(VecOp::Shape { .. }, ..)
+            )
     }
 
     /// Snap the requests on member cells, in place. Points a snap moves
     /// that were not requested are appended as scalar requests.
-    pub(crate) fn snap_sticky(&self, requests: &mut Vec<Request>, groups: &mut [Vec<PointRequest>]) {
+    pub(crate) fn snap_sticky(
+        &self,
+        requests: &mut Vec<Request>,
+        groups: &mut [Vec<PointRequest>],
+    ) {
         for t in &self.sticky {
             let cur = |c: CellIdx| self.cells[c as usize];
             let mut requested: Vec<Option<Pt>> = vec![None; t.points.len()];
@@ -113,9 +146,19 @@ impl Document {
             let members: Cow<[Member]> = if t.gates.iter().all(Vec::is_empty) {
                 Cow::Borrowed(&t.members)
             } else {
-                Cow::Owned(t.members.iter().zip(&t.gates).filter(|(_, g)| g.iter().all(|&c| cur(c) == 1.0)).map(|(m, _)| m.clone()).collect())
+                Cow::Owned(
+                    t.members
+                        .iter()
+                        .zip(&t.gates)
+                        .filter(|(_, g)| g.iter().all(|&c| cur(c) == 1.0))
+                        .map(|(m, _)| m.clone())
+                        .collect(),
+                )
             };
-            for (id, [x, y]) in snap_group(&members, &current, &requested, &params).into_iter().flatten() {
+            for (id, [x, y]) in snap_group(&members, &current, &requested, &params)
+                .into_iter()
+                .flatten()
+            {
                 let [cx, cy] = t.points[id as usize];
                 snapped.insert(cx, x);
                 snapped.insert(cy, y);
@@ -125,15 +168,25 @@ impl Document {
                     *value = v;
                 }
             }
-            requests.extend(snapped.into_iter().map(|(cell, value)| Request { cell, value }));
+            requests.extend(
+                snapped
+                    .into_iter()
+                    .map(|(cell, value)| Request { cell, value }),
+            );
         }
     }
 }
 
 /// Every (cell, requested value) of a tick: the scalar requests, then each
 /// point group's coordinates.
-fn asked<'r>(requests: &'r mut [Request], groups: &'r mut [Vec<PointRequest>]) -> impl Iterator<Item = (CellIdx, &'r mut f64)> {
+fn asked<'r>(
+    requests: &'r mut [Request],
+    groups: &'r mut [Vec<PointRequest>],
+) -> impl Iterator<Item = (CellIdx, &'r mut f64)> {
     let scalar = requests.iter_mut().map(|r| (r.cell, &mut r.value));
-    let points = groups.iter_mut().flatten().flat_map(|p| p.cells.into_iter().zip(p.values.iter_mut()));
+    let points = groups
+        .iter_mut()
+        .flatten()
+        .flat_map(|p| p.cells.into_iter().zip(p.values.iter_mut()));
     scalar.chain(points)
 }

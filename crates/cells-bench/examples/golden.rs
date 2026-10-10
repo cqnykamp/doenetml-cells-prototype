@@ -23,7 +23,10 @@ fn tree(doc: &Document) -> Vec<(String, CompIdx)> {
         let mut seen: BTreeMap<String, u32> = BTreeMap::new();
         for ch in doc.children(c) {
             if let Child::Component(k) = ch {
-                let label = doc.name(k).map(str::to_string).unwrap_or_else(|| doc.kind(k).tag().to_string());
+                let label = doc
+                    .name(k)
+                    .map(str::to_string)
+                    .unwrap_or_else(|| doc.kind(k).tag().to_string());
                 let n = seen.entry(label.clone()).or_insert(0);
                 *n += 1;
                 walk(doc, k, format!("{path}/{label}[{n}]"), out);
@@ -42,7 +45,13 @@ fn dump(doc: &Document, out: &mut String) {
         for (i, def) in kind.prop_defs().iter().enumerate() {
             let cell = doc.comp_cells(c)[i];
             let v = doc.cells[cell as usize];
-            if doc.program.math.get(cell as usize).copied().unwrap_or(false) {
+            if doc
+                .program
+                .math
+                .get(cell as usize)
+                .copied()
+                .unwrap_or(false)
+            {
                 let _ = write!(out, " {}={:?}", def.name, doc.math_text(cell));
             } else if kind == ComponentKind::Text && i == 0 {
                 let _ = write!(out, " {}={:?}", def.name, doc.text_value(cell));
@@ -113,7 +122,13 @@ fn apply(doc: &mut Document, path: &str, action: &Action) -> Option<Tick> {
     Some(match *action {
         Action::Shift(prop, dx, dy) => {
             let cells = doc.prop_cells(c, prop)?;
-            let pts: Vec<PointRequest> = cells.chunks_exact(2).map(|xy| PointRequest { cells: [xy[0], xy[1]], values: [v(doc, xy[0]) + dx, v(doc, xy[1]) + dy] }).collect();
+            let pts: Vec<PointRequest> = cells
+                .chunks_exact(2)
+                .map(|xy| PointRequest {
+                    cells: [xy[0], xy[1]],
+                    values: [v(doc, xy[0]) + dx, v(doc, xy[1]) + dy],
+                })
+                .collect();
             if pts.is_empty() {
                 return None;
             }
@@ -122,7 +137,10 @@ fn apply(doc: &mut Document, path: &str, action: &Action) -> Option<Tick> {
         Action::Add(prop, d) => {
             let cell = doc.prop_cells(c, prop)?[0];
             let old = v(doc, cell);
-            doc.request(&[Request { cell, value: if old.is_nan() { d } else { old + d } }])
+            doc.request(&[Request {
+                cell,
+                value: if old.is_nan() { d } else { old + d },
+            }])
         }
         Action::Toggle => {
             let cell = doc.prop_cells(c, "value")?[0];
@@ -180,7 +198,13 @@ fn run(source: &str, programs: &mut String, name: &str) -> String {
                 continue;
             }
             Ok(Some(t)) => {
-                let _ = writeln!(out, " dropped={} rebuilt={} error={:?}", t.dropped.len(), t.rebuilt, t.rebuild_error);
+                let _ = writeln!(
+                    out,
+                    " dropped={} rebuilt={} error={:?}",
+                    t.dropped.len(),
+                    t.rebuilt,
+                    t.rebuild_error
+                );
             }
             Err(_) => {
                 let _ = writeln!(out, " PANIC");
@@ -208,12 +232,19 @@ fn sources(root: &Path) -> Vec<(String, PathBuf)> {
         if p.extension().is_some_and(|x| x == "doenet") {
             let spec = p.file_stem().unwrap().to_string_lossy().to_string();
             let key = cells_bench::spec_key(&spec);
-            if smallest.get(&key.0).is_none_or(|(s, _)| cells_bench::spec_key(s) > key) {
+            if smallest
+                .get(&key.0)
+                .is_none_or(|(s, _)| cells_bench::spec_key(s) > key)
+            {
                 smallest.insert(key.0.clone(), (spec, p));
             }
         }
     }
-    out.extend(smallest.into_values().map(|(s, p)| (format!("fixture-{s}"), p)));
+    out.extend(
+        smallest
+            .into_values()
+            .map(|(s, p)| (format!("fixture-{s}"), p)),
+    );
     out.sort();
     out
 }
@@ -224,7 +255,11 @@ fn main() {
     let root = cells_core::test_utils::repo_root();
     let mut programs = String::new();
     for (name, path) in sources(&root) {
-        let text = run(&std::fs::read_to_string(&path).unwrap(), &mut programs, &name);
+        let text = run(
+            &std::fs::read_to_string(&path).unwrap(),
+            &mut programs,
+            &name,
+        );
         let lines = text.lines().count();
         std::fs::write(dir.join(format!("{name}.txt")), text).unwrap();
         eprintln!("{name}: {lines} lines");

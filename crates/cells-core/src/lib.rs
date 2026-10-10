@@ -31,10 +31,13 @@ mod tick;
 pub use program::ops;
 pub use testing::{reference, test_utils};
 
-pub use document::{CellIdx, Child, CompIdx, ComponentTable, Document, LoadOptions, LoadTimings, NONE, Repeat, Request, ScopeId, ScopeTable, Structure, TEXT_BIT, Tick};
+pub use document::{
+    CellIdx, Child, CompIdx, ComponentTable, Document, LoadOptions, LoadTimings, NONE, Repeat,
+    Request, ScopeId, ScopeTable, Structure, TEXT_BIT, Tick,
+};
 pub use error::{Error, Result};
-pub use tick::eval::{DirtyClosure, Evaluator, FullRecompute};
+pub use program::Program;
 pub use program::geo::{Pivot, Produced, RigidOpts, VecOp};
 pub use program::ops::{Instr, Op, OpSpec};
+pub use tick::eval::{DirtyClosure, Evaluator, FullRecompute};
 pub use tick::invert::{Inversion, PointRequest};
-pub use program::Program;

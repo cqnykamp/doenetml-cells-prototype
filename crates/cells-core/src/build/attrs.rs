@@ -7,64 +7,108 @@ use crate::components::prop::{math_input, section};
 impl<'a> Compiler<'a> {
     /// Plans for a kind described by `PropFrom`: attributes, bindings,
     /// computed chains, children.
-    pub(super) fn plan_attrs(&mut self, t: TemplateId, e: ElemId, extend: Option<RefId>) -> Result<()> {
+    pub(super) fn plan_attrs(
+        &mut self,
+        t: TemplateId,
+        e: ElemId,
+        extend: Option<RefId>,
+    ) -> Result<()> {
         let d = self.c.dast;
-        let Elem { node: el, kind, name_scope: scope, .. } = self.c.templates[t].elems[e];
+        let Elem {
+            node: el,
+            kind,
+            name_scope: scope,
+            ..
+        } = self.c.templates[t].elems[e];
         // Without an attribute a prop is the kind's default, or under
         // `extend` the referent's prop.
-        let default = |v: f64| if extend.is_some() { SourcePlan::Inherit } else { SourcePlan::Default(v) };
+        let default = |v: f64| {
+            if extend.is_some() {
+                SourcePlan::Inherit
+            } else {
+                SourcePlan::Default(v)
+            }
+        };
         let mut props: Vec<Option<SourcePlan>> = vec![None; kind.prop_defs().len()];
         for (pi, def) in kind.prop_defs().iter().enumerate() {
             let bound = match def.bind.and_then(|b| d.attr(el, b)) {
                 Some(a) => {
                     let bind = def.bind.unwrap();
-                    let m = self.single_macro(a).ok_or_else(|| Error::BadValue { attr: bind.into(), text: self.attr_text(a).unwrap_or_default() })?;
+                    let m = self.single_macro(a).ok_or_else(|| Error::BadValue {
+                        attr: bind.into(),
+                        text: self.attr_text(a).unwrap_or_default(),
+                    })?;
                     Some(SourcePlan::reference(self.plan_ref(t, scope, m)?))
                 }
                 None => None,
             };
-            let plan = match (bound, def.from) {
-                (Some(p), _) => p,
-                (None, PropFrom::Attribute) => match d.attr(el, def.attr_name()) {
-                    Some(a) => self.plan_value(t, scope, def.attr_name(), d.attr_children(a), def.ref_prop)?,
-                    None => default(def.default),
-                },
-                (None, PropFrom::AttributeOr { alias }) => match d.attr(el, def.attr_name()) {
-                    Some(a) => self.plan_value(t, scope, def.attr_name(), d.attr_children(a), None)?,
-                    None => SourcePlan::own(alias as usize),
-                },
-                (None, PropFrom::Computed { op, args }) => SourcePlan::from_def(op, args),
-                (None, PropFrom::Children) => {
-                    let blank = d.children(el).iter().all(|&n| self.is_blank(n));
-                    // A mathInput's `prefill` stands in for blank children.
-                    let from_attr = def.attr.and_then(|a| d.attr(el, a));
-                    if blank {
-                        match from_attr {
-                            Some(a) => match self.plan_value(t, scope, def.attr_name(), d.attr_children(a), None) {
-                                Ok(p) => p,
-                                Err(Error::BadValue { .. }) => SourcePlan::Math(self.plan_math(t, scope, d.attr_children(a))?),
-                                Err(e) => return Err(e),
-                            },
-                            None => default(def.default),
+            let plan =
+                match (bound, def.from) {
+                    (Some(p), _) => p,
+                    (None, PropFrom::Attribute) => match d.attr(el, def.attr_name()) {
+                        Some(a) => self.plan_value(
+                            t,
+                            scope,
+                            def.attr_name(),
+                            d.attr_children(a),
+                            def.ref_prop,
+                        )?,
+                        None => default(def.default),
+                    },
+                    (None, PropFrom::AttributeOr { alias }) => match d.attr(el, def.attr_name()) {
+                        Some(a) => {
+                            self.plan_value(t, scope, def.attr_name(), d.attr_children(a), None)?
                         }
-                    } else {
-                        match self.plan_value(t, scope, def.name, d.children(el), None) {
-                            // `<number>3</number>` cannot be changed by a drag in
-                            // the current core (no math child to write), so it is
-                            // a constant; an input's literal is its initial state.
-                            Ok(SourcePlan::Literal(v)) if kind == ComponentKind::Number => SourcePlan::Fixed(v),
-                            Ok(p) => p,
-                            // Not a single literal or reference: math text.
-                            Err(Error::BadValue { .. }) => SourcePlan::Math(self.plan_math(t, scope, d.children(el))?),
-                            Err(e) => return Err(e),
+                        None => SourcePlan::own(alias as usize),
+                    },
+                    (None, PropFrom::Computed { op, args }) => SourcePlan::from_def(op, args),
+                    (None, PropFrom::Children) => {
+                        let blank = d.children(el).iter().all(|&n| self.is_blank(n));
+                        // A mathInput's `prefill` stands in for blank children.
+                        let from_attr = def.attr.and_then(|a| d.attr(el, a));
+                        if blank {
+                            match from_attr {
+                                Some(a) => match self.plan_value(
+                                    t,
+                                    scope,
+                                    def.attr_name(),
+                                    d.attr_children(a),
+                                    None,
+                                ) {
+                                    Ok(p) => p,
+                                    Err(Error::BadValue { .. }) => SourcePlan::Math(
+                                        self.plan_math(t, scope, d.attr_children(a))?,
+                                    ),
+                                    Err(e) => return Err(e),
+                                },
+                                None => default(def.default),
+                            }
+                        } else {
+                            match self.plan_value(t, scope, def.name, d.children(el), None) {
+                                // `<number>3</number>` cannot be changed by a drag in
+                                // the current core (no math child to write), so it is
+                                // a constant; an input's literal is its initial state.
+                                Ok(SourcePlan::Literal(v)) if kind == ComponentKind::Number => {
+                                    SourcePlan::Fixed(v)
+                                }
+                                Ok(p) => p,
+                                // Not a single literal or reference: math text.
+                                Err(Error::BadValue { .. }) => {
+                                    SourcePlan::Math(self.plan_math(t, scope, d.children(el))?)
+                                }
+                                Err(e) => return Err(e),
+                            }
                         }
                     }
-                }
-                (None, PropFrom::Derived) => self.plan_op(t, scope, el)?,
-                // Wired once the whole tree exists (`scoring.rs`).
-                (None, PropFrom::Planned) if matches!(kind, ComponentKind::Document | ComponentKind::Section) => SourcePlan::Fixed(f64::NAN),
-                (None, PropFrom::Planned) => unreachable!("planned kinds take plan_geo"),
-            };
+                    (None, PropFrom::Derived) => self.plan_op(t, scope, el)?,
+                    // Wired once the whole tree exists (`scoring.rs`).
+                    (None, PropFrom::Planned)
+                        if matches!(kind, ComponentKind::Document | ComponentKind::Section) =>
+                    {
+                        SourcePlan::Fixed(f64::NAN)
+                    }
+                    (None, PropFrom::Planned) => unreachable!("planned kinds take plan_geo"),
+                };
             props[pi] = Some(plan);
         }
         let mut props: Vec<Option<SourcePlan>> = props;
@@ -74,7 +118,11 @@ impl<'a> Compiler<'a> {
         if kind == ComponentKind::Section {
             self.plan_section_flags(el, &mut props)?;
         }
-        let fix_attrs: &[&str] = if kind == ComponentKind::Graph { &["fixed", "fixAxes"] } else { &["fixed"] };
+        let fix_attrs: &[&str] = if kind == ComponentKind::Graph {
+            &["fixed", "fixAxes"]
+        } else {
+            &["fixed"]
+        };
         self.plan_fix(t, scope, el, fix_attrs)?.apply(&mut props);
         self.c.templates[t].elems[e].props = props.into_iter().map(|p| p.unwrap()).collect();
         Ok(())
@@ -86,20 +134,34 @@ impl<'a> Compiler<'a> {
     fn plan_section_flags(&mut self, el: NodeId, props: &mut [Option<SourcePlan>]) -> Result<()> {
         let d = self.c.dast;
         let tag = match d.str(el) {
-            "division" => d.attr(el, "type").and_then(|a| self.attr_text(a)).map(|t| t.trim().to_string()).unwrap_or_default(),
+            "division" => d
+                .attr(el, "type")
+                .and_then(|a| self.attr_text(a))
+                .map(|t| t.trim().to_string())
+                .unwrap_or_default(),
             tag => tag.to_string(),
         };
-        let (label, &(_, _, aggregate, parent_number)) =
-            crate::components::SECTION_TAGS.iter().enumerate().find(|(_, s)| s.0 == tag).ok_or_else(|| Error::UnsupportedTag(format!("division type=\"{tag}\"")))?;
+        let (label, &(_, _, aggregate, parent_number)) = crate::components::SECTION_TAGS
+            .iter()
+            .enumerate()
+            .find(|(_, s)| s.0 == tag)
+            .ok_or_else(|| Error::UnsupportedTag(format!("division type=\"{tag}\"")))?;
         let flag = |name: &str, default: bool| -> Result<f64> {
             match d.attr(el, name) {
                 None => Ok(if default { 1.0 } else { 0.0 }),
-                Some(a) if self.attr_text(a).is_some() => Ok(if self.attr_flag(el, name) { 1.0 } else { 0.0 }),
-                Some(_) => Err(Error::Unsupported(format!("'{name}' on a <{tag}> must be a literal: it decides how the section is wired"))),
+                Some(a) if self.attr_text(a).is_some() => {
+                    Ok(if self.attr_flag(el, name) { 1.0 } else { 0.0 })
+                }
+                Some(_) => Err(Error::Unsupported(format!(
+                    "'{name}' on a <{tag}> must be a literal: it decides how the section is wired"
+                ))),
             }
         };
         props[section::AGGREGATE] = Some(SourcePlan::Fixed(flag("aggregateScores", aggregate)?));
-        props[section::INCLUDE_PARENT_NUMBER] = Some(SourcePlan::Fixed(flag("includeParentNumber", parent_number)?));
+        props[section::INCLUDE_PARENT_NUMBER] = Some(SourcePlan::Fixed(flag(
+            "includeParentNumber",
+            parent_number,
+        )?));
         props[section::LABEL] = Some(SourcePlan::Fixed(label as f64));
         Ok(())
     }
@@ -113,16 +175,33 @@ impl<'a> Compiler<'a> {
             Some(a) => d.attr_children(a),
             None => d.children(el),
         };
-        let bound = matches!(props[math_input::VALUE], Some(SourcePlan::Alias(_))) || nodes.iter().any(|&n| d.kind(n) == NodeKind::Macro);
+        let bound = matches!(props[math_input::VALUE], Some(SourcePlan::Alias(_)))
+            || nodes.iter().any(|&n| d.kind(n) == NodeKind::Macro);
         if bound {
             props[math_input::EXPR] = Some(SourcePlan::Fixed(f64::NAN));
             return Ok(());
         }
-        let text: String = nodes.iter().filter(|&&n| d.kind(n) == NodeKind::Text).map(|&n| d.str(n)).collect();
+        let text: String = nodes
+            .iter()
+            .filter(|&&n| d.kind(n) == NodeKind::Text)
+            .map(|&n| d.str(n))
+            .collect();
         let text = text.trim();
-        let tree = if text.is_empty() { None } else { Some(cells_sym::parse::parse(text).map_err(|reason| Error::BadMath { text: text.into(), reason })?) };
+        let tree = if text.is_empty() {
+            None
+        } else {
+            Some(
+                cells_sym::parse::parse(text).map_err(|reason| Error::BadMath {
+                    text: text.into(),
+                    reason,
+                })?,
+            )
+        };
         props[math_input::EXPR] = Some(SourcePlan::MathEssential(tree));
-        props[math_input::VALUE] = Some(SourcePlan::computed(OpSpec::Sym(SymKind::Evaluate), vec![math_input::EXPR]));
+        props[math_input::VALUE] = Some(SourcePlan::computed(
+            OpSpec::Sym(SymKind::Evaluate),
+            vec![math_input::EXPR],
+        ));
         Ok(())
     }
 
@@ -130,7 +209,12 @@ impl<'a> Compiler<'a> {
     /// x-range of the graph it sits in, else [-10, 10].
     pub(super) fn plan_symbolic(&mut self, t: TemplateId, e: ElemId) -> Result<()> {
         let d = self.c.dast;
-        let Elem { node: el, kind, name_scope: scope, .. } = self.c.templates[t].elems[e];
+        let Elem {
+            node: el,
+            kind,
+            name_scope: scope,
+            ..
+        } = self.c.templates[t].elems[e];
         let nodes: Vec<NodeId> = d.children(el).to_vec();
         let id = self.plan_sym_math(t, scope, &nodes)?;
         let mut plan = ElemPlan::new(kind.prop_defs().len());
@@ -140,9 +224,17 @@ impl<'a> Compiler<'a> {
                     plan.set(0, SourcePlan::SymExpr(id, Post::None));
                 } else {
                     let of = plan.hidden(SourcePlan::SymExpr(id, Post::None));
-                    plan.set(0, SourcePlan::Op(OpSpec::Sym(SymKind::Derivative), vec![Arg::Own(own_slot(of))]));
+                    plan.set(
+                        0,
+                        SourcePlan::Op(
+                            OpSpec::Sym(SymKind::Derivative),
+                            vec![Arg::Own(own_slot(of))],
+                        ),
+                    );
                 }
-                let graph = (scope != ROOT_SCOPE && self.c.templates[t].elems[scope].kind == ComponentKind::Graph).then_some(scope);
+                let graph = (scope != ROOT_SCOPE
+                    && self.c.templates[t].elems[scope].kind == ComponentKind::Graph)
+                    .then_some(scope);
                 match graph {
                     Some(g) => {
                         plan.set(1, SourcePlan::Alias(Arg::Elem(g, 0)));
@@ -153,18 +245,33 @@ impl<'a> Compiler<'a> {
                         plan.set(2, SourcePlan::Fixed(10.0));
                     }
                 }
-                plan.set(3, SourcePlan::Op(OpSpec::Sym(SymKind::Sample), vec![Arg::Own(0), Arg::Own(1), Arg::Own(2)]));
+                plan.set(
+                    3,
+                    SourcePlan::Op(
+                        OpSpec::Sym(SymKind::Sample),
+                        vec![Arg::Own(0), Arg::Own(1), Arg::Own(2)],
+                    ),
+                );
             }
             ComponentKind::Answer => {
                 let response = match d.attr(el, "response") {
-                    Some(a) => self.plan_value(t, scope, "response", d.attr_children(a), Some("expr"))?,
+                    Some(a) => {
+                        self.plan_value(t, scope, "response", d.attr_children(a), Some("expr"))?
+                    }
                     None => SourcePlan::Fixed(f64::NAN),
                 };
                 plan.set(0, response);
                 plan.set(1, SourcePlan::SymExpr(id, Post::None));
                 plan.set(2, SourcePlan::MathEssential(None));
-                let eq = if self.attr_on(el, "symbolicEquality") { SymKind::EqualsSyntax } else { SymKind::Equals };
-                plan.set(3, SourcePlan::Op(OpSpec::Sym(eq), vec![Arg::Own(2), Arg::Own(1)]));
+                let eq = if self.attr_on(el, "symbolicEquality") {
+                    SymKind::EqualsSyntax
+                } else {
+                    SymKind::Equals
+                };
+                plan.set(
+                    3,
+                    SourcePlan::Op(OpSpec::Sym(eq), vec![Arg::Own(2), Arg::Own(1)]),
+                );
                 let weight = match d.attr(el, "weight") {
                     Some(a) => self.plan_value(t, scope, "weight", d.attr_children(a), None)?,
                     None => SourcePlan::Fixed(1.0),
@@ -181,13 +288,28 @@ impl<'a> Compiler<'a> {
     /// reference aliases another text's value.
     pub(super) fn plan_text(&mut self, t: TemplateId, e: ElemId) -> Result<()> {
         let d = self.c.dast;
-        let Elem { node: el, name_scope: scope, .. } = self.c.templates[t].elems[e];
-        let nodes: Vec<NodeId> = d.children(el).iter().copied().filter(|&n| !self.is_blank(n)).collect();
+        let Elem {
+            node: el,
+            name_scope: scope,
+            ..
+        } = self.c.templates[t].elems[e];
+        let nodes: Vec<NodeId> = d
+            .children(el)
+            .iter()
+            .copied()
+            .filter(|&n| !self.is_blank(n))
+            .collect();
         let plan = match nodes.as_slice() {
             [] => SourcePlan::Fixed(f64::NAN),
             [n] if d.kind(*n) == NodeKind::Text => SourcePlan::Fixed(d.str_id(*n) as f64),
-            [n] if d.kind(*n) == NodeKind::Macro => SourcePlan::reference(self.plan_ref(t, scope, *n)?),
-            _ => return Err(Error::Unsupported("<text> whose content mixes text, references or elements".into())),
+            [n] if d.kind(*n) == NodeKind::Macro => {
+                SourcePlan::reference(self.plan_ref(t, scope, *n)?)
+            }
+            _ => {
+                return Err(Error::Unsupported(
+                    "<text> whose content mixes text, references or elements".into(),
+                ));
+            }
         };
         self.c.templates[t].elems[e].props = vec![plan];
         Ok(())
@@ -206,10 +328,25 @@ impl<'a> Compiler<'a> {
     }
 
     /// A literal number or a single reference.
-    pub(super) fn plan_value(&mut self, t: TemplateId, scope: ElemId, attr: &str, nodes: &[NodeId], ref_prop: Option<&str>) -> Result<SourcePlan> {
+    pub(super) fn plan_value(
+        &mut self,
+        t: TemplateId,
+        scope: ElemId,
+        attr: &str,
+        nodes: &[NodeId],
+        ref_prop: Option<&str>,
+    ) -> Result<SourcePlan> {
         let d = self.c.dast;
-        let macros: Vec<NodeId> = nodes.iter().copied().filter(|&n| d.kind(n) == NodeKind::Macro).collect();
-        let text: String = nodes.iter().filter(|&&n| d.kind(n) == NodeKind::Text).map(|&n| d.str(n)).collect();
+        let macros: Vec<NodeId> = nodes
+            .iter()
+            .copied()
+            .filter(|&n| d.kind(n) == NodeKind::Macro)
+            .collect();
+        let text: String = nodes
+            .iter()
+            .filter(|&&n| d.kind(n) == NodeKind::Text)
+            .map(|&n| d.str(n))
+            .collect();
         let text = text.trim();
         match (macros.len(), text.is_empty()) {
             (1, true) => {
@@ -222,19 +359,41 @@ impl<'a> Compiler<'a> {
             (0, false) => match text {
                 "true" => Ok(SourcePlan::Literal(1.0)),
                 "false" => Ok(SourcePlan::Literal(0.0)),
-                _ => text.parse::<f64>().map(SourcePlan::Literal).map_err(|_| Error::BadValue { attr: attr.into(), text: text.into() }),
+                _ => text
+                    .parse::<f64>()
+                    .map(SourcePlan::Literal)
+                    .map_err(|_| Error::BadValue {
+                        attr: attr.into(),
+                        text: text.into(),
+                    }),
             },
-            _ => Err(Error::BadValue { attr: attr.into(), text: text.into() }),
+            _ => Err(Error::BadValue {
+                attr: attr.into(),
+                text: text.into(),
+            }),
         }
     }
 
-    pub(super) fn plan_op(&mut self, t: TemplateId, scope: ElemId, el: NodeId) -> Result<SourcePlan> {
+    pub(super) fn plan_op(
+        &mut self,
+        t: TemplateId,
+        scope: ElemId,
+        el: NodeId,
+    ) -> Result<SourcePlan> {
         let d = self.c.dast;
-        let kind_text = d.attr(el, "kind").and_then(|a| self.attr_text(a)).unwrap_or_default();
+        let kind_text = d
+            .attr(el, "kind")
+            .and_then(|a| self.attr_text(a))
+            .unwrap_or_default();
         let kind_text = kind_text.trim();
         let param = |name: &str| -> Result<f64> {
-            let a = d.attr(el, name).ok_or_else(|| Error::MissingParam { kind: kind_text.into(), attr: name.into() })?;
-            self.attr_text(a).and_then(|t| t.trim().parse::<f64>().ok()).ok_or_else(|| Error::BadLiteralParam(name.into()))
+            let a = d.attr(el, name).ok_or_else(|| Error::MissingParam {
+                kind: kind_text.into(),
+                attr: name.into(),
+            })?;
+            self.attr_text(a)
+                .and_then(|t| t.trim().parse::<f64>().ok())
+                .ok_or_else(|| Error::BadLiteralParam(name.into()))
         };
         let spec = match kind_text {
             "add" => OpSpec::Add,
@@ -251,7 +410,10 @@ impl<'a> Compiler<'a> {
             "gate" => OpSpec::Hold,
             "scale" => OpSpec::Scale { k: param("k")? },
             "offset" => OpSpec::Offset { k: param("k")? },
-            "clamp" => OpSpec::Clamp { lo: param("lo")?, hi: param("hi")? },
+            "clamp" => OpSpec::Clamp {
+                lo: param("lo")?,
+                hi: param("hi")?,
+            },
             "nanTo" => OpSpec::NanTo { k: param("k")? },
             "lerp" => OpSpec::Lerp { t: param("t")? },
             other => return Err(Error::UnknownOp(other.into())),
@@ -268,26 +430,46 @@ impl<'a> Compiler<'a> {
             }
         }
         if args.len() != spec.arity() {
-            return Err(Error::OpArity { kind: kind_text.into(), expected: spec.arity(), got: args.len() });
+            return Err(Error::OpArity {
+                kind: kind_text.into(),
+                expected: spec.arity(),
+                got: args.len(),
+            });
         }
-        Ok(SourcePlan::Op(spec, args.into_iter().map(|p| Arg::Ref(p, Sel::Whole)).collect()))
+        Ok(SourcePlan::Op(
+            spec,
+            args.into_iter().map(|p| Arg::Ref(p, Sel::Whole)).collect(),
+        ))
     }
 
     /// Math text and `$ref` children to an expression template whose cell
     /// leaves are plan ids.
-    pub(super) fn plan_math(&mut self, t: TemplateId, scope: ElemId, nodes: &[NodeId]) -> Result<ExprId> {
+    pub(super) fn plan_math(
+        &mut self,
+        t: TemplateId,
+        scope: ElemId,
+        nodes: &[NodeId],
+    ) -> Result<ExprId> {
         let (toks, text) = self.math_tokens(t, scope, nodes)?;
         self.parse_tokens(&toks, &text)
     }
 
     /// Parse math tokens into the arena; `text` is for the error.
     pub(super) fn parse_tokens(&mut self, toks: &[Token], text: &str) -> Result<ExprId> {
-        Parser::parse(toks, &mut self.c.arena).map_err(|reason| Error::BadMath { text: text.to_string(), reason })
+        Parser::parse(toks, &mut self.c.arena).map_err(|reason| Error::BadMath {
+            text: text.to_string(),
+            reason,
+        })
     }
 
     /// Math text and `$ref` children to an expression template, recording
     /// the text for the symbolic engine in case the math turns out symbolic.
-    pub(super) fn plan_sym_math(&mut self, t: TemplateId, scope: ElemId, nodes: &[NodeId]) -> Result<ExprId> {
+    pub(super) fn plan_sym_math(
+        &mut self,
+        t: TemplateId,
+        scope: ElemId,
+        nodes: &[NodeId],
+    ) -> Result<ExprId> {
         let (toks, text, sym) = self.math_tokens_sym(t, scope, nodes)?;
         let id = self.parse_tokens(&toks, &text)?;
         self.c.sym_text.insert(id, sym);
@@ -295,13 +477,23 @@ impl<'a> Compiler<'a> {
     }
 
     /// Tokenize math text with `$ref` children as cell leaves holding plan ids.
-    pub(super) fn math_tokens(&mut self, t: TemplateId, scope: ElemId, nodes: &[NodeId]) -> Result<(Vec<Token>, String)> {
+    pub(super) fn math_tokens(
+        &mut self,
+        t: TemplateId,
+        scope: ElemId,
+        nodes: &[NodeId],
+    ) -> Result<(Vec<Token>, String)> {
         let (toks, text, _) = self.math_tokens_sym(t, scope, nodes)?;
         Ok((toks, text))
     }
 
     /// `math_tokens`, plus the text with each `$ref` written `#plan`.
-    fn math_tokens_sym(&mut self, t: TemplateId, scope: ElemId, nodes: &[NodeId]) -> Result<(Vec<Token>, String, String)> {
+    fn math_tokens_sym(
+        &mut self,
+        t: TemplateId,
+        scope: ElemId,
+        nodes: &[NodeId],
+    ) -> Result<(Vec<Token>, String, String)> {
         let d = self.c.dast;
         let mut toks: Vec<Token> = Vec::new();
         let mut text = String::new();
@@ -311,10 +503,18 @@ impl<'a> Compiler<'a> {
                 NodeKind::Text => {
                     text.push_str(d.str(n));
                     sym.push_str(d.str(n));
-                    super::expr::tokenize(d.str(n), &mut toks).map_err(|reason| Error::BadMath { text: text.clone(), reason })?;
+                    super::expr::tokenize(d.str(n), &mut toks).map_err(|reason| {
+                        Error::BadMath {
+                            text: text.clone(),
+                            reason,
+                        }
+                    })?;
                 }
                 NodeKind::Element if matches!(d.str(n), "conditionalContent" | "select") => {
-                    return Err(Error::Unsupported(format!("a <{}> inside math: each branch would have to yield the same type", d.str(n))));
+                    return Err(Error::Unsupported(format!(
+                        "a <{}> inside math: each branch would have to yield the same type",
+                        d.str(n)
+                    )));
                 }
                 NodeKind::Macro => {
                     text.push('$');
@@ -343,7 +543,13 @@ impl<'a> Compiler<'a> {
     }
 
     /// The source for one scalar attribute value: literal, reference, or math.
-    pub(super) fn plan_scalar(&mut self, t: TemplateId, scope: ElemId, attr: &str, nodes: &[NodeId]) -> Result<SourcePlan> {
+    pub(super) fn plan_scalar(
+        &mut self,
+        t: TemplateId,
+        scope: ElemId,
+        attr: &str,
+        nodes: &[NodeId],
+    ) -> Result<SourcePlan> {
         match self.plan_value(t, scope, attr, nodes, None) {
             Ok(p) => Ok(p),
             Err(Error::BadValue { .. }) => {
@@ -365,35 +571,65 @@ impl<'a> Compiler<'a> {
     }
 
     /// `(a, b)`: two scalar plans from tuple text, with `$ref` leaves.
-    pub(super) fn plan_tuple(&mut self, t: TemplateId, scope: ElemId, nodes: &[NodeId]) -> Result<[SourcePlan; 2]> {
+    pub(super) fn plan_tuple(
+        &mut self,
+        t: TemplateId,
+        scope: ElemId,
+        nodes: &[NodeId],
+    ) -> Result<[SourcePlan; 2]> {
         let d = self.c.dast;
-        let macros: Vec<NodeId> = nodes.iter().copied().filter(|&n| d.kind(n) == NodeKind::Macro).collect();
-        let text_blank = nodes.iter().all(|&n| d.kind(n) != NodeKind::Text || d.str(n).trim().is_empty());
+        let macros: Vec<NodeId> = nodes
+            .iter()
+            .copied()
+            .filter(|&n| d.kind(n) == NodeKind::Macro)
+            .collect();
+        let text_blank = nodes
+            .iter()
+            .all(|&n| d.kind(n) != NodeKind::Text || d.str(n).trim().is_empty());
         if macros.len() == 1 && text_blank {
             // `<point>$q</point>`: alias the referent's coordinates.
             let p = self.plan_ref(t, scope, macros[0])?;
             return Ok([SourcePlan::coord(p, 0), SourcePlan::coord(p, 1)]);
         }
         let (toks, text) = self.math_tokens(t, scope, nodes)?;
-        let inner = super::expr::unwrap_parens(&toks).ok_or_else(|| Error::BadMath { text: text.clone(), reason: "expected a tuple like (x, y)".into() })?;
+        let inner = super::expr::unwrap_parens(&toks).ok_or_else(|| Error::BadMath {
+            text: text.clone(),
+            reason: "expected a tuple like (x, y)".into(),
+        })?;
         self.tuple_from_tokens(inner, &text)
     }
 
     /// The inside of `(a, b)`, as two scalar plans.
-    pub(super) fn tuple_from_tokens(&mut self, inner: &[Token], text: &str) -> Result<[SourcePlan; 2]> {
+    pub(super) fn tuple_from_tokens(
+        &mut self,
+        inner: &[Token],
+        text: &str,
+    ) -> Result<[SourcePlan; 2]> {
         let parts = super::expr::split_top(inner, &Token::Comma);
         let [x, y] = parts.as_slice() else {
-            return Err(Error::BadMath { text: text.to_string(), reason: format!("expected 2 coordinates, got {}", parts.len()) });
+            return Err(Error::BadMath {
+                text: text.to_string(),
+                reason: format!("expected 2 coordinates, got {}", parts.len()),
+            });
         };
         let (x, y) = (self.parse_tokens(x, text)?, self.parse_tokens(y, text)?);
         Ok([self.plan_from_expr(x), self.plan_from_expr(y)])
     }
 
     /// A point-valued attribute: a reference (`center="$p"`) or a tuple.
-    pub(super) fn plan_point_attr(&mut self, t: TemplateId, scope: ElemId, a: u32) -> Result<PointPlan> {
+    pub(super) fn plan_point_attr(
+        &mut self,
+        t: TemplateId,
+        scope: ElemId,
+        a: u32,
+    ) -> Result<PointPlan> {
         match self.single_macro(a) {
             Some(m) => Ok(PointPlan::Ref(self.plan_ref(t, scope, m)?)),
-            None => Ok(PointPlan::Tuple(self.plan_tuple(t, scope, self.c.dast.attr_children(a))?)),
+            None => Ok(PointPlan::Tuple(self.plan_tuple(
+                t,
+                scope,
+                self.c.dast.attr_children(a),
+            )?)),
         }
     }
 
@@ -432,5 +668,4 @@ impl<'a> Compiler<'a> {
             _ => false,
         }
     }
-
 }

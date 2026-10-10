@@ -26,13 +26,17 @@ fn tokenize(text: &str) -> Result<Vec<Tok>, String> {
         let c = chars[i];
         if c.is_whitespace() {
             i += 1;
-        } else if c.is_ascii_digit() || (c == '.' && chars.get(i + 1).is_some_and(|d| d.is_ascii_digit())) {
+        } else if c.is_ascii_digit()
+            || (c == '.' && chars.get(i + 1).is_some_and(|d| d.is_ascii_digit()))
+        {
             let start = i;
             while i < chars.len() && (chars[i].is_ascii_digit() || chars[i] == '.') {
                 i += 1;
             }
             let s: String = chars[start..i].iter().collect();
-            out.push(Tok::Num(s.parse().map_err(|_| format!("bad number '{s}'"))?));
+            out.push(Tok::Num(
+                s.parse().map_err(|_| format!("bad number '{s}'"))?,
+            ));
         } else if c.is_alphabetic() {
             let start = i;
             while i < chars.len() && chars[i].is_alphabetic() {
@@ -47,7 +51,9 @@ fn tokenize(text: &str) -> Result<Vec<Tok>, String> {
                 i += 1;
             }
             let s: String = chars[start..i].iter().collect();
-            out.push(Tok::Cell(s.parse().map_err(|_| format!("bad placeholder '#{s}'"))?));
+            out.push(Tok::Cell(
+                s.parse().map_err(|_| format!("bad placeholder '#{s}'"))?,
+            ));
         } else {
             out.push(match c {
                 '+' | '-' | '*' | '/' | '^' => Tok::Op(c),
@@ -66,7 +72,11 @@ fn tokenize(text: &str) -> Result<Vec<Tok>, String> {
 fn split_letters(run: &str, out: &mut Vec<Tok>) {
     let mut rest = run;
     while !rest.is_empty() {
-        if let Some(f) = FUNCTIONS.iter().filter(|f| rest.starts_with(**f)).max_by_key(|f| f.len()) {
+        if let Some(f) = FUNCTIONS
+            .iter()
+            .filter(|f| rest.starts_with(**f))
+            .max_by_key(|f| f.len())
+        {
             out.push(Tok::Func(f.to_string()));
             rest = &rest[f.len()..];
         } else if rest.starts_with("pi") {
@@ -85,7 +95,10 @@ pub fn parse(text: &str) -> Result<Tree, String> {
     if toks.is_empty() {
         return Err("empty expression".into());
     }
-    let mut p = Parser { toks: &toks, pos: 0 };
+    let mut p = Parser {
+        toks: &toks,
+        pos: 0,
+    };
     let t = p.expr()?;
     if p.pos != toks.len() {
         return Err(format!("unexpected {:?}", toks[p.pos]));
@@ -111,7 +124,11 @@ impl Parser<'_> {
             let t = self.term()?;
             terms.push(if c == '+' { t } else { Tree::Neg(Box::new(t)) });
         }
-        Ok(if terms.len() == 1 { terms.pop().unwrap() } else { Tree::Add(terms) })
+        Ok(if terms.len() == 1 {
+            terms.pop().unwrap()
+        } else {
+            Tree::Add(terms)
+        })
     }
 
     fn term(&mut self) -> Result<Tree, String> {
@@ -167,7 +184,10 @@ impl Parser<'_> {
         Ok(match t {
             Tok::Num(v) => Tree::Num(v),
             Tok::Ident(s) => Tree::Sym(s),
-            Tok::Cell(c) => Tree::Cell { cell: c, math: false },
+            Tok::Cell(c) => Tree::Cell {
+                cell: c,
+                math: false,
+            },
             Tok::Func(f) => {
                 // `sin(x)`, `sin x`, and `sin^2(x)`.
                 let mut power = None;
@@ -176,7 +196,11 @@ impl Parser<'_> {
                     power = Some(self.atom()?);
                 }
                 // `sin(x)^2` squares the application, `sin x^2` the argument.
-                let arg = if let Some(Tok::LParen) = self.peek() { self.atom()? } else { self.power()? };
+                let arg = if let Some(Tok::LParen) = self.peek() {
+                    self.atom()?
+                } else {
+                    self.power()?
+                };
                 let app = Tree::Apply(f, Box::new(arg));
                 match power {
                     Some(p) => Tree::Pow(Box::new(app), Box::new(p)),
@@ -214,8 +238,18 @@ mod tests {
     fn splits_letters_and_reads_functions() {
         let t = parse("2xy + sin(x)").unwrap();
         let Tree::Add(terms) = t else { panic!() };
-        assert_eq!(terms[0], Tree::Mul(vec![Tree::Num(2.0), Tree::Sym("x".into()), Tree::Sym("y".into())]));
-        assert_eq!(terms[1], Tree::Apply("sin".into(), Box::new(Tree::Sym("x".into()))));
+        assert_eq!(
+            terms[0],
+            Tree::Mul(vec![
+                Tree::Num(2.0),
+                Tree::Sym("x".into()),
+                Tree::Sym("y".into())
+            ])
+        );
+        assert_eq!(
+            terms[1],
+            Tree::Apply("sin".into(), Box::new(Tree::Sym("x".into())))
+        );
         assert!(parse("3 +").is_err());
         assert!(parse("(1").is_err());
     }
@@ -224,7 +258,25 @@ mod tests {
     fn placeholders_are_cell_leaves() {
         let t = parse("#3 x + sin(#12)").unwrap();
         let Tree::Add(terms) = t else { panic!() };
-        assert_eq!(terms[0], Tree::Mul(vec![Tree::Cell { cell: 3, math: false }, Tree::Sym("x".into())]));
-        assert_eq!(terms[1], Tree::Apply("sin".into(), Box::new(Tree::Cell { cell: 12, math: false })));
+        assert_eq!(
+            terms[0],
+            Tree::Mul(vec![
+                Tree::Cell {
+                    cell: 3,
+                    math: false
+                },
+                Tree::Sym("x".into())
+            ])
+        );
+        assert_eq!(
+            terms[1],
+            Tree::Apply(
+                "sin".into(),
+                Box::new(Tree::Cell {
+                    cell: 12,
+                    math: false
+                })
+            )
+        );
     }
 }

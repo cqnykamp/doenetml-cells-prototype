@@ -23,7 +23,12 @@ impl Document {
                     (Some(repeat), Some(scope)) => self
                         .children(repeat)
                         .filter_map(|ch| match ch {
-                            Child::Component(c) if self.comps.scope[c as usize] == scope && self.name(c) == Some(name) => Some(c),
+                            Child::Component(c)
+                                if self.comps.scope[c as usize] == scope
+                                    && self.name(c) == Some(name) =>
+                            {
+                                Some(c)
+                            }
                             _ => None,
                         })
                         .next()?,
@@ -31,12 +36,20 @@ impl Document {
                     (None, Some(_)) => unreachable!("an iteration always follows a repeat"),
                 });
             }
-            for idx in indices.trim_end_matches(']').split(']').filter(|s| !s.is_empty()) {
+            for idx in indices
+                .trim_end_matches(']')
+                .split(']')
+                .filter(|s| !s.is_empty())
+            {
                 let k: usize = idx.trim_start_matches('[').parse().ok()?;
                 let c = cur?;
                 // `s[1][2]`: the second component of the first pick.
                 if let Some(scope) = iteration.take() {
-                    cur = Some(self.iteration(c, scope).into_iter().nth(k.checked_sub(1)?)?);
+                    cur = Some(
+                        self.iteration(c, scope)
+                            .into_iter()
+                            .nth(k.checked_sub(1)?)?,
+                    );
                     continue;
                 }
                 match self.kind(c) {
@@ -99,15 +112,26 @@ impl Document {
         {
             return Some(sc);
         }
-        let matches: Vec<CompIdx> = (0..self.comps.len() as CompIdx).filter(|&c| self.name(c) == Some(name) && self.visible_from(scope, c)).collect();
+        let matches: Vec<CompIdx> = (0..self.comps.len() as CompIdx)
+            .filter(|&c| self.name(c) == Some(name) && self.visible_from(scope, c))
+            .collect();
         match matches.as_slice() {
             [c] => Some(*c),
-            [] => (0..self.comps.len() as CompIdx).find(|&c| self.name(c) == Some(name) && self.is_descendant(scope, c)),
+            [] => (0..self.comps.len() as CompIdx)
+                .find(|&c| self.name(c) == Some(name) && self.is_descendant(scope, c)),
             many => {
                 // Children of a container copy are reached through the copy's
                 // name; among bare matches only originals count.
-                let originals: Vec<CompIdx> = many.iter().copied().filter(|&c| !self.inside_copy(scope, c)).collect();
-                if originals.len() == 1 { Some(originals[0]) } else { None }
+                let originals: Vec<CompIdx> = many
+                    .iter()
+                    .copied()
+                    .filter(|&c| !self.inside_copy(scope, c))
+                    .collect();
+                if originals.len() == 1 {
+                    Some(originals[0])
+                } else {
+                    None
+                }
             }
         }
     }
@@ -123,7 +147,9 @@ impl Document {
                 return false;
             }
             // A built case that is not the active one is not there.
-            if self.kind(pc) == ComponentKind::Case && self.cells[self.comp_cells(pc)[prop::case::ACTIVE] as usize] != 1.0 {
+            if self.kind(pc) == ComponentKind::Case
+                && self.cells[self.comp_cells(pc)[prop::case::ACTIVE] as usize] != 1.0
+            {
                 return false;
             }
             p = self.parent(pc);

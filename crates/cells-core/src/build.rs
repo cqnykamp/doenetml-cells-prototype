@@ -46,12 +46,15 @@ use cells_sym::{SymEngine, Tree};
 
 use crate::components::{ComponentKind, PropFrom, prop};
 use crate::dast::{Dast, NodeId, NodeKind, StrId, StringTable};
-use crate::document::{CellIdx, CompIdx, ComponentTable, Document, NONE, Repeat, ScopeId, ScopeTable, Structure, TEXT_BIT};
+use crate::document::{
+    CellIdx, CompIdx, ComponentTable, Document, NONE, Repeat, ScopeId, ScopeTable, Structure,
+    TEXT_BIT,
+};
 use crate::error::{Error, Result};
-use expr::{Arena, Expr, ExprId, Parser, Token};
 use crate::program::geo::{Pivot, RigidOpts, VecOp};
 use crate::program::ops::{Instr, OpSpec, Post, SymKind};
 use crate::program::{Program, Sym};
+use expr::{Arena, Expr, ExprId, Parser, Token};
 
 mod attrs;
 mod choice;
@@ -127,9 +130,16 @@ pub struct Unscheduled {
 impl Unscheduled {
     /// Schedule the program, moving the symbolic engine the build used into
     /// it. On error the engine stays with the caller.
-    pub fn schedule(self, dast: std::sync::Arc<Dast>, engine: &mut Box<dyn SymEngine>) -> Result<Document> {
+    pub fn schedule(
+        self,
+        dast: std::sync::Arc<Dast>,
+        engine: &mut Box<dyn SymEngine>,
+    ) -> Result<Document> {
         let n = self.cells.len();
-        let sym = Sym::new(std::mem::replace(engine, Box::new(cells_sym::flat::Flat::new())));
+        let sym = Sym::new(std::mem::replace(
+            engine,
+            Box::new(cells_sym::flat::Flat::new()),
+        ));
         let program = match Program::schedule(self.instrs, n, sym, self.extra, self.math) {
             Ok(mut p) => {
                 p.tapes = self.tapes;
@@ -140,7 +150,17 @@ impl Unscheduled {
                 return Err(Error::Cycle((self.cell_label)(cell)));
             }
         };
-        Ok(Document::new(self.cells, self.n_essential, self.n_fixed, program, self.comps, self.strings, self.root, self.structure, dast))
+        Ok(Document::new(
+            self.cells,
+            self.n_essential,
+            self.n_fixed,
+            program,
+            self.comps,
+            self.strings,
+            self.root,
+            self.structure,
+            dast,
+        ))
     }
 }
 
@@ -163,16 +183,32 @@ pub struct Prior {
 impl Prior {
     /// The prior of a first build.
     pub fn new(seed: u64, sample_with_engine: bool) -> Prior {
-        Prior { structure: Structure { seed, sample_with_engine, ..Structure::default() }, counts: HashMap::new() }
+        Prior {
+            structure: Structure {
+                seed,
+                sample_with_engine,
+                ..Structure::default()
+            },
+            counts: HashMap::new(),
+        }
     }
 
     /// Build a prior from a document, moving its structure out (the
     /// document is about to be replaced). `restore` puts it back on error.
     pub fn take_from(doc: &mut Document) -> Prior {
-        let counts = doc.structure.repeats.iter().map(|r| ((r.scope, r.node), doc.repeat_count(r))).collect();
+        let counts = doc
+            .structure
+            .repeats
+            .iter()
+            .map(|r| ((r.scope, r.node), doc.repeat_count(r)))
+            .collect();
         let mut structure = std::mem::take(&mut doc.structure);
         structure.values.resize(structure.scopes.len(), Vec::new());
-        for (&(scope, slot), &v) in structure.essential_slots.iter().zip(&doc.cells[..doc.n_essential]) {
+        for (&(scope, slot), &v) in structure
+            .essential_slots
+            .iter()
+            .zip(&doc.cells[..doc.n_essential])
+        {
             let row = &mut structure.values[scope as usize];
             if row.len() <= slot as usize {
                 row.resize(slot as usize + 1, None);

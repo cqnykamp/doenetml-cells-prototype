@@ -82,7 +82,10 @@ fn built_cases_report_which_is_active() {
     assert_eq!(active, vec![1.0, 0.0, 0.0]);
     // A test path finds the active case's component.
     let x = doc.resolve_path("cc.x").unwrap();
-    assert_eq!(doc.cells[doc.prop_cells(x, "value").unwrap()[0] as usize], 1.0);
+    assert_eq!(
+        doc.cells[doc.prop_cells(x, "value").unwrap()[0] as usize],
+        1.0
+    );
 }
 
 fn load_err(src: &str) -> Error {
@@ -103,7 +106,10 @@ fn a_name_whose_kind_depends_on_the_branch_is_not_in_the_interface() {
 </conditionalContent>
 <math>$cc.x</math>"#,
     );
-    assert!(matches!(&e, Error::NotInInterface { reason, .. } if reason.contains("<math> in case 1 but a <text> in case 2")), "{e}");
+    assert!(
+        matches!(&e, Error::NotInInterface { reason, .. } if reason.contains("<math> in case 1 but a <text> in case 2")),
+        "{e}"
+    );
 }
 
 #[test]
@@ -117,14 +123,20 @@ fn a_name_missing_from_a_branch_or_without_an_else_is_not_in_the_interface() {
 </conditionalContent>
 <number>$cc.x</number>"#,
     );
-    assert!(matches!(&e, Error::NotInInterface { reason, .. } if reason.contains("case 2 has no 'x'")), "{e}");
+    assert!(
+        matches!(&e, Error::NotInInterface { reason, .. } if reason.contains("case 2 has no 'x'")),
+        "{e}"
+    );
     let e = load_err(
         r#"
 <numberInput name="n"/>
 <conditionalContent name="cc" condition="$n > 0"><number name="x">1</number></conditionalContent>
 <number>$cc.x</number>"#,
     );
-    assert!(matches!(&e, Error::NotInInterface { reason, .. } if reason.contains("no <else>")), "{e}");
+    assert!(
+        matches!(&e, Error::NotInInterface { reason, .. } if reason.contains("no <else>")),
+        "{e}"
+    );
     // A bare name inside a branch is private.
     let e = load_err(
         r#"
@@ -209,7 +221,12 @@ fn texts_choose_like_numbers() {
 <text name="copy">$cc.t</text>
 "#;
     let mut doc = load(src).unwrap();
-    let s = |doc: &Document| doc.strings.get(v(doc, "copy", "value") as u32).trim().to_string();
+    let s = |doc: &Document| {
+        doc.strings
+            .get(v(doc, "copy", "value") as u32)
+            .trim()
+            .to_string()
+    };
     assert_eq!(s(&doc), "cat");
     set(&mut doc, "b", "value", 1.0);
     assert_eq!(s(&doc), "dog");
@@ -245,7 +262,15 @@ const SELECT: &str = r#"
 "#;
 
 fn load_seeded(src: &str, seed: u64) -> Document {
-    Document::load(dast_json(src).as_bytes(), cells_core::LoadOptions { seed, ..Default::default() }).unwrap().0
+    Document::load(
+        dast_json(src).as_bytes(),
+        cells_core::LoadOptions {
+            seed,
+            ..Default::default()
+        },
+    )
+    .unwrap()
+    .0
 }
 
 #[test]
@@ -263,7 +288,11 @@ fn a_select_draws_from_the_seed_without_replacement() {
         assert_eq!((num(&again, "a"), num(&again, "b")), (a, b));
         seen.insert((a as i64, b as i64));
     }
-    assert!(seen.len() > 6, "40 seeds gave only {} distinct draws", seen.len());
+    assert!(
+        seen.len() > 6,
+        "40 seeds gave only {} distinct draws",
+        seen.len()
+    );
 }
 
 #[test]
@@ -277,10 +306,19 @@ fn a_select_inside_a_repeat_draws_per_iteration_and_keeps_its_draw_across_rebuil
 "#;
     let mut doc = load_seeded(src, 7);
     let draws = |doc: &Document, k: usize| -> Vec<f64> {
-        (1..=k).map(|i| doc.cells[doc.prop_cells(doc.resolve_path(&format!("r[{i}].c")).unwrap(), "value").unwrap()[0] as usize]).collect()
+        (1..=k)
+            .map(|i| {
+                doc.cells[doc
+                    .prop_cells(doc.resolve_path(&format!("r[{i}].c")).unwrap(), "value")
+                    .unwrap()[0] as usize]
+            })
+            .collect()
     };
     let before = draws(&doc, 6);
-    assert!(before.iter().any(|&v| v != before[0]), "every iteration drew {before:?}");
+    assert!(
+        before.iter().any(|&v| v != before[0]),
+        "every iteration drew {before:?}"
+    );
     set(&mut doc, "n", "value", 8.0);
     assert_eq!(&draws(&doc, 8)[..6], &before[..]);
 }
@@ -303,7 +341,10 @@ fn select_references_by_position_are_banned_and_bare_names_need_one_pick() {
 
 #[test]
 fn select_string_sugar_picks_a_math() {
-    let doc = load_seeded(r#"<select name="s">x y z</select><math name="m">$s</math>"#, 3);
+    let doc = load_seeded(
+        r#"<select name="s">x y z</select><math name="m">$s</math>"#,
+        3,
+    );
     let cell = doc.cell("m", "expr").unwrap();
     assert!(["x", "y", "z"].contains(&doc.math_text(cell).as_str()));
 }

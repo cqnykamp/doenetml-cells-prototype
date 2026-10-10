@@ -60,7 +60,13 @@ pub struct RigidOpts {
 }
 
 impl RigidOpts {
-    pub const RIGID: RigidOpts = RigidOpts { dilate: false, rotate: true, translate: true, min_shrink: 0.1, pivot: Pivot::Centroid };
+    pub const RIGID: RigidOpts = RigidOpts {
+        dilate: false,
+        rotate: true,
+        translate: true,
+        min_shrink: 0.1,
+        pivot: Pivot::Centroid,
+    };
 }
 
 /// What an inverse produces: scalar input requests, and point groups that
@@ -187,7 +193,11 @@ impl VecOp {
             VecOp::PolarSlope => {
                 // At distance zero the points coincide whatever the slope
                 // (including an undefined one).
-                let (cos, sin) = if inp[3] == 0.0 { (0.0, 0.0) } else { slope_direction(inp[2]) };
+                let (cos, sin) = if inp[3] == 0.0 {
+                    (0.0, 0.0)
+                } else {
+                    slope_direction(inp[2])
+                };
                 out[0] = inp[0] + inp[3] * cos;
                 out[1] = inp[1] + inp[3] * sin;
             }
@@ -218,7 +228,10 @@ impl VecOp {
                 out[1] = y;
             }
             VecOp::First { n } => {
-                out[0] = inp[..n as usize].iter().position(|&c| c != 0.0 && !c.is_nan()).map_or(0.0, |k| (k + 1) as f64);
+                out[0] = inp[..n as usize]
+                    .iter()
+                    .position(|&c| c != 0.0 && !c.is_nan())
+                    .map_or(0.0, |k| (k + 1) as f64);
             }
             VecOp::Choose { n } => {
                 out[0] = active_branch(inp[0], n).map_or(f64::NAN, |k| inp[k]);
@@ -226,7 +239,11 @@ impl VecOp {
             VecOp::WeightedMean { n } => {
                 let (w, c) = inp[..2 * n as usize].split_at(n as usize);
                 let total: f64 = w.iter().sum();
-                out[0] = if total == 0.0 { 1.0 } else { w.iter().zip(c).map(|(w, c)| w * c).sum::<f64>() / total };
+                out[0] = if total == 0.0 {
+                    1.0
+                } else {
+                    w.iter().zip(c).map(|(w, c)| w * c).sum::<f64>() / total
+                };
                 out[1] = total;
             }
         }
@@ -236,9 +253,19 @@ impl VecOp {
     /// values, `cur` the outputs' current values, `desired` the requested
     /// output values (None = not requested this tick). Appends scalar
     /// requests and point groups to `out`. Returns false to drop the request.
-    pub fn invert(&self, inputs: &[CellIdx], inp: &[f64], cur: &[f64], desired: &[Option<f64>], out: &mut Produced) -> bool {
+    pub fn invert(
+        &self,
+        inputs: &[CellIdx],
+        inp: &[f64],
+        cur: &[f64],
+        desired: &[Option<f64>],
+        out: &mut Produced,
+    ) -> bool {
         let want = |k: usize| desired[k].unwrap_or(cur[k]);
-        let point = |i: usize, x: f64, y: f64| PointRequest { cells: [inputs[2 * i], inputs[2 * i + 1]], values: [x, y] };
+        let point = |i: usize, x: f64, y: f64| PointRequest {
+            cells: [inputs[2 * i], inputs[2 * i + 1]],
+            values: [x, y],
+        };
         match *self {
             VecOp::Shape { n, opts } => invert_rigid(n as usize, opts, inputs, inp, desired, out),
             VecOp::CircleCenterPoint => {
@@ -261,8 +288,24 @@ impl VecOp {
                 let n = n as usize;
                 let (cx, cy, r) = (cur[0], cur[1], cur[2]);
                 let (ncx, ncy) = (want(0), want(1));
-                let scale = if let Some(nr) = desired[2] { if r == 0.0 || !r.is_finite() { 1.0 } else { nr / r } } else { 1.0 };
-                let pts = (0..n).map(|i| point(i, ncx + (inp[2 * i] - cx) * scale, ncy + (inp[2 * i + 1] - cy) * scale)).collect();
+                let scale = if let Some(nr) = desired[2] {
+                    if r == 0.0 || !r.is_finite() {
+                        1.0
+                    } else {
+                        nr / r
+                    }
+                } else {
+                    1.0
+                };
+                let pts = (0..n)
+                    .map(|i| {
+                        point(
+                            i,
+                            ncx + (inp[2 * i] - cx) * scale,
+                            ncy + (inp[2 * i + 1] - cy) * scale,
+                        )
+                    })
+                    .collect();
                 out.group(pts);
                 true
             }
@@ -271,7 +314,10 @@ impl VecOp {
                 if !dx.is_finite() || !dy.is_finite() {
                     return false;
                 }
-                out.group(vec![point(0, inp[0] + dx, inp[1] + dy), point(1, inp[2] + dx, inp[3] + dy)]);
+                out.group(vec![
+                    point(0, inp[0] + dx, inp[1] + dy),
+                    point(1, inp[2] + dx, inp[3] + dy),
+                ]);
                 true
             }
             VecOp::PolarSlope => {
@@ -340,8 +386,17 @@ impl VecOp {
 // Rigid shape inverse
 // ---------------------------------------------------------------------------
 
-fn invert_rigid(n: usize, opts: RigidOpts, inputs: &[CellIdx], inp: &[f64], desired: &[Option<f64>], out: &mut Produced) -> bool {
-    let specified: Vec<usize> = (0..n).filter(|&i| desired[2 * i].is_some() || desired[2 * i + 1].is_some()).collect();
+fn invert_rigid(
+    n: usize,
+    opts: RigidOpts,
+    inputs: &[CellIdx],
+    inp: &[f64],
+    desired: &[Option<f64>],
+    out: &mut Produced,
+) -> bool {
+    let specified: Vec<usize> = (0..n)
+        .filter(|&i| desired[2 * i].is_some() || desired[2 * i + 1].is_some())
+        .collect();
     if specified.is_empty() {
         return false;
     }
@@ -350,7 +405,13 @@ fn invert_rigid(n: usize, opts: RigidOpts, inputs: &[CellIdx], inp: &[f64], desi
         return false;
     }
     {
-        let RigidOpts { dilate, rotate, translate, min_shrink, pivot } = opts;
+        let RigidOpts {
+            dilate,
+            rotate,
+            translate,
+            min_shrink,
+            pivot,
+        } = opts;
         let one = specified.len() == 1;
         let (rotate, dilate) = (one && rotate, one && dilate);
         if !(rotate || dilate || translate) {
@@ -362,7 +423,11 @@ fn invert_rigid(n: usize, opts: RigidOpts, inputs: &[CellIdx], inp: &[f64], desi
             Pivot::Vertex(_) => centroid(inp, n),
             Pivot::Point => {
                 let (x, y) = (inp[2 * n], inp[2 * n + 1]);
-                if x.is_finite() && y.is_finite() { (x, y) } else { centroid(inp, n) }
+                if x.is_finite() && y.is_finite() {
+                    (x, y)
+                } else {
+                    centroid(inp, n)
+                }
             }
         };
         let target: Vec<f64> = if rotate || dilate {
@@ -372,7 +437,15 @@ fn invert_rigid(n: usize, opts: RigidOpts, inputs: &[CellIdx], inp: &[f64], desi
             let om2 = ox * ox + oy * oy;
             let (c, s) = if rotate {
                 let theta = my.atan2(mx) - oy.atan2(ox);
-                let stretch = if dilate { if om2 == 0.0 { 1.0 } else { ((mx * mx + my * my) / om2).sqrt() } } else { 1.0 };
+                let stretch = if dilate {
+                    if om2 == 0.0 {
+                        1.0
+                    } else {
+                        ((mx * mx + my * my) / om2).sqrt()
+                    }
+                } else {
+                    1.0
+                };
                 (stretch * theta.cos(), stretch * theta.sin())
             } else {
                 // Dilation only: project the drag onto the vertex's ray and
@@ -430,14 +503,22 @@ fn close_rel(a: f64, b: f64) -> bool {
 
 fn unit(x: f64, y: f64) -> (f64, f64) {
     let m = x.hypot(y);
-    if m == 0.0 { (f64::NAN, f64::NAN) } else { (x / m, y / m) }
+    if m == 0.0 {
+        (f64::NAN, f64::NAN)
+    } else {
+        (x / m, y / m)
+    }
 }
 
 /// Unit direction, or straight up when the two points coincide (the current
 /// core's through-point default puts the point above the center).
 fn direction_or_up(x: f64, y: f64) -> (f64, f64) {
     let m = x.hypot(y);
-    if m == 0.0 || !m.is_finite() { (0.0, 1.0) } else { (x / m, y / m) }
+    if m == 0.0 || !m.is_finite() {
+        (0.0, 1.0)
+    } else {
+        (x / m, y / m)
+    }
 }
 
 /// (cos θ, sin θ) for θ = atan(m), exact for the axis cases.
@@ -525,7 +606,12 @@ fn line_points_from_coeffs(a: f64, b: f64, c: f64) -> [f64; 4] {
         1.0
     };
     let (ax, bx, cx) = (a * sign, b * sign, c * sign);
-    [(2.0 * bx - ax * cx) / denom, (-2.0 * ax - bx * cx) / denom, (bx - ax * cx) / denom, -(ax + bx * cx) / denom]
+    [
+        (2.0 * bx - ax * cx) / denom,
+        (-2.0 * ax - bx * cx) / denom,
+        (bx - ax * cx) / denom,
+        -(ax + bx * cx) / denom,
+    ]
 }
 
 impl VecOp {

@@ -78,7 +78,11 @@ impl Arena {
         match self.get(id) {
             Expr::Num(_) | Expr::Cell(_) => true,
             Expr::Sym(_) => false,
-            Expr::Add(a, b) | Expr::Sub(a, b) | Expr::Mul(a, b) | Expr::Div(a, b) | Expr::Pow(a, b) => self.is_numeric(*a) && self.is_numeric(*b),
+            Expr::Add(a, b)
+            | Expr::Sub(a, b)
+            | Expr::Mul(a, b)
+            | Expr::Div(a, b)
+            | Expr::Pow(a, b) => self.is_numeric(*a) && self.is_numeric(*b),
             Expr::Neg(a) => self.is_numeric(*a),
         }
     }
@@ -92,7 +96,11 @@ impl Arena {
                 }
             }
             Expr::Num(_) | Expr::Cell(_) => {}
-            Expr::Add(a, b) | Expr::Sub(a, b) | Expr::Mul(a, b) | Expr::Div(a, b) | Expr::Pow(a, b) => {
+            Expr::Add(a, b)
+            | Expr::Sub(a, b)
+            | Expr::Mul(a, b)
+            | Expr::Div(a, b)
+            | Expr::Pow(a, b) => {
                 self.symbols(*a, out);
                 self.symbols(*b, out);
             }
@@ -109,14 +117,17 @@ impl Arena {
                 }
             }
             Expr::Num(_) | Expr::Sym(_) => {}
-            Expr::Add(a, b) | Expr::Sub(a, b) | Expr::Mul(a, b) | Expr::Div(a, b) | Expr::Pow(a, b) => {
+            Expr::Add(a, b)
+            | Expr::Sub(a, b)
+            | Expr::Mul(a, b)
+            | Expr::Div(a, b)
+            | Expr::Pow(a, b) => {
                 self.cell_leaves(*a, out);
                 self.cell_leaves(*b, out);
             }
             Expr::Neg(a) => self.cell_leaves(*a, out),
         }
     }
-
 }
 
 /// A token of math text. References (`$a`) arrive already resolved to a
@@ -142,19 +153,28 @@ pub fn tokenize(text: &str, out: &mut Vec<Token>) -> Result<(), String> {
         let c = chars[i];
         if c.is_whitespace() {
             i += 1;
-        } else if c.is_ascii_digit() || (c == '.' && chars.get(i + 1).is_some_and(|d| d.is_ascii_digit())) {
+        } else if c.is_ascii_digit()
+            || (c == '.' && chars.get(i + 1).is_some_and(|d| d.is_ascii_digit()))
+        {
             let start = i;
             while i < chars.len() && (chars[i].is_ascii_digit() || chars[i] == '.') {
                 i += 1;
             }
-            if i < chars.len() && (chars[i] == 'e' || chars[i] == 'E') && chars.get(i + 1).is_some_and(|d| d.is_ascii_digit() || *d == '-' || *d == '+') {
+            if i < chars.len()
+                && (chars[i] == 'e' || chars[i] == 'E')
+                && chars
+                    .get(i + 1)
+                    .is_some_and(|d| d.is_ascii_digit() || *d == '-' || *d == '+')
+            {
                 i += 2;
                 while i < chars.len() && chars[i].is_ascii_digit() {
                     i += 1;
                 }
             }
             let s: String = chars[start..i].iter().collect();
-            out.push(Token::Num(s.parse().map_err(|_| format!("bad number '{s}'"))?));
+            out.push(Token::Num(
+                s.parse().map_err(|_| format!("bad number '{s}'"))?,
+            ));
         } else if c.is_alphabetic() {
             let start = i;
             while i < chars.len() && chars[i].is_alphanumeric() {
@@ -192,7 +212,11 @@ pub struct Parser<'a> {
 
 impl<'a> Parser<'a> {
     pub fn parse(toks: &'a [Token], arena: &'a mut Arena) -> Result<ExprId, String> {
-        let mut p = Parser { toks, pos: 0, arena };
+        let mut p = Parser {
+            toks,
+            pos: 0,
+            arena,
+        };
         let id = p.expr()?;
         if p.pos != p.toks.len() {
             return Err(format!("unexpected token {:?}", p.toks[p.pos]));
@@ -210,7 +234,11 @@ impl<'a> Parser<'a> {
             let c = *c;
             self.pos += 1;
             let rhs = self.term()?;
-            lhs = self.arena.push(if c == '+' { Expr::Add(lhs, rhs) } else { Expr::Sub(lhs, rhs) });
+            lhs = self.arena.push(if c == '+' {
+                Expr::Add(lhs, rhs)
+            } else {
+                Expr::Sub(lhs, rhs)
+            });
         }
         Ok(lhs)
     }
@@ -223,7 +251,11 @@ impl<'a> Parser<'a> {
                     let c = *c;
                     self.pos += 1;
                     let rhs = self.unary()?;
-                    lhs = self.arena.push(if c == '*' { Expr::Mul(lhs, rhs) } else { Expr::Div(lhs, rhs) });
+                    lhs = self.arena.push(if c == '*' {
+                        Expr::Mul(lhs, rhs)
+                    } else {
+                        Expr::Div(lhs, rhs)
+                    });
                 }
                 // Juxtaposition: a factor directly followed by another.
                 Some(Token::Num(_) | Token::Ident(_) | Token::Cell(_) | Token::LParen) => {
@@ -259,7 +291,10 @@ impl<'a> Parser<'a> {
     }
 
     fn atom(&mut self) -> Result<ExprId, String> {
-        let t = self.peek().cloned().ok_or_else(|| "unexpected end of expression".to_string())?;
+        let t = self
+            .peek()
+            .cloned()
+            .ok_or_else(|| "unexpected end of expression".to_string())?;
         self.pos += 1;
         Ok(match t {
             Token::Num(v) => self.arena.push(Expr::Num(v)),
@@ -400,7 +435,11 @@ pub fn linear_coeffs(arena: &mut Arena, id: ExprId, vx: &str, vy: &str) -> Optio
                 }
                 let d = r[2];
                 let div = |a: &mut Arena, n: ExprId| {
-                    if is_zero(a, n) { n } else { a.push(Expr::Div(n, d)) }
+                    if is_zero(a, n) {
+                        n
+                    } else {
+                        a.push(Expr::Div(n, d))
+                    }
                 };
                 [div(a, l[0]), div(a, l[1]), div(a, l[2])]
             }

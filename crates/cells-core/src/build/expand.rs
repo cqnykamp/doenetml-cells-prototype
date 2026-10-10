@@ -113,9 +113,19 @@ pub(super) struct Builder<'c, 'a> {
 }
 
 impl<'c, 'a> Builder<'c, 'a> {
-    pub(super) fn new(c: &'c Compiled<'a>, prior: &'c Prior, engine: &'c mut dyn SymEngine) -> Self {
+    pub(super) fn new(
+        c: &'c Compiled<'a>,
+        prior: &'c Prior,
+        engine: &'c mut dyn SymEngine,
+    ) -> Self {
         // Size the columns from the previous build when there was one.
-        let guess = prior.structure.values.iter().map(|v| v.len()).sum::<usize>().max(c.templates.iter().map(|t| t.elems.len()).sum::<usize>() * 2);
+        let guess = prior
+            .structure
+            .values
+            .iter()
+            .map(|v| v.len())
+            .sum::<usize>()
+            .max(c.templates.iter().map(|t| t.elems.len()).sum::<usize>() * 2);
         Builder {
             c,
             prior,
@@ -162,7 +172,15 @@ impl<'c, 'a> Builder<'c, 'a> {
 
     /// `n_slots` is the public prop count plus any hidden slots the
     /// element's plan added.
-    pub(super) fn new_component(&mut self, kind: ComponentKind, name: StrId, parent: CompIdx, node: NodeId, scope: ScopeId, n_slots: usize) -> CompIdx {
+    pub(super) fn new_component(
+        &mut self,
+        kind: ComponentKind,
+        name: StrId,
+        parent: CompIdx,
+        node: NodeId,
+        scope: ScopeId,
+        n_slots: usize,
+    ) -> CompIdx {
         let idx = self.comps.len() as CompIdx;
         self.comps.kind.push(kind);
         self.comps.name.push(name);
@@ -215,7 +233,11 @@ impl<'c, 'a> Builder<'c, 'a> {
 
     pub(super) fn comp_label(&self, comp: CompIdx) -> String {
         let name = self.comps.name[comp as usize];
-        if name != NONE { self.c.dast.strings.get(name).trim().to_string() } else { format!("<{}>#{}", self.comps.kind[comp as usize].tag(), comp) }
+        if name != NONE {
+            self.c.dast.strings.get(name).trim().to_string()
+        } else {
+            format!("<{}>#{}", self.comps.kind[comp as usize].tag(), comp)
+        }
     }
 
     pub(super) fn slot_label(&self, slot: SlotId) -> String {
@@ -251,13 +273,22 @@ impl<'c, 'a> Builder<'c, 'a> {
     pub(super) fn expand_all(&mut self) -> Result<()> {
         self.enter_scope(0, 0);
         let kids = self.expand(0, 0, NONE)?;
-        self.root = kids.iter().copied().find(|&k| k & TEXT_BIT == 0).expect("document root");
+        self.root = kids
+            .iter()
+            .copied()
+            .find(|&k| k & TEXT_BIT == 0)
+            .expect("document root");
         Ok(())
     }
 
     /// Instantiate template `t` in `scope`; returns the child entries of the
     /// template's own children (the repeat body, or the document).
-    pub(super) fn expand(&mut self, t: TemplateId, scope: ScopeId, parent: CompIdx) -> Result<Vec<u32>> {
+    pub(super) fn expand(
+        &mut self,
+        t: TemplateId,
+        scope: ScopeId,
+        parent: CompIdx,
+    ) -> Result<Vec<u32>> {
         let n_elems = self.c.templates[t].elems.len();
         // Create every element's component first so children can refer to them.
         for e in 0..n_elems {
@@ -266,7 +297,12 @@ impl<'c, 'a> Builder<'c, 'a> {
             let comp = self.new_component(el.kind, el.name, parent, el.node, scope, n_slots);
             self.scope_comps[scope as usize][e] = comp;
             self.comp_instance[comp as usize] = self.instances.len() as u32;
-            self.instances.push(Instance { scope, template: t, elem: e, comp });
+            self.instances.push(Instance {
+                scope,
+                template: t,
+                elem: e,
+                comp,
+            });
         }
         // Then child lists, expanding repeats as they come.
         for e in 0..n_elems {
@@ -285,7 +321,13 @@ impl<'c, 'a> Builder<'c, 'a> {
                         kids.append(&mut these);
                     }
                     self.comp_repeat[comp as usize] = self.repeats.len() as u32;
-                    self.repeats.push(Repeat { comp, node, scope, iter_scopes, n });
+                    self.repeats.push(Repeat {
+                        comp,
+                        node,
+                        scope,
+                        iter_scopes,
+                        n,
+                    });
                     self.counts_used.push(n);
                     kids
                 }
@@ -325,7 +367,13 @@ impl<'c, 'a> Builder<'c, 'a> {
         Ok(out)
     }
 
-    pub(super) fn child_entries(&mut self, t: TemplateId, e: ElemId, scope: ScopeId, parent: CompIdx) -> Vec<u32> {
+    pub(super) fn child_entries(
+        &mut self,
+        t: TemplateId,
+        e: ElemId,
+        scope: ScopeId,
+        parent: CompIdx,
+    ) -> Vec<u32> {
         let n = self.c.templates[t].elems[e].children.len();
         let mut kids = Vec::with_capacity(n);
         for i in 0..n {
@@ -392,8 +440,15 @@ impl<'c, 'a> Builder<'c, 'a> {
             (_, Some(prop)) => {
                 let targets = self.targets_of(target, Some(prop), plan, Some(1))?;
                 // A text's value is a string id: it shows as a text.
-                let is_text = self.single_component(target, plan).is_ok_and(|c| self.comps.kind[c as usize] == ComponentKind::Text) && prop == "value";
-                self.comps.kind[idx as usize] = if is_text { ComponentKind::Text } else { ComponentKind::Number };
+                let is_text = self
+                    .single_component(target, plan)
+                    .is_ok_and(|c| self.comps.kind[c as usize] == ComponentKind::Text)
+                    && prop == "value";
+                self.comps.kind[idx as usize] = if is_text {
+                    ComponentKind::Text
+                } else {
+                    ComponentKind::Number
+                };
                 self.allocate_slots(idx, 1);
                 let s = self.slot(idx, 0);
                 self.sources[s as usize] = Source::Alias(targets[0]);
@@ -401,8 +456,14 @@ impl<'c, 'a> Builder<'c, 'a> {
             (target, None) => {
                 let referent = self.single_component(target, plan)?;
                 let kind = self.comps.kind[referent as usize];
-                if matches!(kind, ComponentKind::ConditionalContent | ComponentKind::Select | ComponentKind::Case) {
-                    return Err(Error::Banned(format!("copying a whole <{}>: reference its interface names instead", kind.tag())));
+                if matches!(
+                    kind,
+                    ComponentKind::ConditionalContent | ComponentKind::Select | ComponentKind::Case
+                ) {
+                    return Err(Error::Banned(format!(
+                        "copying a whole <{}>: reference its interface names instead",
+                        kind.tag()
+                    )));
                 }
                 if !kind.copyable() {
                     return Err(Error::UncopyableKind(kind.tag().into()));
@@ -426,12 +487,19 @@ impl<'c, 'a> Builder<'c, 'a> {
 
     /// The coordinate slots of each item of an array prop a plan names
     /// (`$l.points`, `$pg.vertices`), trimmed to the live item count.
-    pub(super) fn resolve_items(&mut self, plan: RefId, scope: ScopeId) -> Result<Vec<[SlotId; 2]>> {
+    pub(super) fn resolve_items(
+        &mut self,
+        plan: RefId,
+        scope: ScopeId,
+    ) -> Result<Vec<[SlotId; 2]>> {
         let (target, prop) = self.resolve(plan, scope)?;
         let comp = self.single_component(target, plan)?;
         let kind = self.comps.kind[comp as usize];
         let prop = prop.ok_or_else(|| Error::PathTooDeep(self.c.refs[plan].display.clone()))?;
-        let items = kind.array_prop(prop).ok_or_else(|| Error::UnknownProp { name: self.comp_label(comp), prop: prop.into() })?;
+        let items = kind.array_prop(prop).ok_or_else(|| Error::UnknownProp {
+            name: self.comp_label(comp),
+            prop: prop.into(),
+        })?;
         let count_slot = match kind {
             ComponentKind::Polygon => Some(self.slot(comp, prop::polygon::NUM_VERTICES)),
             ComponentKind::Circle => Some(self.slot(comp, prop::circle::NUM_THROUGH_POINTS)),
@@ -441,7 +509,16 @@ impl<'c, 'a> Builder<'c, 'a> {
             Some(Source::Fixed(n)) => n as usize,
             _ => items.len(),
         };
-        Ok(items.iter().take(live).map(|[x, y]| [self.slot(comp, kind.prop_index(x).unwrap()), self.slot(comp, kind.prop_index(y).unwrap())]).collect())
+        Ok(items
+            .iter()
+            .take(live)
+            .map(|[x, y]| {
+                [
+                    self.slot(comp, kind.prop_index(x).unwrap()),
+                    self.slot(comp, kind.prop_index(y).unwrap()),
+                ]
+            })
+            .collect())
     }
 
     /// Give a point list its children: one synthesized point per item of
@@ -455,8 +532,13 @@ impl<'c, 'a> Builder<'c, 'a> {
             (Body::PointList { from }, _) => {
                 let items = self.resolve_items(from, inst.scope)?;
                 for [x, y] in items {
-                    let pt = self.new_component(ComponentKind::Point, NONE, comp, NONE, inst.scope, 3);
-                    let (sx, sy, sh) = (self.slot(pt, prop::point::X), self.slot(pt, prop::point::Y), self.slot(pt, prop::point::HIDE));
+                    let pt =
+                        self.new_component(ComponentKind::Point, NONE, comp, NONE, inst.scope, 3);
+                    let (sx, sy, sh) = (
+                        self.slot(pt, prop::point::X),
+                        self.slot(pt, prop::point::Y),
+                        self.slot(pt, prop::point::HIDE),
+                    );
                     self.sources[sx as usize] = Source::Alias(x);
                     self.sources[sy as usize] = Source::Alias(y);
                     // Not state: a synthesized point has no essential key.
@@ -467,10 +549,20 @@ impl<'c, 'a> Builder<'c, 'a> {
             (_, Some(p)) => {
                 let (target, _) = self.resolve(p, inst.scope)?;
                 let referent = self.single_component(target, p)?;
-                let (s, n) = (self.comps.child_start[referent as usize] as usize, self.comps.child_count[referent as usize] as usize);
+                let (s, n) = (
+                    self.comps.child_start[referent as usize] as usize,
+                    self.comps.child_count[referent as usize] as usize,
+                );
                 let originals: Vec<CompIdx> = self.comps.child_list[s..s + n].to_vec();
                 for orig in originals {
-                    let copy = self.new_component(ComponentKind::Document, NONE, comp, NONE, inst.scope, 0);
+                    let copy = self.new_component(
+                        ComponentKind::Document,
+                        NONE,
+                        comp,
+                        NONE,
+                        inst.scope,
+                        0,
+                    );
                     self.copy_into(copy, orig);
                     kids.push(copy);
                 }
@@ -483,7 +575,10 @@ impl<'c, 'a> Builder<'c, 'a> {
 
     pub(super) fn expand_collect(&mut self, comp: CompIdx) -> Result<()> {
         let inst = self.instances[self.comp_instance[comp as usize] as usize];
-        let Body::Collect { from, kind } = self.c.templates[inst.template].elems[inst.elem].body else { unreachable!() };
+        let Body::Collect { from, kind } = self.c.templates[inst.template].elems[inst.elem].body
+        else {
+            unreachable!()
+        };
         let (target, _) = self.resolve(from, inst.scope)?;
         let mut found = Vec::new();
         match target {
@@ -515,8 +610,16 @@ impl<'c, 'a> Builder<'c, 'a> {
 
     /// Descendants of `c` of `kind`, in document order, not recursing into
     /// a match (as the current core's `recurseToMatchedChildren: false`).
-    pub(super) fn collect_descendants(&self, c: CompIdx, kind: ComponentKind, out: &mut Vec<CompIdx>) {
-        let (s, n) = (self.comps.child_start[c as usize] as usize, self.comps.child_count[c as usize] as usize);
+    pub(super) fn collect_descendants(
+        &self,
+        c: CompIdx,
+        kind: ComponentKind,
+        out: &mut Vec<CompIdx>,
+    ) {
+        let (s, n) = (
+            self.comps.child_start[c as usize] as usize,
+            self.comps.child_count[c as usize] as usize,
+        );
         for i in s..s + n {
             let e = self.comps.child_list[i];
             if e & TEXT_BIT != 0 {
@@ -533,8 +636,15 @@ impl<'c, 'a> Builder<'c, 'a> {
     /// The template components of one iteration: children of the repeat
     /// created in that scope.
     pub(super) fn iteration_components(&self, repeat: CompIdx, scope: ScopeId) -> Vec<CompIdx> {
-        let (s, n) = (self.comps.child_start[repeat as usize] as usize, self.comps.child_count[repeat as usize] as usize);
-        self.comps.child_list[s..s + n].iter().copied().filter(|&e| e & TEXT_BIT == 0 && self.comps.scope[e as usize] == scope).collect()
+        let (s, n) = (
+            self.comps.child_start[repeat as usize] as usize,
+            self.comps.child_count[repeat as usize] as usize,
+        );
+        self.comps.child_list[s..s + n]
+            .iter()
+            .copied()
+            .filter(|&e| e & TEXT_BIT == 0 && self.comps.scope[e as usize] == scope)
+            .collect()
     }
 
     /// Sources for every prop of one instantiated element.
@@ -550,7 +660,11 @@ impl<'c, 'a> Builder<'c, 'a> {
                 let referent = self.single_component(target, p)?;
                 let rk = self.comps.kind[referent as usize];
                 if rk != kind {
-                    return Err(Error::ExtendKindMismatch { referent: self.c.refs[p].display.clone(), referent_kind: rk.tag().into(), kind: kind.tag().into() });
+                    return Err(Error::ExtendKindMismatch {
+                        referent: self.c.refs[p].display.clone(),
+                        referent_kind: rk.tag().into(),
+                        kind: kind.tag().into(),
+                    });
                 }
                 Some(referent)
             }
@@ -568,10 +682,17 @@ impl<'c, 'a> Builder<'c, 'a> {
             let source = match &c.templates[inst.template].elems[inst.elem].props[pi] {
                 SourcePlan::Literal(v) => Source::Literal(*v),
                 SourcePlan::Default(v) => Source::Default(*v),
-                SourcePlan::Inherit => Source::Alias(self.slot(extend.expect("Inherit needs an extend referent"), pi)),
-                SourcePlan::InheritFrom(k) => Source::Alias(self.slot(extend.expect("Inherit needs an extend referent"), *k as usize)),
+                SourcePlan::Inherit => {
+                    Source::Alias(self.slot(extend.expect("Inherit needs an extend referent"), pi))
+                }
+                SourcePlan::InheritFrom(k) => Source::Alias(self.slot(
+                    extend.expect("Inherit needs an extend referent"),
+                    *k as usize,
+                )),
                 SourcePlan::Fixed(v) => Source::Fixed(*v),
-                SourcePlan::Alias(arg) => Source::Alias(self.arg_slot(*arg, comp, inst.scope, kind, pi)?),
+                SourcePlan::Alias(arg) => {
+                    Source::Alias(self.arg_slot(*arg, comp, inst.scope, kind, pi)?)
+                }
                 SourcePlan::Op(spec, args) => {
                     let start = self.op_inputs.len() as u32;
                     for &a in args {
@@ -583,7 +704,11 @@ impl<'c, 'a> Builder<'c, 'a> {
                 SourcePlan::IterIndex => Source::Fixed(self.scopes[inst.scope].2 as f64),
                 SourcePlan::Math(expr) => {
                     let id = self.instantiate_expr(*expr, inst.scope)?;
-                    if self.arena.is_numeric(id) { Source::Alias(self.lower(id)) } else { Source::Fixed(f64::NAN) }
+                    if self.arena.is_numeric(id) {
+                        Source::Alias(self.lower(id))
+                    } else {
+                        Source::Fixed(f64::NAN)
+                    }
                 }
                 SourcePlan::MathHandle(expr, post) => {
                     if self.is_symbolic(comp) {
@@ -618,8 +743,10 @@ impl<'c, 'a> Builder<'c, 'a> {
                 }
                 SourcePlan::VecOut(head, k) => Source::VecOut(self.slot(comp, *head as usize), *k),
             };
-            if let (Source::Fixed(h), SourcePlan::MathHandle(..) | SourcePlan::SymExpr(..)) = (&source, &c.templates[inst.template].elems[inst.elem].props[pi])
-                && !h.is_nan()
+            if let (Source::Fixed(h), SourcePlan::MathHandle(..) | SourcePlan::SymExpr(..)) = (
+                &source,
+                &c.templates[inst.template].elems[inst.elem].props[pi],
+            ) && !h.is_nan()
             {
                 self.math_slots.push(s);
             }

@@ -10,17 +10,24 @@ use cells_core::{Document, Op};
 use common::req;
 
 fn has_evaluate(doc: &Document) -> bool {
-    doc.program.instrs.iter().any(|i| matches!(i.op, Op::Sym(..)))
+    doc.program
+        .instrs
+        .iter()
+        .any(|i| matches!(i.op, Op::Sym(..)))
 }
 
 #[test]
 fn numeric_math_lowers_to_operators_and_inverts_through_them() {
-    let mut doc = load(r#"<numberInput name="a" value="2"/><math name="m">3$a + 2</math>"#).unwrap();
+    let mut doc =
+        load(r#"<numberInput name="a" value="2"/><math name="m">3$a + 2</math>"#).unwrap();
     assert_eq!(doc.value("m", "value"), Some(8.0));
     assert!(!has_evaluate(&doc), "a numeric math is plain operators");
     // Scale then Offset: two instructions, no fixed literal cells.
     assert_eq!(doc.program.len(), 2);
-    assert_eq!(doc.n_fixed, 3, "only the (NaN) expression handle and the document's two credit cells are fixed");
+    assert_eq!(
+        doc.n_fixed, 3,
+        "only the (NaN) expression handle and the document's two credit cells are fixed"
+    );
     // Dragging the math's value inverts through the lowered chain.
     doc.request(&[req(&doc, "m", "value", 14.0)]);
     assert_eq!(doc.value("a", "value"), Some(4.0));
@@ -82,7 +89,10 @@ fn math_of_math_lowers_through_and_a_symbolic_leaf_stays_symbolic() {
     assert!(doc.value("g", "value").unwrap().is_nan());
     // `$m` inside g is a numeric leaf: the lowered m's value, not its tree.
     assert_eq!(doc.math_text(doc.cell("g", "expr").unwrap()), "3 + y");
-    assert!(doc.value("m", "expr").unwrap().is_nan(), "a numeric math is not a math cell");
+    assert!(
+        doc.value("m", "expr").unwrap().is_nan(),
+        "a numeric math is not a math cell"
+    );
 }
 
 #[test]

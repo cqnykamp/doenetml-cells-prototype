@@ -48,7 +48,12 @@ impl Default for Sym {
 
 impl Sym {
     pub fn new(engine: Box<dyn SymEngine>) -> Self {
-        Sym { engine: RefCell::new(engine), memo: RefCell::new(Vec::new()), stats: Cell::new(SymStats::default()), tape_stack: RefCell::new(Vec::new()) }
+        Sym {
+            engine: RefCell::new(engine),
+            memo: RefCell::new(Vec::new()),
+            stats: Cell::new(SymStats::default()),
+            tape_stack: RefCell::new(Vec::new()),
+        }
     }
 
     pub fn into_engine(self) -> Box<dyn SymEngine> {
@@ -79,7 +84,6 @@ pub struct Program {
     pub in_creation_order: bool,
 }
 
-
 #[inline(always)]
 fn differs(new: f64, old: f64) -> bool {
     new != old && !(new.is_nan() && old.is_nan())
@@ -95,7 +99,13 @@ impl Program {
     /// order; a lag of `k - d` reads an earlier iteration). One linear pass
     /// checks that every input is essential, fixed, or produced earlier; only
     /// when that fails does the general sort run.
-    pub fn schedule(instrs: Vec<Instr>, n_cells: usize, sym: Sym, extra: Vec<CellIdx>, math: Vec<bool>) -> std::result::Result<Program, (CellIdx, Sym)> {
+    pub fn schedule(
+        instrs: Vec<Instr>,
+        n_cells: usize,
+        sym: Sym,
+        extra: Vec<CellIdx>,
+        math: Vec<bool>,
+    ) -> std::result::Result<Program, (CellIdx, Sym)> {
         sym.memo.replace(vec![NEVER; extra.len()]);
         let mut producer = vec![u32::MAX; n_cells];
         for (i, ins) in instrs.iter().enumerate() {
@@ -112,7 +122,15 @@ impl Program {
             })
         });
         if in_order {
-            return Ok(Program { instrs, producer, sym, extra, math, tapes: Vec::new(), in_creation_order: true });
+            return Ok(Program {
+                instrs,
+                producer,
+                sym,
+                extra,
+                math,
+                tapes: Vec::new(),
+                in_creation_order: true,
+            });
         }
 
         // Kahn's algorithm over instructions, with the dependents lists in
@@ -144,12 +162,16 @@ impl Program {
                 }
             }
         }
-        let mut ready: Vec<u32> = (0..n as u32).filter(|&i| indegree[i as usize] == 0).collect();
+        let mut ready: Vec<u32> = (0..n as u32)
+            .filter(|&i| indegree[i as usize] == 0)
+            .collect();
         ready.reverse();
         let mut order = Vec::with_capacity(n);
         while let Some(i) = ready.pop() {
             order.push(instrs[i as usize]);
-            for &d in &dependents[dep_count[i as usize] as usize..dep_count[i as usize + 1] as usize] {
+            for &d in
+                &dependents[dep_count[i as usize] as usize..dep_count[i as usize + 1] as usize]
+            {
                 indegree[d as usize] -= 1;
                 if indegree[d as usize] == 0 {
                     ready.push(d);
@@ -166,7 +188,15 @@ impl Program {
                 producer[ins.out as usize + k] = i as u32;
             }
         }
-        Ok(Program { instrs: order, producer, sym, extra, math, tapes: Vec::new(), in_creation_order: false })
+        Ok(Program {
+            instrs: order,
+            producer,
+            sym,
+            extra,
+            math,
+            tapes: Vec::new(),
+            in_creation_order: false,
+        })
     }
 
     /// Evaluate one instruction into `cells`. With `changed`, outputs whose
@@ -210,14 +240,26 @@ impl Program {
     /// than on a dirty flag, so stepping on a scratch copy (`realize`, the
     /// reference evaluator) gives the same answer as stepping on the cells.
     #[inline(never)]
-    fn step_sym(&self, kind: SymKind, start: usize, n: usize, out: usize, cells: &mut [f64], changed: Option<&mut Vec<CellIdx>>) {
+    fn step_sym(
+        &self,
+        kind: SymKind,
+        start: usize,
+        n: usize,
+        out: usize,
+        cells: &mut [f64],
+        changed: Option<&mut Vec<CellIdx>>,
+    ) {
         let n_out = kind.n_out();
         let inputs = &self.extra[start..start + n];
         let mut memo = self.sym.memo.borrow_mut();
         let (last, outs) = memo[start..start + n + n_out].split_at_mut(n);
         let mut stats = self.sym.stats.get();
         stats.steps += 1;
-        if !inputs.iter().zip(last.iter()).all(|(&c, m)| cells[c as usize].to_bits() == m.to_bits()) {
+        if !inputs
+            .iter()
+            .zip(last.iter())
+            .all(|(&c, m)| cells[c as usize].to_bits() == m.to_bits())
+        {
             stats.runs += 1;
             for (m, &c) in last.iter_mut().zip(inputs) {
                 *m = cells[c as usize];
@@ -244,7 +286,13 @@ impl Program {
     }
 
     /// A compiled curve: inputs are `xmin`, `xmax`, then the parameters.
-    fn run_tape(&self, tape: &cells_sym::tape::Tape, cells: &[f64], inputs: &[CellIdx], out: &mut [f64]) {
+    fn run_tape(
+        &self,
+        tape: &cells_sym::tape::Tape,
+        cells: &[f64],
+        inputs: &[CellIdx],
+        out: &mut [f64],
+    ) {
         let (lo, hi) = (cells[inputs[0] as usize], cells[inputs[1] as usize]);
         if !lo.is_finite() || !hi.is_finite() {
             out.fill(f64::NAN);
@@ -288,7 +336,9 @@ impl Program {
     /// Whether any input of `ins` differs between two cell arrays.
     #[inline]
     pub fn any_input_differs(&self, ins: &Instr, a: &[f64], b: &[f64]) -> bool {
-        ins.op.inputs(&self.extra).any(|c| differs(a[c as usize], b[c as usize]))
+        ins.op
+            .inputs(&self.extra)
+            .any(|c| differs(a[c as usize], b[c as usize]))
     }
 
     pub fn len(&self) -> usize {
@@ -306,7 +356,13 @@ fn handle(v: f64) -> Option<Handle> {
 
 /// One symbolic operation. A NaN handle is a blank expression: evaluating it
 /// gives NaN, comparing it gives 0.
-fn run_sym(engine: &mut dyn SymEngine, kind: SymKind, cells: &[f64], inputs: &[CellIdx], out: &mut [f64]) {
+fn run_sym(
+    engine: &mut dyn SymEngine,
+    kind: SymKind,
+    cells: &[f64],
+    inputs: &[CellIdx],
+    out: &mut [f64],
+) {
     let v = |k: usize| cells[inputs[k] as usize];
     match kind {
         SymKind::Instantiate { template, post } => {
@@ -319,12 +375,20 @@ fn run_sym(engine: &mut dyn SymEngine, kind: SymKind, cells: &[f64], inputs: &[C
             out[0] = h as f64;
         }
         SymKind::Evaluate => out[0] = handle(v(0)).map_or(f64::NAN, |h| engine.evaluate(h, None)),
-        SymKind::EvalAt => out[0] = handle(v(0)).map_or(f64::NAN, |h| engine.evaluate(h, Some(("x", v(1))))),
-        SymKind::Derivative => out[0] = handle(v(0)).map_or(f64::NAN, |h| engine.derivative(h, "x") as f64),
+        SymKind::EvalAt => {
+            out[0] = handle(v(0)).map_or(f64::NAN, |h| engine.evaluate(h, Some(("x", v(1)))))
+        }
+        SymKind::Derivative => {
+            out[0] = handle(v(0)).map_or(f64::NAN, |h| engine.derivative(h, "x") as f64)
+        }
         SymKind::Equals | SymKind::EqualsSyntax => {
             out[0] = match (handle(v(0)), handle(v(1))) {
                 (Some(a), Some(b)) => {
-                    let eq = if kind == SymKind::Equals { engine.equals(a, b) } else { engine.equals_syntax(a, b) };
+                    let eq = if kind == SymKind::Equals {
+                        engine.equals(a, b)
+                    } else {
+                        engine.equals_syntax(a, b)
+                    };
                     if eq { 1.0 } else { 0.0 }
                 }
                 _ => 0.0,

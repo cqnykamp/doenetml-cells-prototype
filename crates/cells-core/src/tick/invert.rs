@@ -28,9 +28,9 @@ type HashMap<K, V> = std::collections::HashMap<K, V, BuildHasherDefault<IndexHas
 type HashSet<K> = std::collections::HashSet<K, BuildHasherDefault<IndexHasher>>;
 
 use crate::document::{CellIdx, Request};
+use crate::program::Program;
 use crate::program::geo::Produced;
 use crate::program::ops::{Op, SymKind};
-use crate::program::Program;
 
 /// A request on both cells of a point, issued together with others as a
 /// point group: the renderer's whole-shape drag, or the points one inverse
@@ -68,9 +68,24 @@ impl Program {
     /// the shift is applied to the rest, so a shape dragged against a
     /// constrained point keeps its shape. The same happens to the point
     /// groups an inverse produces.
-    pub fn invert_requests(&self, cells: &[f64], n_essential: usize, requests: &[Request], groups: &[Vec<PointRequest>]) -> Inversion {
-        let mut engine =
-            RequestEngine { program: self, cells, n_essential, pending: HashMap::default(), heap: BinaryHeap::new(), queued: HashSet::default(), write_index: HashMap::default(), inversion: Inversion::default(), origin: HashMap::default() };
+    pub fn invert_requests(
+        &self,
+        cells: &[f64],
+        n_essential: usize,
+        requests: &[Request],
+        groups: &[Vec<PointRequest>],
+    ) -> Inversion {
+        let mut engine = RequestEngine {
+            program: self,
+            cells,
+            n_essential,
+            pending: HashMap::default(),
+            heap: BinaryHeap::new(),
+            queued: HashSet::default(),
+            write_index: HashMap::default(),
+            inversion: Inversion::default(),
+            origin: HashMap::default(),
+        };
         if let ([r], []) = (requests, groups) {
             engine.walk(r.cell, r.value, *r);
         } else {
@@ -79,7 +94,16 @@ impl Program {
             }
         }
         for g in groups {
-            let origin = g.first().map(|p| Request { cell: p.cells[0], value: p.values[0] }).unwrap_or(Request { cell: 0, value: f64::NAN });
+            let origin = g
+                .first()
+                .map(|p| Request {
+                    cell: p.cells[0],
+                    value: p.values[0],
+                })
+                .unwrap_or(Request {
+                    cell: 0,
+                    value: f64::NAN,
+                });
             engine.push_group(g.clone(), origin);
         }
         engine.run();
@@ -90,14 +114,27 @@ impl Program {
     /// applied: invert, overlay the essential writes on a copy, and evaluate
     /// forward the instructions that read a changed value, up to the last
     /// requested cell. Nothing is written.
-    pub fn realize(&self, cells: &[f64], n_essential: usize, requests: &[(CellIdx, f64)], out: &mut Vec<f64>) {
-        let reqs: Vec<Request> = requests.iter().map(|&(cell, value)| Request { cell, value }).collect();
+    pub fn realize(
+        &self,
+        cells: &[f64],
+        n_essential: usize,
+        requests: &[(CellIdx, f64)],
+        out: &mut Vec<f64>,
+    ) {
+        let reqs: Vec<Request> = requests
+            .iter()
+            .map(|&(cell, value)| Request { cell, value })
+            .collect();
         let inv = self.invert_requests(cells, n_essential, &reqs, &[]);
         let mut scratch = cells.to_vec();
         for &(c, v) in &inv.writes {
             scratch[c as usize] = v;
         }
-        let hi = requests.iter().map(|&(c, _)| self.producer[c as usize]).filter(|&p| p != u32::MAX).max();
+        let hi = requests
+            .iter()
+            .map(|&(c, _)| self.producer[c as usize])
+            .filter(|&p| p != u32::MAX)
+            .max();
         if let Some(hi) = hi {
             for ins in &self.instrs[..=hi as usize] {
                 if self.any_input_differs(ins, &scratch, cells) {
@@ -181,19 +218,28 @@ impl RequestEngine<'_> {
     /// Queue a point group after the equal-shift rule (see `invert_requests`).
     fn push_group(&mut self, mut pts: Vec<PointRequest>, origin: Request) {
         if pts.len() >= 2 {
-            let reqs: Vec<(CellIdx, f64)> = pts.iter().flat_map(|p| p.cells.into_iter().zip(p.values)).collect();
+            let reqs: Vec<(CellIdx, f64)> = pts
+                .iter()
+                .flat_map(|p| p.cells.into_iter().zip(p.values))
+                .collect();
             let mut realized = Vec::with_capacity(reqs.len());
-            self.program.realize(self.cells, self.n_essential, &reqs, &mut realized);
+            self.program
+                .realize(self.cells, self.n_essential, &reqs, &mut realized);
             let mut shift: Option<(f64, f64)> = None;
             let mut n_held = 0;
             let mut consistent = true;
             for (i, p) in pts.iter().enumerate() {
-                let (sx, sy) = (realized[2 * i] - p.values[0], realized[2 * i + 1] - p.values[1]);
+                let (sx, sy) = (
+                    realized[2 * i] - p.values[0],
+                    realized[2 * i + 1] - p.values[1],
+                );
                 if sx.abs() > REALIZED_TOL || sy.abs() > REALIZED_TOL {
                     n_held += 1;
                     match shift {
                         None => shift = Some((sx, sy)),
-                        Some((px, py)) if (px - sx).abs() <= REALIZED_TOL && (py - sy).abs() <= REALIZED_TOL => {}
+                        Some((px, py))
+                            if (px - sx).abs() <= REALIZED_TOL
+                                && (py - sy).abs() <= REALIZED_TOL => {}
                         Some(_) => consistent = false,
                     }
                 }
@@ -230,20 +276,30 @@ impl RequestEngine<'_> {
                 }
                 desired.push(d);
             }
-            let origin = origin.unwrap_or(Request { cell: ins.out, value: f64::NAN });
+            let origin = origin.unwrap_or(Request {
+                cell: ins.out,
+                value: f64::NAN,
+            });
             produced.clear();
             let ok = match ins.op {
                 Op::Vec(v, start, n_in, _) => {
-                    let inputs = &self.program.extra[start as usize..start as usize + n_in as usize];
+                    let inputs =
+                        &self.program.extra[start as usize..start as usize + n_in as usize];
                     let inp: Vec<f64> = inputs.iter().map(|&c| self.cells[c as usize]).collect();
-                    let cur: Vec<f64> = (0..n_out).map(|k| self.cells[ins.out as usize + k]).collect();
+                    let cur: Vec<f64> = (0..n_out)
+                        .map(|k| self.cells[ins.out as usize + k])
+                        .collect();
                     v.invert(inputs, &inp, &cur, &desired, &mut produced)
                 }
                 // A math input's value: write the constant expression.
                 Op::Sym(SymKind::Evaluate, start, _) => {
                     let expr = self.program.extra[start as usize];
                     let d = desired[0].unwrap();
-                    let h = if d.is_nan() { f64::NAN } else { self.program.sym.engine.borrow_mut().num(d) as f64 };
+                    let h = if d.is_nan() {
+                        f64::NAN
+                    } else {
+                        self.program.sym.engine.borrow_mut().num(d) as f64
+                    };
                     produced.write(expr, h);
                     true
                 }

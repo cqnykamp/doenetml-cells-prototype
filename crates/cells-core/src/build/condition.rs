@@ -9,9 +9,19 @@ impl<'a> Compiler<'a> {
     /// 1 or 0. Comparisons (`< <= > >= = !=`), `and`/`&&`, `or`/`||`,
     /// `not`/`!`, parentheses, `true`, `false`, and numeric math operands;
     /// a bare operand holds when it is nonzero.
-    pub(super) fn plan_condition(&mut self, t: TemplateId, e: ElemId, plan: &mut ElemPlan, nodes: &[NodeId]) -> Result<usize> {
+    pub(super) fn plan_condition(
+        &mut self,
+        t: TemplateId,
+        e: ElemId,
+        plan: &mut ElemPlan,
+        nodes: &[NodeId],
+    ) -> Result<usize> {
         let (toks, text) = self.math_tokens(t, e, nodes)?;
-        let mut p = CondParser { toks: &toks, pos: 0, text: &text };
+        let mut p = CondParser {
+            toks: &toks,
+            pos: 0,
+            text: &text,
+        };
         let slot = p.or(self, plan)?;
         if p.pos != toks.len() {
             return Err(p.err(format!("unexpected {:?}", toks[p.pos])));
@@ -30,7 +40,10 @@ struct CondParser<'t> {
 
 impl CondParser<'_> {
     fn err(&self, reason: String) -> Error {
-        Error::BadMath { text: self.text.to_string(), reason }
+        Error::BadMath {
+            text: self.text.to_string(),
+            reason,
+        }
     }
 
     fn peek(&self, k: usize) -> Option<&Token> {
@@ -54,7 +67,15 @@ impl CondParser<'_> {
     }
 
     /// `next`s joined by `word`, `c` or `cc`, folded left with `op`.
-    fn chain(&mut self, cp: &mut Compiler, plan: &mut ElemPlan, word: &str, c: char, op: OpSpec, next: fn(&mut Self, &mut Compiler, &mut ElemPlan) -> Result<usize>) -> Result<usize> {
+    fn chain(
+        &mut self,
+        cp: &mut Compiler,
+        plan: &mut ElemPlan,
+        word: &str,
+        c: char,
+        op: OpSpec,
+        next: fn(&mut Self, &mut Compiler, &mut ElemPlan) -> Result<usize>,
+    ) -> Result<usize> {
         let mut lhs = next(self, cp, plan)?;
         loop {
             if self.is_word(word) {
@@ -83,7 +104,10 @@ impl CondParser<'_> {
     fn cmp(&mut self, cp: &mut Compiler, plan: &mut ElemPlan) -> Result<usize> {
         if let Some(Token::LParen) = self.peek(0) {
             let close = self.matching(self.pos)?;
-            if self.toks[self.pos + 1..close].iter().any(is_condition_token) {
+            if self.toks[self.pos + 1..close]
+                .iter()
+                .any(is_condition_token)
+            {
                 self.pos += 1;
                 let inner = self.or(cp, plan)?;
                 if self.pos != close {

@@ -9,16 +9,28 @@ use crate::components::prop::{circle, line, point, polygon, segment};
 impl<'a> Compiler<'a> {
     /// `<point>`: coordinates from `coords`, from `x`/`y`, or from `(a, b)`
     /// children; constraint children wrap them in a projection.
-    pub(super) fn plan_point(&mut self, t: TemplateId, e: ElemId, base: Option<NodeId>) -> Result<ElemPlan> {
+    pub(super) fn plan_point(
+        &mut self,
+        t: TemplateId,
+        e: ElemId,
+        base: Option<NodeId>,
+    ) -> Result<ElemPlan> {
         let d = self.c.dast;
-        let Elem { node: el, name_scope: scope, .. } = self.c.templates[t].elems[e];
+        let Elem {
+            node: el,
+            name_scope: scope,
+            ..
+        } = self.c.templates[t].elems[e];
         let mut ch = ElemPlan::new(ComponentKind::Point.prop_defs().len());
         let own_children = self.math_children(el);
         let base_children = base.map(|b| self.math_children(b)).unwrap_or_default();
         if let Some(a) = self.attr_or_inherited(el, base, "coords") {
             let p = self.plan_point_attr(t, scope, a)?;
             Self::set_point_with_roles(&mut ch, [point::X, point::Y], &p, ["x", "y"], "coords");
-        } else if self.attr_or_inherited(el, base, "x").is_some() || self.attr_or_inherited(el, base, "y").is_some() || (own_children.is_empty() && base_children.is_empty()) {
+        } else if self.attr_or_inherited(el, base, "x").is_some()
+            || self.attr_or_inherited(el, base, "y").is_some()
+            || (own_children.is_empty() && base_children.is_empty())
+        {
             for (i, name) in ["x", "y"].into_iter().enumerate() {
                 match self.attr_or_inherited(el, base, name) {
                     Some(a) => {
@@ -34,7 +46,11 @@ impl<'a> Compiler<'a> {
                 }
             }
         } else {
-            let nodes = if own_children.is_empty() { base_children } else { own_children };
+            let nodes = if own_children.is_empty() {
+                base_children
+            } else {
+                own_children
+            };
             let p = PointPlan::Tuple(self.plan_tuple(t, scope, &nodes)?);
             Self::set_point_with_roles(&mut ch, [point::X, point::Y], &p, ["x", "y"], "children");
         }
@@ -48,11 +64,22 @@ impl<'a> Compiler<'a> {
             Some(_) => {
                 // The copy's own attribute wins: `hide="false"` reveals a
                 // copy of a hidden point, as in the current core.
-                let owner = if d.attr(el, "hide").is_some() { el } else { base.unwrap() };
+                let owner = if d.attr(el, "hide").is_some() {
+                    el
+                } else {
+                    base.unwrap()
+                };
                 let on = self.attr_flag(owner, "hide");
                 ch.set(point::HIDE, SourcePlan::Literal(if on { 1.0 } else { 0.0 }));
             }
-            None => ch.set(point::HIDE, if base.is_some() { SourcePlan::Inherit } else { SourcePlan::Default(0.0) }),
+            None => ch.set(
+                point::HIDE,
+                if base.is_some() {
+                    SourcePlan::Inherit
+                } else {
+                    SourcePlan::Default(0.0)
+                },
+            ),
         }
         // Constraints may sit directly under the point or in <constraints>.
         let mut constraints: Vec<NodeId> = Vec::new();
@@ -60,7 +87,12 @@ impl<'a> Compiler<'a> {
             for &n in d.children(node) {
                 if d.kind(n) == NodeKind::Element {
                     if d.str(n) == "constraints" {
-                        constraints.extend(d.children(n).iter().copied().filter(|&c| d.kind(c) == NodeKind::Element));
+                        constraints.extend(
+                            d.children(n)
+                                .iter()
+                                .copied()
+                                .filter(|&c| d.kind(c) == NodeKind::Element),
+                        );
                     } else {
                         constraints.push(n);
                     }
@@ -72,7 +104,9 @@ impl<'a> Compiler<'a> {
         }
         if let Some(&c) = constraints.first() {
             if constraints.len() > 1 {
-                return Err(Error::Unsupported("more than one constraint on a point".into()));
+                return Err(Error::Unsupported(
+                    "more than one constraint on a point".into(),
+                ));
             }
             self.wrap_constraint(t, scope, &mut ch, c)?;
         }
@@ -81,9 +115,18 @@ impl<'a> Compiler<'a> {
 
     /// Move the planned coordinates of a point to hidden raw slots and make
     /// the public `x`, `y` their projection onto the constraint.
-    pub(super) fn wrap_constraint(&mut self, t: TemplateId, scope: ElemId, ch: &mut ElemPlan, c: NodeId) -> Result<()> {
+    pub(super) fn wrap_constraint(
+        &mut self,
+        t: TemplateId,
+        scope: ElemId,
+        ch: &mut ElemPlan,
+        c: NodeId,
+    ) -> Result<()> {
         let d = self.c.dast;
-        let (px, py) = (ch.props[point::X].take().expect("x planned"), ch.props[point::Y].take().expect("y planned"));
+        let (px, py) = (
+            ch.props[point::X].take().expect("x planned"),
+            ch.props[point::Y].take().expect("y planned"),
+        );
         let raw_x = ch.hidden(px);
         let raw_y = ch.hidden(py);
         // The raw coordinates are the essential state now; keep their roles.
@@ -97,7 +140,10 @@ impl<'a> Compiler<'a> {
                 let num = |me: &Self, name: &str, default: f64| -> Result<f64> {
                     match d.attr(c, name) {
                         None => Ok(default),
-                        Some(a) => me.attr_text(a).and_then(|s| s.trim().parse::<f64>().ok()).ok_or_else(|| Error::BadLiteralParam(name.into())),
+                        Some(a) => me
+                            .attr_text(a)
+                            .and_then(|s| s.trim().parse::<f64>().ok())
+                            .ok_or_else(|| Error::BadLiteralParam(name.into())),
                     }
                 };
                 let (dx, dy) = (num(self, "dx", 1.0)?, num(self, "dy", 1.0)?);
@@ -105,10 +151,16 @@ impl<'a> Compiler<'a> {
                 let snap = |ch: &mut ElemPlan, raw: usize, step: f64, offset: f64| -> SourcePlan {
                     let mut cur = raw;
                     if offset != 0.0 {
-                        cur = ch.hidden(SourcePlan::computed(OpSpec::Offset { k: -offset }, vec![cur]));
+                        cur = ch.hidden(SourcePlan::computed(
+                            OpSpec::Offset { k: -offset },
+                            vec![cur],
+                        ));
                     }
                     if step != 1.0 {
-                        cur = ch.hidden(SourcePlan::computed(OpSpec::Scale { k: 1.0 / step }, vec![cur]));
+                        cur = ch.hidden(SourcePlan::computed(
+                            OpSpec::Scale { k: 1.0 / step },
+                            vec![cur],
+                        ));
                     }
                     cur = ch.hidden(SourcePlan::computed(OpSpec::Round, vec![cur]));
                     if step != 1.0 {
@@ -125,20 +177,49 @@ impl<'a> Compiler<'a> {
                 ch.set(point::Y, py);
             }
             "constrainTo" => {
-                let m = d.children(c).iter().copied().find(|&n| d.kind(n) == NodeKind::Macro).ok_or_else(|| Error::Unsupported("<constrainTo> without a reference".into()))?;
+                let m = d
+                    .children(c)
+                    .iter()
+                    .copied()
+                    .find(|&n| d.kind(n) == NodeKind::Macro)
+                    .ok_or_else(|| {
+                        Error::Unsupported("<constrainTo> without a reference".into())
+                    })?;
                 let p = self.plan_ref(t, scope, m)?;
-                let target = self.plan_elem_target(t, p).ok_or_else(|| Error::Unsupported("<constrainTo> must name a component in the same scope".into()))?;
-                let refs = |me: &mut Self, ch: &mut ElemPlan, props: &[&str]| -> Vec<usize> { props.iter().map(|pr| ch.hidden(SourcePlan::reference(me.plan_with_prop(p, pr)))).collect() };
+                let target = self.plan_elem_target(t, p).ok_or_else(|| {
+                    Error::Unsupported(
+                        "<constrainTo> must name a component in the same scope".into(),
+                    )
+                })?;
+                let refs = |me: &mut Self, ch: &mut ElemPlan, props: &[&str]| -> Vec<usize> {
+                    props
+                        .iter()
+                        .map(|pr| ch.hidden(SourcePlan::reference(me.plan_with_prop(p, pr))))
+                        .collect()
+                };
                 match self.c.templates[t].elems[target].kind {
                     ComponentKind::Circle => {
                         let c = refs(self, ch, &["cx", "cy", "radius"]);
-                        ch.set_vec(point::X, VecOp::ProjectCircle, vec![raw_x, raw_y, c[0], c[1], c[2]]);
+                        ch.set_vec(
+                            point::X,
+                            VecOp::ProjectCircle,
+                            vec![raw_x, raw_y, c[0], c[1], c[2]],
+                        );
                     }
                     ComponentKind::Line | ComponentKind::LineSegment => {
                         let l = refs(self, ch, &["x1", "y1", "x2", "y2"]);
-                        ch.set_vec(point::X, VecOp::ProjectLine, vec![raw_x, raw_y, l[0], l[1], l[2], l[3]]);
+                        ch.set_vec(
+                            point::X,
+                            VecOp::ProjectLine,
+                            vec![raw_x, raw_y, l[0], l[1], l[2], l[3]],
+                        );
                     }
-                    other => return Err(Error::Unsupported(format!("constrainTo a <{}>", other.tag()))),
+                    other => {
+                        return Err(Error::Unsupported(format!(
+                            "constrainTo a <{}>",
+                            other.tag()
+                        )));
+                    }
                 }
             }
             other => return Err(Error::Unsupported(format!("<{other}> constraint"))),
@@ -147,12 +228,21 @@ impl<'a> Compiler<'a> {
     }
 
     /// Dispatch for the geometric kinds.
-    pub(super) fn plan_geo(&mut self, t: TemplateId, e: ElemId, extend: Option<RefId>) -> Result<()> {
+    pub(super) fn plan_geo(
+        &mut self,
+        t: TemplateId,
+        e: ElemId,
+        extend: Option<RefId>,
+    ) -> Result<()> {
         let d = self.c.dast;
         let Elem { node: el, kind, .. } = self.c.templates[t].elems[e];
         // Own attributes other than name and extend, or children, override
         // the referent's; with none, the copy aliases every public prop.
-        let own_attrs: Vec<String> = d.attrs(el).map(|a| d.attr_name(a).to_string()).filter(|n| n != "name" && n != "extend").collect();
+        let own_attrs: Vec<String> = d
+            .attrs(el)
+            .map(|a| d.attr_name(a).to_string())
+            .filter(|n| n != "name" && n != "extend")
+            .collect();
         let has_children = !d.children(el).iter().all(|&n| self.is_blank(n));
         if extend.is_some() && own_attrs.is_empty() && !has_children {
             let n = kind.prop_defs().len();
@@ -160,7 +250,9 @@ impl<'a> Compiler<'a> {
             return Ok(());
         }
         // Merged attributes: the referent's node supplies what the copy omits.
-        let base_elem = extend.and_then(|p| self.plan_elem_target(t, p)).filter(|&r| self.c.templates[t].elems[r].node != NONE);
+        let base_elem = extend
+            .and_then(|p| self.plan_elem_target(t, p))
+            .filter(|&r| self.c.templates[t].elems[r].node != NONE);
         let base = base_elem.map(|r| self.c.templates[t].elems[r].node);
         let mut ch = match kind {
             ComponentKind::Point => self.plan_point(t, e, base)?,
@@ -176,7 +268,11 @@ impl<'a> Compiler<'a> {
             let base_roles = self.c.templates[t].elems[r].roles.clone();
             for (role, &slot) in &ch.roles {
                 // A role the copy's own attribute supplied is its own state.
-                if ch.role_attr.get(role).is_some_and(|a| own_attrs.iter().any(|o| o == a)) {
+                if ch
+                    .role_attr
+                    .get(role)
+                    .is_some_and(|a| own_attrs.iter().any(|o| o == a))
+                {
                     continue;
                 }
                 if let Some(&bs) = base_roles.get(role)
@@ -187,7 +283,8 @@ impl<'a> Compiler<'a> {
             }
         }
         let scope = self.c.templates[t].elems[e].name_scope;
-        self.plan_fix(t, scope, el, &["fixed"])?.apply(&mut ch.props);
+        self.plan_fix(t, scope, el, &["fixed"])?
+            .apply(&mut ch.props);
         self.c.templates[t].elems[e].roles = ch.roles.clone();
         self.c.templates[t].elems[e].props = ch.finish();
         Ok(())
@@ -199,12 +296,22 @@ impl<'a> Compiler<'a> {
     /// or elements (constraints).
     fn math_children(&self, node: NodeId) -> Vec<NodeId> {
         let d = self.c.dast;
-        d.children(node).iter().copied().filter(|&n| !self.is_blank(n) && d.kind(n) != NodeKind::Element).collect()
+        d.children(node)
+            .iter()
+            .copied()
+            .filter(|&n| !self.is_blank(n) && d.kind(n) != NodeKind::Element)
+            .collect()
     }
 
-    pub(super) fn attr_or_inherited(&self, el: NodeId, base: Option<NodeId>, name: &str) -> Option<u32> {
+    pub(super) fn attr_or_inherited(
+        &self,
+        el: NodeId,
+        base: Option<NodeId>,
+        name: &str,
+    ) -> Option<u32> {
         let d = self.c.dast;
-        d.attr(el, name).or_else(|| base.and_then(|b| d.attr(b, name)))
+        d.attr(el, name)
+            .or_else(|| base.and_then(|b| d.attr(b, name)))
     }
 
     /// Two hidden slots holding a point. A literal coordinate is essential
@@ -216,7 +323,13 @@ impl<'a> Compiler<'a> {
     /// Put a point's coordinates on two public slots, tagging literal
     /// coordinates with roles. A free shape's own points are the points
     /// themselves: no instruction stands between (ADR 0006).
-    pub(super) fn set_point_with_roles(ch: &mut ElemPlan, slots: [usize; 2], p: &PointPlan, roles: [&'static str; 2], attr: &'static str) {
+    pub(super) fn set_point_with_roles(
+        ch: &mut ElemPlan,
+        slots: [usize; 2],
+        p: &PointPlan,
+        roles: [&'static str; 2],
+        attr: &'static str,
+    ) {
         for j in 0..2 {
             match p.coord(j) {
                 SourcePlan::Literal(v) => {
@@ -230,7 +343,14 @@ impl<'a> Compiler<'a> {
 
     /// A given point as `set_point_with_roles` sets it, else an essential
     /// default with its roles.
-    fn set_point_or_default(ch: &mut ElemPlan, slots: [usize; 2], p: Option<&PointPlan>, roles: [&'static str; 2], attr: &'static str, (default_roles, default): DefaultPoint) {
+    fn set_point_or_default(
+        ch: &mut ElemPlan,
+        slots: [usize; 2],
+        p: Option<&PointPlan>,
+        roles: [&'static str; 2],
+        attr: &'static str,
+        (default_roles, default): DefaultPoint,
+    ) {
         match p {
             Some(p) => Self::set_point_with_roles(ch, slots, p, roles, attr),
             None => {
@@ -240,7 +360,12 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    pub(super) fn point_slots_with_roles(ch: &mut ElemPlan, p: &PointPlan, roles: [&'static str; 2], attr: &'static str) -> [usize; 2] {
+    pub(super) fn point_slots_with_roles(
+        ch: &mut ElemPlan,
+        p: &PointPlan,
+        roles: [&'static str; 2],
+        attr: &'static str,
+    ) -> [usize; 2] {
         let mut out = [0; 2];
         for j in 0..2 {
             out[j] = match p.coord(j) {
@@ -257,7 +382,12 @@ impl<'a> Compiler<'a> {
     /// The points of a point-list attribute: bare references, parenthesized
     /// tuples (which may contain references), and references to array props
     /// (`$l.points`), which contribute one point per item.
-    pub(super) fn plan_point_list(&mut self, t: TemplateId, scope: ElemId, a: u32) -> Result<Vec<PointPlan>> {
+    pub(super) fn plan_point_list(
+        &mut self,
+        t: TemplateId,
+        scope: ElemId,
+        a: u32,
+    ) -> Result<Vec<PointPlan>> {
         let d = self.c.dast;
         let (toks, text) = self.math_tokens(t, scope, d.attr_children(a))?;
         let mut out = Vec::new();
@@ -282,7 +412,10 @@ impl<'a> Compiler<'a> {
                             Some(Token::LParen) => depth += 1,
                             Some(Token::RParen) => depth -= 1,
                             None => {
-                                return Err(Error::BadMath { text, reason: "missing ')'".into() });
+                                return Err(Error::BadMath {
+                                    text,
+                                    reason: "missing ')'".into(),
+                                });
                             }
                             _ => {}
                         }
@@ -298,11 +431,17 @@ impl<'a> Compiler<'a> {
                 // A symbol (`through="A"`) is not a point here: NaN, as the
                 // current core's warning case.
                 Token::Ident(_) => {
-                    out.push(PointPlan::Tuple([SourcePlan::Fixed(f64::NAN), SourcePlan::Fixed(f64::NAN)]));
+                    out.push(PointPlan::Tuple([
+                        SourcePlan::Fixed(f64::NAN),
+                        SourcePlan::Fixed(f64::NAN),
+                    ]));
                     i += 1;
                 }
                 other => {
-                    return Err(Error::BadMath { text, reason: format!("unexpected {other:?} in a point list") });
+                    return Err(Error::BadMath {
+                        text,
+                        reason: format!("unexpected {other:?} in a point list"),
+                    });
                 }
             }
         }
@@ -372,15 +511,26 @@ impl<'a> Compiler<'a> {
         Ok(n)
     }
 
-    pub(super) fn plan_circle(&mut self, t: TemplateId, e: ElemId, base: Option<NodeId>) -> Result<ElemPlan> {
+    pub(super) fn plan_circle(
+        &mut self,
+        t: TemplateId,
+        e: ElemId,
+        base: Option<NodeId>,
+    ) -> Result<ElemPlan> {
         let d = self.c.dast;
-        let Elem { node: el, name_scope: scope, .. } = self.c.templates[t].elems[e];
+        let Elem {
+            node: el,
+            name_scope: scope,
+            ..
+        } = self.c.templates[t].elems[e];
         let kind = ComponentKind::Circle;
         let center = match self.attr_or_inherited(el, base, "center") {
             Some(a) => Some(match self.plan_point_attr(t, scope, a) {
                 // Not a point (`center="A"`): no center, as the current
                 // core's warning case.
-                Err(Error::BadMath { .. }) if self.single_macro(a).is_none() => PointPlan::Tuple([SourcePlan::Fixed(f64::NAN), SourcePlan::Fixed(f64::NAN)]),
+                Err(Error::BadMath { .. }) if self.single_macro(a).is_none() => {
+                    PointPlan::Tuple([SourcePlan::Fixed(f64::NAN), SourcePlan::Fixed(f64::NAN)])
+                }
                 r => r?,
             }),
             None => None,
@@ -402,8 +552,19 @@ impl<'a> Compiler<'a> {
                 ch.set(i, SourcePlan::from_def(op, args));
             }
         }
-        let r2 = ch.hidden(SourcePlan::computed(OpSpec::Mul, vec![circle::RADIUS, circle::RADIUS]));
-        ch.set(circle::AREA, SourcePlan::computed(OpSpec::Scale { k: std::f64::consts::PI }, vec![r2]));
+        let r2 = ch.hidden(SourcePlan::computed(
+            OpSpec::Mul,
+            vec![circle::RADIUS, circle::RADIUS],
+        ));
+        ch.set(
+            circle::AREA,
+            SourcePlan::computed(
+                OpSpec::Scale {
+                    k: std::f64::consts::PI,
+                },
+                vec![r2],
+            ),
+        );
         let (hc, hr) = (center.is_some(), radius.is_some());
         // The radius shown is never negative; the prescribed radius, or an
         // essential one (1 by default), behind it receives the clamped value
@@ -417,14 +578,26 @@ impl<'a> Compiler<'a> {
                 Some(other) => ch.hidden(other.clone()),
                 None => ch.essential("r", 1.0),
             };
-            SourcePlan::computed(OpSpec::Clamp { lo: 0.0, hi: f64::INFINITY }, vec![pres])
+            SourcePlan::computed(
+                OpSpec::Clamp {
+                    lo: 0.0,
+                    hi: f64::INFINITY,
+                },
+                vec![pres],
+            )
         };
         let nan = || SourcePlan::Fixed(f64::NAN);
         // Through points and the center-as-reference, for `$c.throughPoint1`
         // and `<point extend="$c.center">`.
         let through_slot = |i: usize, j: usize| circle::THROUGH_X1 + 2 * i + j;
         for (i, p) in through.iter().enumerate().take(3) {
-            Self::set_point_with_roles(&mut ch, [through_slot(i, 0), through_slot(i, 1)], p, POINT_ROLES[i], "through");
+            Self::set_point_with_roles(
+                &mut ch,
+                [through_slot(i, 0), through_slot(i, 1)],
+                p,
+                POINT_ROLES[i],
+                "through",
+            );
         }
         for i in through.len()..3 {
             ch.set(through_slot(i, 0), nan());
@@ -432,11 +605,18 @@ impl<'a> Compiler<'a> {
         }
         ch.set(circle::NUM_THROUGH_POINTS, SourcePlan::Fixed(n as f64));
         let (center_x, center_y) = (circle::CENTER_X, circle::CENTER_Y);
-        let (tx1, ty1, tx2, ty2) = (through_slot(0, 0), through_slot(0, 1), through_slot(1, 0), through_slot(1, 1));
+        let (tx1, ty1, tx2, ty2) = (
+            through_slot(0, 0),
+            through_slot(0, 1),
+            through_slot(1, 0),
+            through_slot(1, 1),
+        );
         // The prescribed center lives on `centerX`/`centerY` and the cases
         // read it from there; without one they alias the derived center.
         match &center {
-            Some(c) => Self::set_point_with_roles(&mut ch, [center_x, center_y], c, ["cx", "cy"], "center"),
+            Some(c) => {
+                Self::set_point_with_roles(&mut ch, [center_x, center_y], c, ["cx", "cy"], "center")
+            }
             None => {
                 ch.set(center_x, SourcePlan::own(circle::CX));
                 ch.set(center_y, SourcePlan::own(circle::CY));
@@ -461,19 +641,30 @@ impl<'a> Compiler<'a> {
                 ch.set(circle::RADIUS, r);
             }
             (true, false, 1) => {
-                ch.set_vec(circle::CX, VecOp::CircleCenterPoint, vec![center_x, center_y, tx1, ty1]);
+                ch.set_vec(
+                    circle::CX,
+                    VecOp::CircleCenterPoint,
+                    vec![center_x, center_y, tx1, ty1],
+                );
             }
             (false, _, 1) => {
                 // The through point sits on top of the circle.
                 let r = radius_plan(&mut ch);
                 ch.set(circle::RADIUS, r);
                 ch.set(circle::CX, SourcePlan::own(tx1));
-                ch.set(circle::CY, SourcePlan::computed(OpSpec::Sub, vec![ty1, circle::RADIUS]));
+                ch.set(
+                    circle::CY,
+                    SourcePlan::computed(OpSpec::Sub, vec![ty1, circle::RADIUS]),
+                );
             }
             (false, true, 2) => {
                 let r = radius_plan(&mut ch);
                 ch.set(circle::RADIUS, r);
-                ch.set_vec(circle::CX, VecOp::CircleTwoPointsRadius, vec![tx1, ty1, tx2, ty2, circle::RADIUS]);
+                ch.set_vec(
+                    circle::CX,
+                    VecOp::CircleTwoPointsRadius,
+                    vec![tx1, ty1, tx2, ty2, circle::RADIUS],
+                );
             }
             (false, false, n) => {
                 let args: Vec<usize> = (0..2 * n).map(|k| tx1 + k).collect();
@@ -492,11 +683,17 @@ impl<'a> Compiler<'a> {
             Expr::Cell(p) => {
                 let plan = &self.c.refs[p as usize];
                 let is_value = plan.prop.as_deref().is_none_or(|pr| pr == "value");
-                let Some(target) = (is_value).then(|| self.plan_elem_target(t, p as RefId)).flatten() else {
+                let Some(target) = (is_value)
+                    .then(|| self.plan_elem_target(t, p as RefId))
+                    .flatten()
+                else {
                     return id;
                 };
                 // The math may come later in the document and not be planned yet.
-                if self.c.templates[t].elems[target].kind == ComponentKind::Math && self.c.templates[t].elems[target].props.is_empty() && self.plan_elem(t, target).is_err() {
+                if self.c.templates[t].elems[target].kind == ComponentKind::Math
+                    && self.c.templates[t].elems[target].props.is_empty()
+                    && self.plan_elem(t, target).is_err()
+                {
                     return id;
                 }
                 match self.c.templates[t].elems[target].props.first() {
@@ -517,8 +714,15 @@ impl<'a> Compiler<'a> {
                 let a = self.inline_symbolic_maths(t, a);
                 self.c.arena.push(Expr::Neg(a))
             }
-            Expr::Add(a, b) | Expr::Sub(a, b) | Expr::Mul(a, b) | Expr::Div(a, b) | Expr::Pow(a, b) => {
-                let (na, nb) = (self.inline_symbolic_maths(t, a), self.inline_symbolic_maths(t, b));
+            Expr::Add(a, b)
+            | Expr::Sub(a, b)
+            | Expr::Mul(a, b)
+            | Expr::Div(a, b)
+            | Expr::Pow(a, b) => {
+                let (na, nb) = (
+                    self.inline_symbolic_maths(t, a),
+                    self.inline_symbolic_maths(t, b),
+                );
                 self.c.arena.push(e.with_operands(na, nb))
             }
         }
@@ -526,18 +730,38 @@ impl<'a> Compiler<'a> {
 
     /// Variable names of a line's equation (`variables="(s,t)"` or `"s t"`).
     pub(super) fn line_variables(&self, el: NodeId, base: Option<NodeId>) -> (String, String) {
-        match self.attr_or_inherited(el, base, "variables").and_then(|a| self.attr_text(a)) {
+        match self
+            .attr_or_inherited(el, base, "variables")
+            .and_then(|a| self.attr_text(a))
+        {
             Some(text) => {
-                let names: Vec<String> = text.split(|c: char| !c.is_alphanumeric()).filter(|s| !s.is_empty()).map(str::to_string).collect();
-                if names.len() == 2 { (names[0].clone(), names[1].clone()) } else { ("x".into(), "y".into()) }
+                let names: Vec<String> = text
+                    .split(|c: char| !c.is_alphanumeric())
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+                    .collect();
+                if names.len() == 2 {
+                    (names[0].clone(), names[1].clone())
+                } else {
+                    ("x".into(), "y".into())
+                }
             }
             None => ("x".into(), "y".into()),
         }
     }
 
-    pub(super) fn plan_line(&mut self, t: TemplateId, e: ElemId, base: Option<NodeId>) -> Result<ElemPlan> {
+    pub(super) fn plan_line(
+        &mut self,
+        t: TemplateId,
+        e: ElemId,
+        base: Option<NodeId>,
+    ) -> Result<ElemPlan> {
         let d = self.c.dast;
-        let Elem { node: el, name_scope: scope, .. } = self.c.templates[t].elems[e];
+        let Elem {
+            node: el,
+            name_scope: scope,
+            ..
+        } = self.c.templates[t].elems[e];
         let kind = ComponentKind::Line;
         let mut ch = ElemPlan::new(kind.prop_defs().len());
         let through = match self.attr_or_inherited(el, base, "through") {
@@ -554,13 +778,20 @@ impl<'a> Compiler<'a> {
             Some(d.attr_children(a).to_vec())
         } else if !own_children.is_empty() {
             Some(own_children)
-        } else if !base_children.is_empty() && through.is_empty() && slope.is_none() && parallel.is_none() && perpendicular.is_none() {
+        } else if !base_children.is_empty()
+            && through.is_empty()
+            && slope.is_none()
+            && parallel.is_none()
+            && perpendicular.is_none()
+        {
             Some(base_children)
         } else {
             None
         };
         if through.len() > 2 {
-            return Err(Error::Unsupported("a line through more than two points".into()));
+            return Err(Error::Unsupported(
+                "a line through more than two points".into(),
+            ));
         }
 
         if let Some(nodes) = equation_nodes {
@@ -569,9 +800,15 @@ impl<'a> Compiler<'a> {
             let (toks, text) = self.math_tokens(t, scope, &nodes)?;
             let sides = super::expr::split_top(&toks, &Token::Eq);
             if sides.len() != 2 {
-                return Err(Error::BadMath { text, reason: "a line equation needs one '='".into() });
+                return Err(Error::BadMath {
+                    text,
+                    reason: "a line equation needs one '='".into(),
+                });
             }
-            let (lhs, rhs) = (self.parse_tokens(&sides[0], &text)?, self.parse_tokens(&sides[1], &text)?);
+            let (lhs, rhs) = (
+                self.parse_tokens(&sides[0], &text)?,
+                self.parse_tokens(&sides[1], &text)?,
+            );
             let diff = self.c.arena.push(Expr::Sub(lhs, rhs));
             // A referenced <math> whose expression carries the variables
             // (`$m` standing for `2x`) is inlined, so it takes part in the
@@ -579,35 +816,74 @@ impl<'a> Compiler<'a> {
             let diff = self.inline_symbolic_maths(t, diff);
             let coeffs = match super::expr::linear_coeffs(&mut self.c.arena, diff, &vx, &vy) {
                 // A symbolic or nonlinear equation is not a line here.
-                None => [SourcePlan::Fixed(f64::NAN), SourcePlan::Fixed(f64::NAN), SourcePlan::Fixed(f64::NAN)],
-                Some([a, b, c]) => [self.plan_from_expr(a), self.plan_from_expr(b), self.plan_from_expr(c)],
+                None => [
+                    SourcePlan::Fixed(f64::NAN),
+                    SourcePlan::Fixed(f64::NAN),
+                    SourcePlan::Fixed(f64::NAN),
+                ],
+                Some([a, b, c]) => [
+                    self.plan_from_expr(a),
+                    self.plan_from_expr(b),
+                    self.plan_from_expr(c),
+                ],
             };
             let [a, b, c] = coeffs;
             ch.set(line::COEFFVAR1, a);
             ch.set(line::COEFFVAR2, b);
             ch.set(line::COEFF0, c);
-            ch.set_vec(line::X1, VecOp::LinePointsFromCoeffs, vec![line::COEFFVAR1, line::COEFFVAR2, line::COEFF0]);
-            let q = ch.hidden(SourcePlan::computed(OpSpec::Div, vec![line::COEFFVAR1, line::COEFFVAR2]));
+            ch.set_vec(
+                line::X1,
+                VecOp::LinePointsFromCoeffs,
+                vec![line::COEFFVAR1, line::COEFFVAR2, line::COEFF0],
+            );
+            let q = ch.hidden(SourcePlan::computed(
+                OpSpec::Div,
+                vec![line::COEFFVAR1, line::COEFFVAR2],
+            ));
             ch.set(line::SLOPE, SourcePlan::computed(OpSpec::Negate, vec![q]));
-            let xi = ch.hidden(SourcePlan::computed(OpSpec::Div, vec![line::COEFF0, line::COEFFVAR1]));
-            ch.set(line::XINTERCEPT, SourcePlan::computed(OpSpec::Negate, vec![xi]));
-            let yi = ch.hidden(SourcePlan::computed(OpSpec::Div, vec![line::COEFF0, line::COEFFVAR2]));
-            ch.set(line::YINTERCEPT, SourcePlan::computed(OpSpec::Negate, vec![yi]));
+            let xi = ch.hidden(SourcePlan::computed(
+                OpSpec::Div,
+                vec![line::COEFF0, line::COEFFVAR1],
+            ));
+            ch.set(
+                line::XINTERCEPT,
+                SourcePlan::computed(OpSpec::Negate, vec![xi]),
+            );
+            let yi = ch.hidden(SourcePlan::computed(
+                OpSpec::Div,
+                vec![line::COEFF0, line::COEFFVAR2],
+            ));
+            ch.set(
+                line::YINTERCEPT,
+                SourcePlan::computed(OpSpec::Negate, vec![yi]),
+            );
             ch.set(line::BASED_ON_DIRECTION, SourcePlan::Fixed(0.0));
             return Ok(ch);
         }
 
-        let direction_mode = through.len() < 2 && (slope.is_some() || parallel.is_some() || perpendicular.is_some());
+        let direction_mode =
+            through.len() < 2 && (slope.is_some() || parallel.is_some() || perpendicular.is_some());
         // First point: a through point or the essential default, which the
         // current core takes as (1, 0) for a two-point line and (0, 0) when a
         // slope or direction gives the second point (`ESS1`, `ESS2`).
         if direction_mode {
-            Self::set_point_or_default(&mut ch, [line::X1, line::Y1], through.first(), POINT_ROLES[0], "through", ESS2);
+            Self::set_point_or_default(
+                &mut ch,
+                [line::X1, line::Y1],
+                through.first(),
+                POINT_ROLES[0],
+                "through",
+                ESS2,
+            );
             let dist = ch.essential("dist", 1.0);
             if let Some(a) = slope {
                 let m = self.plan_scalar(t, scope, "slope", d.attr_children(a))?;
                 let m = ch.hidden(m);
-                ch.set_vec(line::X2, VecOp::PolarSlope, vec![line::X1, line::Y1, m, dist]);
+                ch.set_vec(
+                    line::X2,
+                    VecOp::PolarSlope,
+                    vec![line::X1, line::Y1, m, dist],
+                );
             } else {
                 let (a, perp) = match (parallel, perpendicular) {
                     (Some(a), _) => (a, false),
@@ -615,14 +891,34 @@ impl<'a> Compiler<'a> {
                     _ => unreachable!(),
                 };
                 let [ux, uy] = self.plan_direction(t, scope, a, &mut ch)?;
-                ch.set_vec(line::X2, VecOp::PolarDirection { perpendicular: perp }, vec![line::X1, line::Y1, ux, uy, dist]);
+                ch.set_vec(
+                    line::X2,
+                    VecOp::PolarDirection {
+                        perpendicular: perp,
+                    },
+                    vec![line::X1, line::Y1, ux, uy, dist],
+                );
             }
             ch.set(line::BASED_ON_DIRECTION, SourcePlan::Fixed(1.0));
         } else {
             // The line's points are the through points (or essential
             // defaults) themselves; a whole-line drag is a point group.
-            Self::set_point_or_default(&mut ch, [line::X1, line::Y1], through.first(), POINT_ROLES[0], "through", ESS1);
-            Self::set_point_or_default(&mut ch, [line::X2, line::Y2], through.get(1), POINT_ROLES[1], "through", ESS2);
+            Self::set_point_or_default(
+                &mut ch,
+                [line::X1, line::Y1],
+                through.first(),
+                POINT_ROLES[0],
+                "through",
+                ESS1,
+            );
+            Self::set_point_or_default(
+                &mut ch,
+                [line::X2, line::Y2],
+                through.get(1),
+                POINT_ROLES[1],
+                "through",
+                ESS2,
+            );
             ch.set(line::BASED_ON_DIRECTION, SourcePlan::Fixed(0.0));
         }
         // slope, intercepts and coefficients from the two points:
@@ -632,33 +928,71 @@ impl<'a> Compiler<'a> {
         let dy = ch.hidden(SourcePlan::computed(OpSpec::Sub, vec![line::Y2, line::Y1]));
         let dx = ch.hidden(SourcePlan::computed(OpSpec::Sub, vec![line::X2, line::X1]));
         ch.set(line::SLOPE, SourcePlan::computed(OpSpec::Div, vec![dy, dx]));
-        let q = ch.hidden(SourcePlan::computed(OpSpec::Div, vec![line::Y1, line::SLOPE]));
-        ch.set(line::XINTERCEPT, SourcePlan::computed(OpSpec::Sub, vec![line::X1, q]));
-        let mx = ch.hidden(SourcePlan::computed(OpSpec::Mul, vec![line::SLOPE, line::X1]));
-        ch.set(line::YINTERCEPT, SourcePlan::computed(OpSpec::Sub, vec![line::Y1, mx]));
+        let q = ch.hidden(SourcePlan::computed(
+            OpSpec::Div,
+            vec![line::Y1, line::SLOPE],
+        ));
+        ch.set(
+            line::XINTERCEPT,
+            SourcePlan::computed(OpSpec::Sub, vec![line::X1, q]),
+        );
+        let mx = ch.hidden(SourcePlan::computed(
+            OpSpec::Mul,
+            vec![line::SLOPE, line::X1],
+        ));
+        ch.set(
+            line::YINTERCEPT,
+            SourcePlan::computed(OpSpec::Sub, vec![line::Y1, mx]),
+        );
         ch.set(line::COEFFVAR1, SourcePlan::own(dy));
-        ch.set(line::COEFFVAR2, SourcePlan::computed(OpSpec::Sub, vec![line::X1, line::X2]));
-        let ax = ch.hidden(SourcePlan::computed(OpSpec::Mul, vec![line::COEFFVAR1, line::X1]));
-        let by = ch.hidden(SourcePlan::computed(OpSpec::Mul, vec![line::COEFFVAR2, line::Y1]));
+        ch.set(
+            line::COEFFVAR2,
+            SourcePlan::computed(OpSpec::Sub, vec![line::X1, line::X2]),
+        );
+        let ax = ch.hidden(SourcePlan::computed(
+            OpSpec::Mul,
+            vec![line::COEFFVAR1, line::X1],
+        ));
+        let by = ch.hidden(SourcePlan::computed(
+            OpSpec::Mul,
+            vec![line::COEFFVAR2, line::Y1],
+        ));
         let sum = ch.hidden(SourcePlan::computed(OpSpec::Add, vec![ax, by]));
-        ch.set(line::COEFF0, SourcePlan::computed(OpSpec::Negate, vec![sum]));
+        ch.set(
+            line::COEFF0,
+            SourcePlan::computed(OpSpec::Negate, vec![sum]),
+        );
         Ok(ch)
     }
 
     /// Two hidden slots holding a direction: a point or tuple's coordinates,
     /// or another line's `point2 - point1`.
-    pub(super) fn plan_direction(&mut self, t: TemplateId, scope: ElemId, a: u32, ch: &mut ElemPlan) -> Result<[usize; 2]> {
+    pub(super) fn plan_direction(
+        &mut self,
+        t: TemplateId,
+        scope: ElemId,
+        a: u32,
+        ch: &mut ElemPlan,
+    ) -> Result<[usize; 2]> {
         match self.plan_point_attr(t, scope, a)? {
             PointPlan::Ref(p) => {
-                let target_kind = self.plan_elem_target(t, p).map(|e| self.c.templates[t].elems[e].kind);
+                let target_kind = self
+                    .plan_elem_target(t, p)
+                    .map(|e| self.c.templates[t].elems[e].kind);
                 match target_kind {
                     Some(ComponentKind::Line | ComponentKind::LineSegment) => {
                         let x1 = self.plan_with_prop(p, "x1");
                         let y1 = self.plan_with_prop(p, "y1");
                         let x2 = self.plan_with_prop(p, "x2");
                         let y2 = self.plan_with_prop(p, "y2");
-                        let ux = ch.hidden(SourcePlan::Op(OpSpec::Sub, vec![Arg::Ref(x2, Sel::Whole), Arg::Ref(x1, Sel::Whole)]));
-                        let uy = ch.hidden(SourcePlan::Op(OpSpec::Sub, vec![Arg::Ref(y2, Sel::Whole), Arg::Ref(y1, Sel::Whole)]));
+                        let ux = ch.hidden(SourcePlan::Op(
+                            OpSpec::Sub,
+                            vec![Arg::Ref(x2, Sel::Whole), Arg::Ref(x1, Sel::Whole)],
+                        ));
+                        let uy = ch.hidden(SourcePlan::Op(
+                            OpSpec::Sub,
+                            vec![Arg::Ref(y2, Sel::Whole), Arg::Ref(y1, Sel::Whole)],
+                        ));
                         Ok([ux, uy])
                     }
                     _ => Ok(Self::point_slots(ch, &PointPlan::Ref(p))),
@@ -668,20 +1002,52 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    pub(super) fn plan_segment(&mut self, t: TemplateId, e: ElemId, base: Option<NodeId>) -> Result<ElemPlan> {
-        let Elem { node: el, name_scope: scope, .. } = self.c.templates[t].elems[e];
+    pub(super) fn plan_segment(
+        &mut self,
+        t: TemplateId,
+        e: ElemId,
+        base: Option<NodeId>,
+    ) -> Result<ElemPlan> {
+        let Elem {
+            node: el,
+            name_scope: scope,
+            ..
+        } = self.c.templates[t].elems[e];
         let mut ch = ElemPlan::new(ComponentKind::LineSegment.prop_defs().len());
         let ends = match self.attr_or_inherited(el, base, "endpoints") {
             Some(a) => self.plan_point_list(t, scope, a)?,
             None => Vec::new(),
         };
-        Self::set_point_or_default(&mut ch, [segment::X1, segment::Y1], ends.first(), POINT_ROLES[0], "endpoints", ESS1);
-        Self::set_point_or_default(&mut ch, [segment::X2, segment::Y2], ends.get(1), POINT_ROLES[1], "endpoints", ESS2);
+        Self::set_point_or_default(
+            &mut ch,
+            [segment::X1, segment::Y1],
+            ends.first(),
+            POINT_ROLES[0],
+            "endpoints",
+            ESS1,
+        );
+        Self::set_point_or_default(
+            &mut ch,
+            [segment::X2, segment::Y2],
+            ends.get(1),
+            POINT_ROLES[1],
+            "endpoints",
+            ESS2,
+        );
         Ok(ch)
     }
 
-    pub(super) fn plan_polygon(&mut self, t: TemplateId, e: ElemId, base: Option<NodeId>) -> Result<ElemPlan> {
-        let Elem { node: el, name_scope: scope, .. } = self.c.templates[t].elems[e];
+    pub(super) fn plan_polygon(
+        &mut self,
+        t: TemplateId,
+        e: ElemId,
+        base: Option<NodeId>,
+    ) -> Result<ElemPlan> {
+        let Elem {
+            node: el,
+            name_scope: scope,
+            ..
+        } = self.c.templates[t].elems[e];
         let kind = ComponentKind::Polygon;
         let mut ch = ElemPlan::new(kind.prop_defs().len());
         let vertices = match self.attr_or_inherited(el, base, "vertices") {
@@ -690,7 +1056,10 @@ impl<'a> Compiler<'a> {
         };
         let n = vertices.len();
         if n > crate::components::MAX_VERTICES {
-            return Err(Error::Unsupported(format!("a polygon with more than {} vertices", crate::components::MAX_VERTICES)));
+            return Err(Error::Unsupported(format!(
+                "a polygon with more than {} vertices",
+                crate::components::MAX_VERTICES
+            )));
         }
         let flag = |me: &Self, name: &str, default: bool| -> bool {
             match me.attr_or_inherited(el, base, name) {
@@ -705,20 +1074,39 @@ impl<'a> Compiler<'a> {
         let rigid = flag(self, "rigid", false);
         let similar = flag(self, "preserveSimilarity", false);
         let pivot_point = match self.attr_or_inherited(el, base, "rotationCenter") {
-            Some(a) if flag(self, "rotateAround", false) || self.attr_or_inherited(el, base, "rotateAround").and_then(|r| self.attr_text(r)).is_some_and(|r| r.trim() == "point") => Some(self.plan_point_attr(t, scope, a)?),
+            Some(a)
+                if flag(self, "rotateAround", false)
+                    || self
+                        .attr_or_inherited(el, base, "rotateAround")
+                        .and_then(|r| self.attr_text(r))
+                        .is_some_and(|r| r.trim() == "point") =>
+            {
+                Some(self.plan_point_attr(t, scope, a)?)
+            }
             _ => None,
         };
         let rigid_opts = if rigid || similar {
-            let rotate_around = self.attr_or_inherited(el, base, "rotateAround").and_then(|a| self.attr_text(a)).unwrap_or_default();
+            let rotate_around = self
+                .attr_or_inherited(el, base, "rotateAround")
+                .and_then(|a| self.attr_text(a))
+                .unwrap_or_default();
             let pivot = match rotate_around.trim() {
                 "vertex" => {
-                    let k = self.attr_or_inherited(el, base, "rotationVertex").and_then(|a| self.attr_text(a)).and_then(|s| s.trim().parse::<usize>().ok()).unwrap_or(1);
+                    let k = self
+                        .attr_or_inherited(el, base, "rotationVertex")
+                        .and_then(|a| self.attr_text(a))
+                        .and_then(|s| s.trim().parse::<usize>().ok())
+                        .unwrap_or(1);
                     Pivot::Vertex(k.saturating_sub(1) as u8)
                 }
                 "point" if pivot_point.is_some() => Pivot::Point,
                 _ => Pivot::Centroid,
             };
-            let min_shrink = self.attr_or_inherited(el, base, "minShrink").and_then(|a| self.attr_text(a)).and_then(|s| s.trim().parse::<f64>().ok()).unwrap_or(0.1);
+            let min_shrink = self
+                .attr_or_inherited(el, base, "minShrink")
+                .and_then(|a| self.attr_text(a))
+                .and_then(|s| s.trim().parse::<f64>().ok())
+                .unwrap_or(0.1);
             Some(RigidOpts {
                 // `rigid` forbids dilation; `preserveSimilarity` allows it
                 // unless `allowDilation` says otherwise.
@@ -738,7 +1126,8 @@ impl<'a> Compiler<'a> {
             Some(opts) if n > 0 => {
                 let mut args = Vec::with_capacity(2 * n + 2);
                 for (k, v) in vertices.iter().enumerate() {
-                    let [x, y] = Self::point_slots_with_roles(&mut ch, v, POINT_ROLES[k], "vertices");
+                    let [x, y] =
+                        Self::point_slots_with_roles(&mut ch, v, POINT_ROLES[k], "vertices");
                     args.push(x);
                     args.push(y);
                 }
@@ -761,7 +1150,13 @@ impl<'a> Compiler<'a> {
             // from its siblings without a cycle.
             _ => {
                 for (k, v) in vertices.iter().enumerate() {
-                    Self::set_point_with_roles(&mut ch, [polygon::X1 + 2 * k, polygon::X1 + 2 * k + 1], v, POINT_ROLES[k], "vertices");
+                    Self::set_point_with_roles(
+                        &mut ch,
+                        [polygon::X1 + 2 * k, polygon::X1 + 2 * k + 1],
+                        v,
+                        POINT_ROLES[k],
+                        "vertices",
+                    );
                 }
             }
         }

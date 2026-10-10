@@ -44,8 +44,16 @@ fn fmt_num(v: f64, st: Style) -> String {
     if v.is_nan() {
         "NaN".into()
     } else if v.is_infinite() {
-        let inf = if st == Style::Latex { "\\infty" } else { "infinity" };
-        if v < 0.0 { format!("-{inf}") } else { inf.into() }
+        let inf = if st == Style::Latex {
+            "\\infty"
+        } else {
+            "infinity"
+        };
+        if v < 0.0 {
+            format!("-{inf}")
+        } else {
+            inf.into()
+        }
     } else if v.fract() == 0.0 && v.abs() < 1e15 {
         format!("{}", v as i64)
     } else {
@@ -72,9 +80,23 @@ fn expr(f: &Flat, h: Handle, _min: u8, st: Style) -> (String, u8) {
         Tag::Rat => (rat(n.a as i32 as i64, n.b as i64, st), MUL),
         Tag::Sym => {
             let name = f.sym_name(n.a);
-            (if st == Style::Latex && name == "pi" { "\\pi".into() } else { name.to_string() }, ATOM)
+            (
+                if st == Style::Latex && name == "pi" {
+                    "\\pi".into()
+                } else {
+                    name.to_string()
+                },
+                ATOM,
+            )
         }
-        Tag::Cell => (if st == Style::Latex { format!("c_{{{}}}", n.a) } else { format!("$c{}", n.a) }, ATOM),
+        Tag::Cell => (
+            if st == Style::Latex {
+                format!("c_{{{}}}", n.a)
+            } else {
+                format!("$c{}", n.a)
+            },
+            ATOM,
+        ),
         Tag::Add => {
             let mut s = String::new();
             for (i, &t) in f.kids(h).iter().enumerate() {
@@ -98,7 +120,14 @@ fn expr(f: &Flat, h: Handle, _min: u8, st: Style) -> (String, u8) {
                 }
                 if c == Coef::R(1, 2) {
                     let inner = expr(f, n.a, 0, st).0;
-                    return (if st == Style::Latex { format!("\\sqrt{{{inner}}}") } else { format!("sqrt({inner})") }, ATOM);
+                    return (
+                        if st == Style::Latex {
+                            format!("\\sqrt{{{inner}}}")
+                        } else {
+                            format!("sqrt({inner})")
+                        },
+                        ATOM,
+                    );
                 }
             }
             let base = at(f, n.a, ATOM, st);
@@ -133,7 +162,11 @@ fn rat(p: i64, q: i64, st: Style) -> String {
 /// A product (or a lone negative power) as `coef num / den`; with
 /// `negate`, the coefficient's sign is flipped (for `a - b`).
 fn product(f: &Flat, h: Handle, negate: bool, st: Style) -> (String, u8) {
-    let factors: Vec<Handle> = if f.tag(h) == Tag::Mul { f.kids(h).to_vec() } else { vec![h] };
+    let factors: Vec<Handle> = if f.tag(h) == Tag::Mul {
+        f.kids(h).to_vec()
+    } else {
+        vec![h]
+    };
     let mut coef = Coef::R(1, 1);
     let mut num: Vec<String> = Vec::new();
     let mut den: Vec<String> = Vec::new();
@@ -148,7 +181,11 @@ fn product(f: &Flat, h: Handle, negate: bool, st: Style) -> (String, u8) {
             && c.value() < 0.0
         {
             let pos = c.mul(Coef::R(-1, 1));
-            let s = if pos.is_one() { at(f, n.a, POW, st) } else { format!("{}^{}", at(f, n.a, ATOM, st), coef_str(pos, st)) };
+            let s = if pos.is_one() {
+                at(f, n.a, POW, st)
+            } else {
+                format!("{}^{}", at(f, n.a, ATOM, st), coef_str(pos, st))
+            };
             den.push(s);
             continue;
         }
@@ -160,7 +197,10 @@ fn product(f: &Flat, h: Handle, negate: bool, st: Style) -> (String, u8) {
     let negative = coef.value() < 0.0;
     let mag = coef.mul(Coef::R(if negative { -1 } else { 1 }, 1));
     let (cn, cd) = match mag {
-        Coef::R(p, q) => (fmt_num(p as f64, st), (q != 1).then(|| fmt_num(q as f64, st))),
+        Coef::R(p, q) => (
+            fmt_num(p as f64, st),
+            (q != 1).then(|| fmt_num(q as f64, st)),
+        ),
         Coef::F(v) => (fmt_num(v, st), None),
     };
     if let Some(cd) = cd {

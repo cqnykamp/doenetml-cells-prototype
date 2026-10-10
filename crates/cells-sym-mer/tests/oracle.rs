@@ -28,9 +28,28 @@ pub const SIMPLIFY: &[&str] = &[
     "sin(x)^2+0",
 ];
 
-pub const EXPAND: &[&str] = &["(x+1)^2", "(x+y)(x-y)", "(2x-3)^3", "x(x+1)(x+2)", "(a+b)^2-(a-b)^2", "(x+1)^5"];
+pub const EXPAND: &[&str] = &[
+    "(x+1)^2",
+    "(x+y)(x-y)",
+    "(2x-3)^3",
+    "x(x+1)(x+2)",
+    "(a+b)^2-(a-b)^2",
+    "(x+1)^5",
+];
 
-pub const DERIVATIVE: &[&str] = &["x^3+2x", "sin(x^2)", "x sin(x)", "e^(2x)", "ln(x^2+1)", "sqrt(x)", "1/x", "tan(x)", "x^x", "cos(3x)/x", "a x^2+b x+c"];
+pub const DERIVATIVE: &[&str] = &[
+    "x^3+2x",
+    "sin(x^2)",
+    "x sin(x)",
+    "e^(2x)",
+    "ln(x^2+1)",
+    "sqrt(x)",
+    "1/x",
+    "tan(x)",
+    "x^x",
+    "cos(3x)/x",
+    "a x^2+b x+c",
+];
 
 /// (a, b): both engines must agree on `equals(a, b)`.
 pub const EQUALS: &[(&str, &str)] = &[
@@ -59,9 +78,21 @@ pub const EQUALS: &[(&str, &str)] = &[
 pub const EQUALS_KNOWN: &[(&str, &str)] = &[("sqrt(x^2)", "x")];
 
 /// (a, b) for `equals_syntax`.
-pub const SYNTAX: &[(&str, &str)] = &[("2x+3", "3+2x"), ("x+x", "2x"), ("x y", "y x"), ("(x+1)^2", "x^2+2x+1"), ("a b c", "c b a")];
+pub const SYNTAX: &[(&str, &str)] = &[
+    ("2x+3", "3+2x"),
+    ("x+x", "2x"),
+    ("x y", "y x"),
+    ("(x+1)^2", "x^2+2x+1"),
+    ("a b c", "c b a"),
+];
 
-fn check_same(a: &mut Flat, r: &mut Mer, op: &str, src: &str, f: impl Fn(&mut dyn SymEngine, u32) -> u32) -> bool {
+fn check_same(
+    a: &mut Flat,
+    r: &mut Mer,
+    op: &str,
+    src: &str,
+    f: impl Fn(&mut dyn SymEngine, u32) -> u32,
+) -> bool {
     let ha = a.parse(src).unwrap();
     let ra = f(a, ha);
     let hr = r.parse(src).unwrap();
@@ -74,7 +105,11 @@ fn check_same(a: &mut Flat, r: &mut Mer, op: &str, src: &str, f: impl Fn(&mut dy
             false
         }
     };
-    println!("{op:10} {src:22} A: {a_text:28} R: {:28} {}", r.text(rr), if ok { "ok" } else { "MISMATCH" });
+    println!(
+        "{op:10} {src:22} A: {a_text:28} R: {:28} {}",
+        r.text(rr),
+        if ok { "ok" } else { "MISMATCH" }
+    );
     ok
 }
 
@@ -94,14 +129,20 @@ fn engine_a_matches_math_expressions() {
         }
     }
     for src in DERIVATIVE {
-        if !check_same(&mut a, &mut r, "derivative", src, |e, h| e.derivative(h, "x")) {
+        if !check_same(&mut a, &mut r, "derivative", src, |e, h| {
+            e.derivative(h, "x")
+        }) {
             failures.push(format!("derivative {src}"));
         }
         // Evaluate the expression and its derivative at a few points.
         for x in [0.7, 1.3, 2.9] {
             let (ha, hr) = (a.parse(src).unwrap(), r.parse(src).unwrap());
-            let (va, vr) = (a.evaluate(ha, Some(("x", x))), r.evaluate(hr, Some(("x", x))));
-            let close = (va - vr).abs() <= 1e-12 * va.abs().max(1.0) || (va.is_nan() && vr.is_nan());
+            let (va, vr) = (
+                a.evaluate(ha, Some(("x", x))),
+                r.evaluate(hr, Some(("x", x))),
+            );
+            let close =
+                (va - vr).abs() <= 1e-12 * va.abs().max(1.0) || (va.is_nan() && vr.is_nan());
             // a, b, c are free: both should give NaN.
             if !close {
                 failures.push(format!("evaluate {src} at {x}: A {va} R {vr}"));
@@ -109,24 +150,54 @@ fn engine_a_matches_math_expressions() {
         }
     }
     for (x, y) in EQUALS {
-        let (ax, ay, rx, ry) = (a.parse(x).unwrap(), a.parse(y).unwrap(), r.parse(x).unwrap(), r.parse(y).unwrap());
+        let (ax, ay, rx, ry) = (
+            a.parse(x).unwrap(),
+            a.parse(y).unwrap(),
+            r.parse(x).unwrap(),
+            r.parse(y).unwrap(),
+        );
         let (ea, er) = (a.equals(ax, ay), r.equals(rx, ry));
-        println!("equals     {x:22} {y:22} A: {ea:5} R: {er:5} {}", if ea == er { "ok" } else { "MISMATCH" });
+        println!(
+            "equals     {x:22} {y:22} A: {ea:5} R: {er:5} {}",
+            if ea == er { "ok" } else { "MISMATCH" }
+        );
         if ea != er {
             failures.push(format!("equals {x} = {y}: A {ea} R {er}"));
         }
     }
     for (x, y) in EQUALS_KNOWN {
-        let (ax, ay, rx, ry) = (a.parse(x).unwrap(), a.parse(y).unwrap(), r.parse(x).unwrap(), r.parse(y).unwrap());
-        println!("known      {x:22} {y:22} A: {:5} R: {:5}", a.equals(ax, ay), r.equals(rx, ry));
+        let (ax, ay, rx, ry) = (
+            a.parse(x).unwrap(),
+            a.parse(y).unwrap(),
+            r.parse(x).unwrap(),
+            r.parse(y).unwrap(),
+        );
+        println!(
+            "known      {x:22} {y:22} A: {:5} R: {:5}",
+            a.equals(ax, ay),
+            r.equals(rx, ry)
+        );
     }
     for (x, y) in SYNTAX {
-        let (ax, ay, rx, ry) = (a.parse(x).unwrap(), a.parse(y).unwrap(), r.parse(x).unwrap(), r.parse(y).unwrap());
+        let (ax, ay, rx, ry) = (
+            a.parse(x).unwrap(),
+            a.parse(y).unwrap(),
+            r.parse(x).unwrap(),
+            r.parse(y).unwrap(),
+        );
         let (ea, er) = (a.equals_syntax(ax, ay), r.equals_syntax(rx, ry));
-        println!("syntax     {x:22} {y:22} A: {ea:5} R: {er:5} {}", if ea == er { "ok" } else { "MISMATCH" });
+        println!(
+            "syntax     {x:22} {y:22} A: {ea:5} R: {er:5} {}",
+            if ea == er { "ok" } else { "MISMATCH" }
+        );
         if ea != er {
             failures.push(format!("equals_syntax {x} = {y}: A {ea} R {er}"));
         }
     }
-    assert!(failures.is_empty(), "{} divergences:\n{}", failures.len(), failures.join("\n"));
+    assert!(
+        failures.is_empty(),
+        "{} divergences:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
 }

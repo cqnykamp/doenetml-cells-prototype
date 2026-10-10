@@ -26,7 +26,12 @@ impl Default for Mer {
 
 impl Mer {
     pub fn new() -> Self {
-        Mer { exprs: Vec::new(), leaves: HashMap::new(), parser: TextToAst::new(TextToAstOptions::default()), eq: EqOptions::default() }
+        Mer {
+            exprs: Vec::new(),
+            leaves: HashMap::new(),
+            parser: TextToAst::new(TextToAstOptions::default()),
+            eq: EqOptions::default(),
+        }
     }
 
     pub fn expr(&self, h: Handle) -> &Expr {
@@ -50,10 +55,19 @@ impl Mer {
             }
             Tree::Add(ts) => Expr::Add(ts.iter().map(|t| self.convert(t, leaves)).collect()),
             Tree::Mul(ts) => Expr::Mul(ts.iter().map(|t| self.convert(t, leaves)).collect()),
-            Tree::Sub(a, b) => Expr::Add(vec![self.convert(a, leaves), Expr::Neg(Box::new(self.convert(b, leaves)))]),
-            Tree::Div(a, b) => Expr::Div(Box::new(self.convert(a, leaves)), Box::new(self.convert(b, leaves))),
+            Tree::Sub(a, b) => Expr::Add(vec![
+                self.convert(a, leaves),
+                Expr::Neg(Box::new(self.convert(b, leaves))),
+            ]),
+            Tree::Div(a, b) => Expr::Div(
+                Box::new(self.convert(a, leaves)),
+                Box::new(self.convert(b, leaves)),
+            ),
             Tree::Neg(x) => Expr::Neg(Box::new(self.convert(x, leaves))),
-            Tree::Pow(a, b) => Expr::Pow(Box::new(self.convert(a, leaves)), Box::new(self.convert(b, leaves))),
+            Tree::Pow(a, b) => Expr::Pow(
+                Box::new(self.convert(a, leaves)),
+                Box::new(self.convert(b, leaves)),
+            ),
             Tree::Apply(f, x) => Expr::Apply(Box::new(Expr::sym(f)), vec![self.convert(x, leaves)]),
         }
     }
@@ -105,7 +119,11 @@ impl SymEngine for Mer {
         let mut subs = HashMap::with_capacity(leaves.len());
         for &(cell, math) in leaves {
             let v = cells[cell as usize];
-            let e = if math && !v.is_nan() { self.exprs[v as usize].clone() } else { Expr::Num(Number::from_f64(v)) };
+            let e = if math && !v.is_nan() {
+                self.exprs[v as usize].clone()
+            } else {
+                Expr::Num(Number::from_f64(v))
+            };
             subs.insert(leaf_name(cell, math), e);
         }
         let e = me::substitute(&self.exprs[template as usize], &subs);
@@ -178,7 +196,12 @@ impl SymEngine for Mer {
     }
 
     fn box_clone(&self) -> Box<dyn SymEngine> {
-        Box::new(Mer { exprs: self.exprs.clone(), leaves: self.leaves.clone(), parser: TextToAst::new(TextToAstOptions::default()), eq: self.eq.clone() })
+        Box::new(Mer {
+            exprs: self.exprs.clone(),
+            leaves: self.leaves.clone(),
+            parser: TextToAst::new(TextToAstOptions::default()),
+            eq: self.eq.clone(),
+        })
     }
 }
 
@@ -192,8 +215,14 @@ fn to_tree(e: &Expr) -> Option<Tree> {
         Expr::Sym(s) => {
             let name = s.name();
             match (name.strip_prefix("cellN"), name.strip_prefix("cellM")) {
-                (Some(c), _) => Tree::Cell { cell: c.parse().ok()?, math: false },
-                (_, Some(c)) => Tree::Cell { cell: c.parse().ok()?, math: true },
+                (Some(c), _) => Tree::Cell {
+                    cell: c.parse().ok()?,
+                    math: false,
+                },
+                (_, Some(c)) => Tree::Cell {
+                    cell: c.parse().ok()?,
+                    math: true,
+                },
                 _ => Tree::Sym(name),
             }
         }

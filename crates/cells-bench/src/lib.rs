@@ -14,7 +14,8 @@ pub fn fixture_binary(spec: &str) -> Option<Vec<u8>> {
 
 /// A fixture's DAST JSON.
 pub fn fixture_json(spec: &str) -> String {
-    std::fs::read_to_string(fixtures_dir().join(format!("{spec}.json"))).unwrap_or_else(|e| panic!("{spec}.json: {e}; run scripts/gen-fixtures.sh"))
+    std::fs::read_to_string(fixtures_dir().join(format!("{spec}.json")))
+        .unwrap_or_else(|e| panic!("{spec}.json: {e}; run scripts/gen-fixtures.sh"))
 }
 
 /// A fixture in the binary wire format if generated, else as JSON bytes;
@@ -41,7 +42,10 @@ pub fn fixtures() -> Vec<(String, String)> {
     let mut out = Vec::new();
     let dir = fixtures_dir();
     let Ok(entries) = std::fs::read_dir(&dir) else {
-        eprintln!("no fixtures in {}; run scripts/gen-fixtures.sh", dir.display());
+        eprintln!(
+            "no fixtures in {}; run scripts/gen-fixtures.sh",
+            dir.display()
+        );
         return out;
     };
     for e in entries.flatten() {
@@ -62,7 +66,11 @@ pub fn fixtures() -> Vec<(String, String)> {
 pub fn spec_key(spec: &str) -> (String, u64, u64) {
     let (shape, size) = spec.split_once('-').unwrap_or((spec, "0"));
     let (a, b) = size.split_once('x').unwrap_or((size, "0"));
-    (shape.to_string(), a.parse().unwrap_or(0), b.parse().unwrap_or(0))
+    (
+        shape.to_string(),
+        a.parse().unwrap_or(0),
+        b.parse().unwrap_or(0),
+    )
 }
 
 /// The cell a drag request would target in each fixture shape: the end of

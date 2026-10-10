@@ -13,7 +13,13 @@ pub struct ReferenceEvaluator<'a> {
 
 impl<'a> ReferenceEvaluator<'a> {
     pub fn new(doc: &'a Document) -> Self {
-        let producer = doc.program.instrs.iter().enumerate().flat_map(|(i, ins)| (0..ins.op.n_out() as CellIdx).map(move |k| (ins.out + k, i))).collect();
+        let producer = doc
+            .program
+            .instrs
+            .iter()
+            .enumerate()
+            .flat_map(|(i, ins)| (0..ins.op.n_out() as CellIdx).map(move |k| (ins.out + k, i)))
+            .collect();
         ReferenceEvaluator { doc, producer }
     }
 

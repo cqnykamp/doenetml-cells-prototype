@@ -47,11 +47,24 @@ fn parsed(name: &str, srcs: &[&str]) -> (Box<dyn SymEngine>, Vec<Handle>) {
 }
 
 fn strs(v: &Value) -> Vec<String> {
-    v.as_array().unwrap().iter().map(|s| s.as_str().unwrap().to_string()).collect()
+    v.as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s.as_str().unwrap().to_string())
+        .collect()
 }
 
 fn pairs(v: &Value) -> Vec<(String, String)> {
-    v.as_array().unwrap().iter().map(|p| (p[0].as_str().unwrap().to_string(), p[1].as_str().unwrap().to_string())).collect()
+    v.as_array()
+        .unwrap()
+        .iter()
+        .map(|p| {
+            (
+                p[0].as_str().unwrap().to_string(),
+                p[1].as_str().unwrap().to_string(),
+            )
+        })
+        .collect()
 }
 
 fn main() {
@@ -62,66 +75,102 @@ fn main() {
     for name in ["A", "R"] {
         let mut ops = Map::new();
         let put = |ops: &mut Map<String, Value>, op: &str, item: String, ns: f64| {
-            ops.entry(op).or_insert_with(|| json!({})).as_object_mut().unwrap().insert(item, json!(ns));
+            ops.entry(op)
+                .or_insert_with(|| json!({}))
+                .as_object_mut()
+                .unwrap()
+                .insert(item, json!(ns));
         };
 
         for s in strs(&corpus["parse"]) {
-            let ns = time(|| engine(name), |e| {
-                std::hint::black_box(e.parse(&s).unwrap());
-            });
+            let ns = time(
+                || engine(name),
+                |e| {
+                    std::hint::black_box(e.parse(&s).unwrap());
+                },
+            );
             put(&mut ops, "parse", s, ns);
         }
-        for (op, key) in [("simplify", "simplify"), ("expand", "expand"), ("derivative", "derivative")] {
+        for (op, key) in [
+            ("simplify", "simplify"),
+            ("expand", "expand"),
+            ("derivative", "derivative"),
+        ] {
             for s in strs(&corpus[key]) {
                 let run = |e: &mut Box<dyn SymEngine>, h: Handle| match op {
                     "simplify" => e.simplify(h),
                     "expand" => e.expand(h),
                     _ => e.derivative(h, "x"),
                 };
-                let ns = time(|| parsed(name, &[&s]), |(e, hs)| {
-                    std::hint::black_box(run(e, hs[0]));
-                });
+                let ns = time(
+                    || parsed(name, &[&s]),
+                    |(e, hs)| {
+                        std::hint::black_box(run(e, hs[0]));
+                    },
+                );
                 put(&mut ops, op, s.clone(), ns);
                 if name == "A" && op != "derivative" {
                     // A memo hit: the same call again on a warm engine.
                     let (mut e, hs) = parsed(name, &[&s]);
                     run(&mut e, hs[0]);
-                    let ns = time(|| (), |_| {
-                        std::hint::black_box(run(&mut e, hs[0]));
-                    });
+                    let ns = time(
+                        || (),
+                        |_| {
+                            std::hint::black_box(run(&mut e, hs[0]));
+                        },
+                    );
                     put(&mut ops, &format!("{op} (hit)"), s, ns);
                 }
             }
         }
         for (op, key) in [("equals", "equals"), ("equals_syntax", "equals_syntax")] {
             for (a, b) in pairs(&corpus[key]) {
-                let ns = time(|| parsed(name, &[&a, &b]), |(e, hs)| {
-                    let r = if op == "equals" { e.equals(hs[0], hs[1]) } else { e.equals_syntax(hs[0], hs[1]) };
-                    std::hint::black_box(r);
-                });
+                let ns = time(
+                    || parsed(name, &[&a, &b]),
+                    |(e, hs)| {
+                        let r = if op == "equals" {
+                            e.equals(hs[0], hs[1])
+                        } else {
+                            e.equals_syntax(hs[0], hs[1])
+                        };
+                        std::hint::black_box(r);
+                    },
+                );
                 put(&mut ops, op, format!("{a} = {b}"), ns);
             }
         }
         for s in strs(&corpus["evaluate"]) {
-            let ns = time(|| parsed(name, &[&s]), |(e, hs)| {
-                std::hint::black_box(e.evaluate(hs[0], Some(("x", 1.3))));
-            });
+            let ns = time(
+                || parsed(name, &[&s]),
+                |(e, hs)| {
+                    std::hint::black_box(e.evaluate(hs[0], Some(("x", 1.3))));
+                },
+            );
             put(&mut ops, "evaluate", s, ns);
         }
         for s in strs(&corpus["sample200"]) {
             let mut ys = vec![0.0; xs.len()];
-            let ns = time(|| parsed(name, &[&s]), |(e, hs)| {
-                e.evaluate_many(hs[0], "x", &xs, &mut ys);
-                std::hint::black_box(&ys);
-            });
+            let ns = time(
+                || parsed(name, &[&s]),
+                |(e, hs)| {
+                    e.evaluate_many(hs[0], "x", &xs, &mut ys);
+                    std::hint::black_box(&ys);
+                },
+            );
             put(&mut ops, "sample200", s, ns);
         }
         out.insert(name.to_string(), Value::Object(ops));
     }
 
     print_table(&out);
-    let path = std::env::args().nth(1).unwrap_or_else(|| "results/raw/plan5-ops-native.json".into());
-    std::fs::write(&path, serde_json::to_string_pretty(&Value::Object(out)).unwrap()).unwrap();
+    let path = std::env::args()
+        .nth(1)
+        .unwrap_or_else(|| "results/raw/plan5-ops-native.json".into());
+    std::fs::write(
+        &path,
+        serde_json::to_string_pretty(&Value::Object(out)).unwrap(),
+    )
+    .unwrap();
     eprintln!("wrote {path}");
 }
 
@@ -131,7 +180,10 @@ fn geomean(m: &Map<String, Value>) -> f64 {
 }
 
 fn print_table(out: &Map<String, Value>) {
-    println!("{:16} {:>12} {:>12} {:>8}", "op (geomean)", "A ns", "R ns", "R/A");
+    println!(
+        "{:16} {:>12} {:>12} {:>8}",
+        "op (geomean)", "A ns", "R ns", "R/A"
+    );
     let a = out["A"].as_object().unwrap();
     let r = out["R"].as_object().unwrap();
     for (op, items) in a {

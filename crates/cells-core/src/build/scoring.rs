@@ -76,8 +76,15 @@ impl<'c, 'a> Builder<'c, 'a> {
     }
 
     fn component_children(&self, c: CompIdx) -> Vec<CompIdx> {
-        let (s, n) = (self.comps.child_start[c as usize] as usize, self.comps.child_count[c as usize] as usize);
-        self.comps.child_list[s..s + n].iter().copied().filter(|&e| e & TEXT_BIT == 0).collect()
+        let (s, n) = (
+            self.comps.child_start[c as usize] as usize,
+            self.comps.child_count[c as usize] as usize,
+        );
+        self.comps.child_list[s..s + n]
+            .iter()
+            .copied()
+            .filter(|&e| e & TEXT_BIT == 0)
+            .collect()
     }
 
     /// `gate` times a case's `active` cell.
@@ -99,8 +106,17 @@ impl<'c, 'a> Builder<'c, 'a> {
         loop {
             let mut next = Vec::with_capacity(items.len().div_ceil(CHUNK));
             for chunk in items.chunks(CHUNK) {
-                let inputs: Vec<SlotId> = chunk.iter().map(|&(w, _)| w).chain(chunk.iter().map(|&(_, c)| c)).collect();
-                let source = self.op_source(OpSpec::Vec(VecOp::WeightedMean { n: chunk.len() as u8 }), &inputs);
+                let inputs: Vec<SlotId> = chunk
+                    .iter()
+                    .map(|&(w, _)| w)
+                    .chain(chunk.iter().map(|&(_, c)| c))
+                    .collect();
+                let source = self.op_source(
+                    OpSpec::Vec(VecOp::WeightedMean {
+                        n: chunk.len() as u8,
+                    }),
+                    &inputs,
+                );
                 let mean = self.anon_slot(source);
                 let total = self.anon_slot(Source::VecOut(mean, 1));
                 next.push((total, mean));
@@ -130,7 +146,9 @@ impl<'c, 'a> Builder<'c, 'a> {
                     let credit = self.op_slot(OpSpec::NanTo { k: 0.0 }, &[checked]);
                     (self.slot(k, answer::WEIGHT), credit)
                 }
-                ComponentKind::Section if self.aggregates(k) => (self.slot(k, WEIGHT), self.slot(k, CREDIT)),
+                ComponentKind::Section if self.aggregates(k) => {
+                    (self.slot(k, WEIGHT), self.slot(k, CREDIT))
+                }
                 _ => {
                     self.scored_items(k, gate, out);
                     continue;
@@ -152,22 +170,31 @@ impl<'c, 'a> Builder<'c, 'a> {
                     let g = self.gate_through(gate, k);
                     self.number_sections(k, g, counter);
                 }
-                ComponentKind::ConditionalContent | ComponentKind::Select | ComponentKind::Group | ComponentKind::RepeatForSequence | ComponentKind::Collect => {
-                    self.number_sections(k, gate, counter)
-                }
+                ComponentKind::ConditionalContent
+                | ComponentKind::Select
+                | ComponentKind::Group
+                | ComponentKind::RepeatForSequence
+                | ComponentKind::Collect => self.number_sections(k, gate, counter),
                 ComponentKind::Section => {
                     let number = match counter.before {
                         None => Source::Fixed(counter.fixed + 1.0),
-                        Some(b) => self.op_source(OpSpec::Offset { k: counter.fixed + 1.0 }, &[b]),
+                        Some(b) => self.op_source(
+                            OpSpec::Offset {
+                                k: counter.fixed + 1.0,
+                            },
+                            &[b],
+                        ),
                     };
                     let s = self.slot(k, NUMBER);
                     self.sources[s as usize] = number;
                     match gate {
                         None => counter.fixed += 1.0,
-                        Some(g) => counter.before = Some(match counter.before {
-                            None => g,
-                            Some(b) => self.op_slot(OpSpec::Add, &[b, g]),
-                        }),
+                        Some(g) => {
+                            counter.before = Some(match counter.before {
+                                None => g,
+                                Some(b) => self.op_slot(OpSpec::Add, &[b, g]),
+                            })
+                        }
                     }
                     self.number_sections(k, None, &mut Counter::default());
                 }

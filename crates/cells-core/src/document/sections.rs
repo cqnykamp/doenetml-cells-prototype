@@ -8,9 +8,15 @@ impl Document {
     /// handle into its `submitted` cell.
     pub fn submit(&mut self, answer: CompIdx) -> Tick {
         let cells = self.comp_cells(answer);
-        let (response, submitted) = (cells[prop::answer::RESPONSE], cells[prop::answer::SUBMITTED]);
+        let (response, submitted) = (
+            cells[prop::answer::RESPONSE],
+            cells[prop::answer::SUBMITTED],
+        );
         let value = self.cells[response as usize];
-        self.request(&[Request { cell: submitted, value }])
+        self.request(&[Request {
+            cell: submitted,
+            value,
+        }])
     }
 
     /// A section's full number, such as "2.1": its own `number` cell,
@@ -39,6 +45,9 @@ impl Document {
     pub fn section_title(&self, c: CompIdx) -> Option<String> {
         let number = self.section_number(c)?;
         let label = self.cells[self.comp_cells(c)[prop::section::LABEL] as usize] as usize;
-        Some(format!("{} {number}", crate::components::SECTION_TAGS[label].1))
+        Some(format!(
+            "{} {number}",
+            crate::components::SECTION_TAGS[label].1
+        ))
     }
 }

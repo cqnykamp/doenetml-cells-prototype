@@ -41,9 +41,17 @@ impl Params {
     pub fn new(threshold: f64, relative: bool, bounds: [f64; 4]) -> Params {
         let [xmin, xmax, ymin, ymax] = bounds;
         let have_graph = !xmin.is_nan();
-        let threshold = if threshold.is_nan() { if relative && have_graph { 0.02 } else { 0.5 } } else { threshold };
+        let threshold = if threshold.is_nan() {
+            if relative && have_graph { 0.02 } else { 0.5 }
+        } else {
+            threshold
+        };
         let (sx, sy) = (xmax - xmin, ymax - ymin);
-        let scales = if relative && sx.is_finite() && sx > 0.0 && sy.is_finite() && sy > 0.0 { [sx, sy] } else { [1.0, 1.0] };
+        let scales = if relative && sx.is_finite() && sx > 0.0 && sy.is_finite() && sy > 0.0 {
+            [sx, sy]
+        } else {
+            [1.0, 1.0]
+        };
         Params { threshold, scales }
     }
 }
@@ -75,7 +83,14 @@ impl Attractors {
 /// distort the shape; otherwise the whole shape shifts. `rigid` marks a
 /// rigid or similarity shape, whose one-vertex drags are Tier 3 and pass
 /// through unsnapped.
-pub fn snap(shape: Shape, rigid: bool, verts: &mut [Pt], moved: Option<usize>, att: &Attractors, p: &Params) {
+pub fn snap(
+    shape: Shape,
+    rigid: bool,
+    verts: &mut [Pt],
+    moved: Option<usize>,
+    att: &Attractors,
+    p: &Params,
+) {
     if verts.is_empty() {
         return;
     }
@@ -86,7 +101,11 @@ pub fn snap(shape: Shape, rigid: bool, verts: &mut [Pt], moved: Option<usize>, a
                 return;
             }
             let closed = shape == Shape::Closed;
-            let (enforce_rigid, allow_rotation) = if moved.is_some() { (false, true) } else { (true, false) };
+            let (enforce_rigid, allow_rotation) = if moved.is_some() {
+                (false, true)
+            } else {
+                (true, false)
+            };
             let after_edges = constrain_edges(verts, closed, enforce_rigid, allow_rotation, att, p);
             let out = constrain_vertices(&after_edges, closed, enforce_rigid, moved, att, p);
             verts.copy_from_slice(&out);
@@ -113,9 +132,21 @@ pub struct Member {
 /// the most requested points first; a point an earlier member already
 /// placed is not placed again. Returns the points to write, per dragged
 /// member, in that order: the requested ones and any the snap moved.
-pub fn snap_group(members: &[Member], current: &[Pt], requested: &[Option<Pt>], p: &Params) -> Vec<Vec<(u32, Pt)>> {
-    let n_req = |m: &Member| m.points.iter().filter(|&&i| requested[i as usize].is_some()).count();
-    let mut dragged: Vec<usize> = (0..members.len()).filter(|&m| n_req(&members[m]) > 0).collect();
+pub fn snap_group(
+    members: &[Member],
+    current: &[Pt],
+    requested: &[Option<Pt>],
+    p: &Params,
+) -> Vec<Vec<(u32, Pt)>> {
+    let n_req = |m: &Member| {
+        m.points
+            .iter()
+            .filter(|&&i| requested[i as usize].is_some())
+            .count()
+    };
+    let mut dragged: Vec<usize> = (0..members.len())
+        .filter(|&m| n_req(&members[m]) > 0)
+        .collect();
     if dragged.is_empty() {
         return Vec::new();
     }
@@ -140,17 +171,32 @@ pub fn snap_group(members: &[Member], current: &[Pt], requested: &[Option<Pt>], 
     let mut out = Vec::with_capacity(dragged.len());
     for m in dragged {
         let mem = &members[m];
-        if mem.points.iter().all(|&i| placed[i as usize] || requested[i as usize].is_none()) {
+        if mem
+            .points
+            .iter()
+            .all(|&i| placed[i as usize] || requested[i as usize].is_none())
+        {
             continue;
         }
         pts.clear();
-        pts.extend(mem.points.iter().map(|&i| requested[i as usize].unwrap_or(current[i as usize])));
-        let asked: Vec<usize> = (0..mem.points.len()).filter(|&k| requested[mem.points[k] as usize].is_some()).collect();
-        let moved = if asked.len() == 1 { Some(asked[0]) } else { None };
+        pts.extend(
+            mem.points
+                .iter()
+                .map(|&i| requested[i as usize].unwrap_or(current[i as usize])),
+        );
+        let asked: Vec<usize> = (0..mem.points.len())
+            .filter(|&k| requested[mem.points[k] as usize].is_some())
+            .collect();
+        let moved = if asked.len() == 1 {
+            Some(asked[0])
+        } else {
+            None
+        };
         snap(mem.shape, mem.rigid, &mut pts, moved, &att, p);
         let mut writes = Vec::new();
         for (k, &i) in mem.points.iter().enumerate() {
-            let changed = pts[k] != current[i as usize] && !(pts[k][0].is_nan() && pts[k][1].is_nan());
+            let changed =
+                pts[k] != current[i as usize] && !(pts[k][0].is_nan() && pts[k][1].is_nan());
             if !placed[i as usize] && (requested[i as usize].is_some() || changed) {
                 placed[i as usize] = true;
                 writes.push((i, pts[k]));
@@ -202,7 +248,13 @@ fn closest_point(v: Pt, points: &[Pt], s: Pt) -> (Pt, f64) {
 }
 
 fn closest_on_segments(v: Pt, segments: &[[Pt; 2]], s: Pt) -> (Pt, f64) {
-    closest(v, segments.iter().filter_map(|seg| nearest_on_segment(v, seg, s)), s)
+    closest(
+        v,
+        segments
+            .iter()
+            .filter_map(|seg| nearest_on_segment(v, seg, s)),
+        s,
+    )
 }
 
 /// Nearest point of a segment (`nearestPointForSegment`); None for a
@@ -228,7 +280,9 @@ fn nearest_on_line(v: Pt, seg: &[Pt; 2], s: Pt) -> Option<Pt> {
 
 fn segment_param(v: Pt, seg: &[Pt; 2], s: Pt) -> Option<f64> {
     let [a, b] = *seg;
-    if !(a[0].is_finite() && a[1].is_finite() && b[0].is_finite() && b[1].is_finite()) || (a[0] == b[0] && a[1] == b[1]) {
+    if !(a[0].is_finite() && a[1].is_finite() && b[0].is_finite() && b[1].is_finite())
+        || (a[0] == b[0] && a[1] == b[1])
+    {
         return None;
     }
     let (bx, by) = ((b[0] - a[0]) / s[0], (b[1] - a[1]) / s[1]);
@@ -243,7 +297,14 @@ fn segment_param(v: Pt, seg: &[Pt; 2], s: Pt) -> Option<f64> {
 /// Snap vertices to points or edges, then unconstrained edges onto points.
 /// Rigid: find the one translation that leaves the most vertices on a
 /// target, ties to the smallest.
-fn constrain_vertices(verts: &[Pt], closed: bool, enforce_rigid: bool, moved: Option<usize>, att: &Attractors, p: &Params) -> Vec<Pt> {
+fn constrain_vertices(
+    verts: &[Pt],
+    closed: bool,
+    enforce_rigid: bool,
+    moved: Option<usize>,
+    att: &Attractors,
+    p: &Params,
+) -> Vec<Pt> {
     let only = if enforce_rigid { None } else { moved };
     let (constrained, used) = vertex_sub(verts, closed, only, att, p);
     if !used.iter().any(|&u| u) {
@@ -258,10 +319,19 @@ fn constrain_vertices(verts: &[Pt], closed: bool, enforce_rigid: bool, moved: Op
         if !used[i] {
             continue;
         }
-        let tr = [constrained[i][0] - verts[i][0], constrained[i][1] - verts[i][1]];
+        let tr = [
+            constrained[i][0] - verts[i][0],
+            constrained[i][1] - verts[i][1],
+        ];
         let shifted: Vec<Pt> = verts.iter().map(|v| [v[0] + tr[0], v[1] + tr[1]]).collect();
         let (again, used_again) = vertex_sub(&shifted, closed, None, att, p);
-        let unmoved = (0..shifted.len()).filter(|&j| used_again[j] && (again[j][0] - shifted[j][0]).abs() <= EPS && (again[j][1] - shifted[j][1]).abs() <= EPS).count();
+        let unmoved = (0..shifted.len())
+            .filter(|&j| {
+                used_again[j]
+                    && (again[j][0] - shifted[j][0]).abs() <= EPS
+                    && (again[j][1] - shifted[j][1]).abs() <= EPS
+            })
+            .count();
         if unmoved > max_unmoved {
             best.clear();
             best.push(tr);
@@ -290,7 +360,13 @@ fn constrain_vertices(verts: &[Pt], closed: bool, enforce_rigid: bool, moved: Op
     verts.iter().map(|v| [v[0] + tr[0], v[1] + tr[1]]).collect()
 }
 
-fn vertex_sub(verts: &[Pt], closed: bool, only: Option<usize>, att: &Attractors, p: &Params) -> (Vec<Pt>, Vec<bool>) {
+fn vertex_sub(
+    verts: &[Pt],
+    closed: bool,
+    only: Option<usize>,
+    att: &Attractors,
+    p: &Params,
+) -> (Vec<Pt>, Vec<bool>) {
     let t2 = p.threshold * p.threshold;
     let s = p.scales;
     let n = verts.len();
@@ -334,7 +410,9 @@ fn vertex_sub(verts: &[Pt], closed: bool, only: Option<usize>, att: &Attractors,
         let mut closest = f64::INFINITY;
         let mut seg = [p1, p2];
         for &a in &att.points {
-            let Some(cp) = nearest_on_segment(a, &[p1, p2], s) else { continue };
+            let Some(cp) = nearest_on_segment(a, &[p1, p2], s) else {
+                continue;
+            };
             let d2 = dist2(cp, a);
             if !(d2 < closest) {
                 continue;
@@ -356,7 +434,11 @@ fn vertex_sub(verts: &[Pt], closed: bool, only: Option<usize>, att: &Attractors,
                         continue; // the point is beyond the edge's end
                     }
                     let m = [fixed[0] + disp[0] * ratio, fixed[1] + disp[1] * ratio];
-                    let (cand, d2) = if o == v1 { ([m, p2], dist2(p1, m)) } else { ([p1, m], dist2(p2, m)) };
+                    let (cand, d2) = if o == v1 {
+                        ([m, p2], dist2(p1, m))
+                    } else {
+                        ([p1, m], dist2(p2, m))
+                    };
                     if d2 < closest {
                         closest = d2;
                         seg = cand;
@@ -365,7 +447,12 @@ fn vertex_sub(verts: &[Pt], closed: bool, only: Option<usize>, att: &Attractors,
             }
         }
         if closest < t2 {
-            found.push(EdgeSnap { v1, v2, d2: closest, seg });
+            found.push(EdgeSnap {
+                v1,
+                v2,
+                d2: closest,
+                seg,
+            });
         }
     }
     found.sort_by(|a, b| a.d2.total_cmp(&b.d2));
@@ -387,7 +474,14 @@ fn vertex_sub(verts: &[Pt], closed: bool, only: Option<usize>, att: &Attractors,
 /// Snap edges onto other members' edges. Rigid: move the whole shape by the
 /// least-moved edge's motion; otherwise move edges one at a time, least
 /// moved first, skipping any that disagree with an earlier one.
-fn constrain_edges(verts: &[Pt], closed: bool, enforce_rigid: bool, allow_rotation: bool, att: &Attractors, p: &Params) -> Vec<Pt> {
+fn constrain_edges(
+    verts: &[Pt],
+    closed: bool,
+    enforce_rigid: bool,
+    allow_rotation: bool,
+    att: &Attractors,
+    p: &Params,
+) -> Vec<Pt> {
     let n = verts.len();
     let mut edges: Vec<[Pt; 2]> = (1..n).map(|i| [verts[i - 1], verts[i]]).collect();
     if closed {
@@ -410,7 +504,9 @@ fn constrain_edges(verts: &[Pt], closed: bool, enforce_rigid: bool, allow_rotati
         let mut done = vec![false; n];
         for (k, _, c) in moved {
             let (v1, v2) = (k, (k + 1) % n);
-            if (done[v1] && dist2(out[v1], c[0]) > EPS2) || (done[v2] && dist2(out[v2], c[1]) > EPS2) {
+            if (done[v1] && dist2(out[v1], c[0]) > EPS2)
+                || (done[v2] && dist2(out[v2], c[1]) > EPS2)
+            {
                 continue;
             }
             out[v1] = c[0];
@@ -430,7 +526,8 @@ fn constrain_edges(verts: &[Pt], closed: bool, enforce_rigid: bool, allow_rotati
     let c = moved.iter().find(|m| m.0 == k_min).unwrap().2;
     let u = edges[k_min];
     let tr = [c[0][0] - u[0][0], c[0][1] - u[0][1]];
-    let theta = (c[1][1] - c[0][1]).atan2(c[1][0] - c[0][0]) - (u[1][1] - u[0][1]).atan2(u[1][0] - u[0][0]);
+    let theta =
+        (c[1][1] - c[0][1]).atan2(c[1][0] - c[0][0]) - (u[1][1] - u[0][1]).atan2(u[1][0] - u[0][0]);
     let (sin, cos) = theta.sin_cos();
     verts
         .iter()
@@ -447,7 +544,13 @@ fn constrain_edges(verts: &[Pt], closed: bool, enforce_rigid: bool, allow_rotati
 /// allowed (for its rotation fallbacks, which are Tier 3), then keeps only a
 /// result within the real threshold; the screen is kept since it decides
 /// which candidates are seen.
-fn attract_segment(seg: [Pt; 2], allow_rotation: bool, t2: f64, att: &Attractors, s: Pt) -> Option<[Pt; 2]> {
+fn attract_segment(
+    seg: [Pt; 2],
+    allow_rotation: bool,
+    t2: f64,
+    att: &Attractors,
+    s: Pt,
+) -> Option<[Pt; 2]> {
     let screen = if allow_rotation { t2 * 1000.0 } else { t2 };
     let mut best = None;
     let mut min = f64::INFINITY;
@@ -463,11 +566,19 @@ fn attract_segment(seg: [Pt; 2], allow_rotation: bool, t2: f64, att: &Attractors
 }
 
 /// `findAttractedSegmentPoints`.
-fn attracted_points(p1: Pt, p2: Pt, allow_rotation: bool, t2: f64, target: &[Pt; 2], s: Pt) -> Option<(f64, [Pt; 2])> {
+fn attracted_points(
+    p1: Pt,
+    p2: Pt,
+    allow_rotation: bool,
+    t2: f64,
+    target: &[Pt; 2],
+    s: Pt,
+) -> Option<(f64, [Pt; 2])> {
     let (n1, n2) = onto_line(p1, p2, t2, target, s, true)?;
     if !allow_rotation {
         let d = (n2[1] - n1[1]).atan2(n2[0] - n1[0]) - (p2[1] - p1[1]).atan2(p2[0] - p1[0]);
-        let d = (d + std::f64::consts::PI).rem_euclid(2.0 * std::f64::consts::PI) - std::f64::consts::PI;
+        let d = (d + std::f64::consts::PI).rem_euclid(2.0 * std::f64::consts::PI)
+            - std::f64::consts::PI;
         if d.abs() > EPS {
             return None;
         }
@@ -496,7 +607,14 @@ fn attracted_points(p1: Pt, p2: Pt, allow_rotation: bool, t2: f64, target: &[Pt;
 /// `findAttractedSegmentPointsSub`: both points' projections onto the
 /// target's line, if each is within the threshold; optionally rejecting two
 /// points past the same end of the target.
-fn onto_line(p1: Pt, p2: Pt, t2: f64, target: &[Pt; 2], s: Pt, not_one_sided: bool) -> Option<(Pt, Pt)> {
+fn onto_line(
+    p1: Pt,
+    p2: Pt,
+    t2: f64,
+    target: &[Pt; 2],
+    s: Pt,
+    not_one_sided: bool,
+) -> Option<(Pt, Pt)> {
     let n1 = nearest_on_line(p1, target, s)?;
     if !(dist2(n1, p1) < t2) {
         return None;
@@ -525,7 +643,10 @@ fn onto_line(p1: Pt, p2: Pt, t2: f64, target: &[Pt; 2], s: Pt, not_one_sided: bo
 mod tests {
     use super::*;
 
-    const P: Params = Params { threshold: 0.5, scales: [1.0, 1.0] };
+    const P: Params = Params {
+        threshold: 0.5,
+        scales: [1.0, 1.0],
+    };
 
     fn group(members: &[(Shape, &[Pt])]) -> Attractors {
         let mut a = Attractors::default();
@@ -538,7 +659,10 @@ mod tests {
     fn close(a: &[Pt], b: &[Pt]) {
         assert_eq!(a.len(), b.len());
         for (x, y) in a.iter().zip(b) {
-            assert!((x[0] - y[0]).abs() < 1e-12 && (x[1] - y[1]).abs() < 1e-12, "{a:?} != {b:?}");
+            assert!(
+                (x[0] - y[0]).abs() < 1e-12 && (x[1] - y[1]).abs() < 1e-12,
+                "{a:?} != {b:?}"
+            );
         }
     }
 
@@ -604,9 +728,21 @@ mod tests {
     fn a_member_sharing_a_point_with_the_dragged_one_does_not_attract() {
         // Point 0 is a member on its own and the first vertex of a triangle.
         let members = vec![
-            Member { shape: Shape::Point, rigid: false, points: vec![0] },
-            Member { shape: Shape::Closed, rigid: false, points: vec![0, 1, 2] },
-            Member { shape: Shape::Point, rigid: false, points: vec![3] },
+            Member {
+                shape: Shape::Point,
+                rigid: false,
+                points: vec![0],
+            },
+            Member {
+                shape: Shape::Closed,
+                rigid: false,
+                points: vec![0, 1, 2],
+            },
+            Member {
+                shape: Shape::Point,
+                rigid: false,
+                points: vec![3],
+            },
         ];
         let current = [[0.0, 0.0], [4.0, 0.0], [0.0, 4.0], [10.0, 10.0]];
         let mut requested = vec![None; 4];
@@ -616,7 +752,10 @@ mod tests {
         let w = snap_group(&members, &current, &requested, &P);
         // The triangle moves as asked; its own vertex 0 does not pull it back.
         assert_eq!(w.len(), 1);
-        assert_eq!(w[0], vec![(0, [0.2, 0.1]), (1, [4.2, 0.1]), (2, [0.2, 4.1])]);
+        assert_eq!(
+            w[0],
+            vec![(0, [0.2, 0.1]), (1, [4.2, 0.1]), (2, [0.2, 4.1])]
+        );
         // Point 3 does attract.
         requested[0] = Some([9.8, 9.9]);
         requested[1] = None;
@@ -628,8 +767,20 @@ mod tests {
     #[test]
     fn relative_threshold_uses_graph_scales() {
         let p = Params::new(f64::NAN, true, [-10.0, 10.0, -10.0, 10.0]);
-        assert_eq!(p, Params { threshold: 0.02, scales: [20.0, 20.0] });
+        assert_eq!(
+            p,
+            Params {
+                threshold: 0.02,
+                scales: [20.0, 20.0]
+            }
+        );
         assert_eq!(Params::new(f64::NAN, false, [f64::NAN; 4]).threshold, 0.5);
-        assert_eq!(Params::new(0.3, true, [f64::NAN; 4]), Params { threshold: 0.3, scales: [1.0, 1.0] });
+        assert_eq!(
+            Params::new(0.3, true, [f64::NAN; 4]),
+            Params {
+                threshold: 0.3,
+                scales: [1.0, 1.0]
+            }
+        );
     }
 }

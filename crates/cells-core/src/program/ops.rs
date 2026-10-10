@@ -147,12 +147,20 @@ fn bit(b: bool) -> f64 {
 
 #[inline(always)]
 fn nan_min(a: f64, b: f64) -> f64 {
-    if a.is_nan() || b.is_nan() { f64::NAN } else { a.min(b) }
+    if a.is_nan() || b.is_nan() {
+        f64::NAN
+    } else {
+        a.min(b)
+    }
 }
 
 #[inline(always)]
 fn nan_max(a: f64, b: f64) -> f64 {
-    if a.is_nan() || b.is_nan() { f64::NAN } else { a.max(b) }
+    if a.is_nan() || b.is_nan() {
+        f64::NAN
+    } else {
+        a.max(b)
+    }
 }
 
 impl Op {
@@ -289,9 +297,31 @@ impl Op {
     #[inline(always)]
     pub fn input_pair(&self) -> (CellIdx, Option<CellIdx>) {
         match *self {
-            Op::Add(a, b) | Op::Sub(a, b) | Op::Mul(a, b) | Op::Div(a, b) | Op::Min(a, b) | Op::Max(a, b) | Op::Default(a, b) | Op::Lerp(a, b, _) | Op::Pow(a, b) | Op::Hold(a, b) | Op::Lt(a, b) | Op::Le(a, b) | Op::Eq(a, b) => (a, Some(b)),
-            Op::Negate(a) | Op::Round(a) | Op::Floor(a) | Op::Scale(a, _) | Op::Offset(a, _) | Op::Clamp(a, _, _) | Op::NanTo(a, _) | Op::Truthy(a) | Op::Not(a) => (a, None),
-            Op::Vec(..) | Op::Sym(..) => unreachable!("vector and symbolic operators keep every input in extra"),
+            Op::Add(a, b)
+            | Op::Sub(a, b)
+            | Op::Mul(a, b)
+            | Op::Div(a, b)
+            | Op::Min(a, b)
+            | Op::Max(a, b)
+            | Op::Default(a, b)
+            | Op::Lerp(a, b, _)
+            | Op::Pow(a, b)
+            | Op::Hold(a, b)
+            | Op::Lt(a, b)
+            | Op::Le(a, b)
+            | Op::Eq(a, b) => (a, Some(b)),
+            Op::Negate(a)
+            | Op::Round(a)
+            | Op::Floor(a)
+            | Op::Scale(a, _)
+            | Op::Offset(a, _)
+            | Op::Clamp(a, _, _)
+            | Op::NanTo(a, _)
+            | Op::Truthy(a)
+            | Op::Not(a) => (a, None),
+            Op::Vec(..) | Op::Sym(..) => {
+                unreachable!("vector and symbolic operators keep every input in extra")
+            }
         }
     }
 
@@ -308,10 +338,15 @@ impl Op {
     /// Evaluate a vector operator into `out` (`n_out` values).
     #[inline]
     pub fn eval_vec(&self, cells: &[f64], extra: &[CellIdx], out: &mut [f64]) {
-        let Op::Vec(v, start, n_in, _) = *self else { unreachable!() };
+        let Op::Vec(v, start, n_in, _) = *self else {
+            unreachable!()
+        };
         let mut inp = [0.0f64; crate::program::geo::MAX_VEC_IN];
         let n_in = n_in as usize;
-        for (k, &c) in extra[start as usize..start as usize + n_in].iter().enumerate() {
+        for (k, &c) in extra[start as usize..start as usize + n_in]
+            .iter()
+            .enumerate()
+        {
             inp[k] = cells[c as usize];
         }
         v.eval(&inp[..n_in], out);
@@ -322,7 +357,9 @@ impl Op {
     #[inline(always)]
     pub fn extra_range(&self) -> std::ops::Range<usize> {
         match *self {
-            Op::Vec(_, start, n, _) | Op::Sym(_, start, n) => start as usize..start as usize + n as usize,
+            Op::Vec(_, start, n, _) | Op::Sym(_, start, n) => {
+                start as usize..start as usize + n as usize
+            }
             _ => 0..0,
         }
     }
@@ -336,7 +373,9 @@ impl Op {
                 (Some(a), b)
             }
         };
-        a.into_iter().chain(b).chain(extra[self.extra_range()].iter().copied())
+        a.into_iter()
+            .chain(b)
+            .chain(extra[self.extra_range()].iter().copied())
     }
 }
 
@@ -353,11 +392,22 @@ pub enum OpSpec {
     Negate,
     Round,
     Floor,
-    Scale { k: f64 },
-    Offset { k: f64 },
-    Clamp { lo: f64, hi: f64 },
-    NanTo { k: f64 },
-    Lerp { t: f64 },
+    Scale {
+        k: f64,
+    },
+    Offset {
+        k: f64,
+    },
+    Clamp {
+        lo: f64,
+        hi: f64,
+    },
+    NanTo {
+        k: f64,
+    },
+    Lerp {
+        t: f64,
+    },
     Pow,
     Hold,
     Lt,
@@ -373,8 +423,28 @@ pub enum OpSpec {
 impl OpSpec {
     pub fn arity(&self) -> usize {
         match self {
-            OpSpec::Add | OpSpec::Sub | OpSpec::Mul | OpSpec::Div | OpSpec::Min | OpSpec::Max | OpSpec::Default | OpSpec::Lerp { .. } | OpSpec::Pow | OpSpec::Hold | OpSpec::Lt | OpSpec::Le | OpSpec::Eq => 2,
-            OpSpec::Negate | OpSpec::Round | OpSpec::Floor | OpSpec::Scale { .. } | OpSpec::Offset { .. } | OpSpec::Clamp { .. } | OpSpec::NanTo { .. } | OpSpec::Truthy | OpSpec::Not => 1,
+            OpSpec::Add
+            | OpSpec::Sub
+            | OpSpec::Mul
+            | OpSpec::Div
+            | OpSpec::Min
+            | OpSpec::Max
+            | OpSpec::Default
+            | OpSpec::Lerp { .. }
+            | OpSpec::Pow
+            | OpSpec::Hold
+            | OpSpec::Lt
+            | OpSpec::Le
+            | OpSpec::Eq => 2,
+            OpSpec::Negate
+            | OpSpec::Round
+            | OpSpec::Floor
+            | OpSpec::Scale { .. }
+            | OpSpec::Offset { .. }
+            | OpSpec::Clamp { .. }
+            | OpSpec::NanTo { .. }
+            | OpSpec::Truthy
+            | OpSpec::Not => 1,
             OpSpec::Vec(v) => v.n_in(),
             OpSpec::Sym(SymKind::Instantiate { .. } | SymKind::SampleTape { .. }) => usize::MAX,
             OpSpec::Sym(SymKind::Evaluate | SymKind::Derivative) => 1,
@@ -395,7 +465,13 @@ impl OpSpec {
     /// in `extra`; a symbolic one also reserves `n_out` entries after them
     /// for its memo.
     pub fn bind(&self, inputs: &[CellIdx], extra: &mut Vec<CellIdx>) -> Op {
-        debug_assert!(inputs.len() == self.arity() || matches!(self, OpSpec::Sym(SymKind::Instantiate { .. } | SymKind::SampleTape { .. })));
+        debug_assert!(
+            inputs.len() == self.arity()
+                || matches!(
+                    self,
+                    OpSpec::Sym(SymKind::Instantiate { .. } | SymKind::SampleTape { .. })
+                )
+        );
         let park = |extra: &mut Vec<CellIdx>, leaves: &[CellIdx]| {
             let start = extra.len() as u32;
             extra.extend_from_slice(leaves);

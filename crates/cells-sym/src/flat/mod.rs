@@ -192,7 +192,11 @@ impl Flat {
         let mut i = self.buckets[(hash as usize) & (self.buckets.len() - 1)];
         while i != NONE {
             let n = self.nodes[i as usize];
-            if self.hashes[i as usize] == hash && n.tag == tag && n.b as usize == ks.len() && &self.kids[n.a as usize..(n.a + n.b) as usize] == ks {
+            if self.hashes[i as usize] == hash
+                && n.tag == tag
+                && n.b as usize == ks.len()
+                && &self.kids[n.a as usize..(n.a + n.b) as usize] == ks
+            {
                 return i;
             }
             i = self.next[i as usize];
@@ -200,13 +204,27 @@ impl Flat {
         let start = self.kids.len() as u32;
         self.kids.extend_from_slice(ks);
         let flags = ks.iter().fold(0, |f, &k| f | self.flags[k as usize]);
-        self.insert(Node { tag, a: start, b: ks.len() as u32 }, hash, flags)
+        self.insert(
+            Node {
+                tag,
+                a: start,
+                b: ks.len() as u32,
+            },
+            hash,
+            flags,
+        )
     }
 
     // ---- raw constructors (flatten only) ----
 
     pub fn num(&mut self, v: f64) -> Handle {
-        let v = if v == 0.0 { 0.0 } else if v.is_nan() { f64::NAN } else { v };
+        let v = if v == 0.0 {
+            0.0
+        } else if v.is_nan() {
+            f64::NAN
+        } else {
+            v
+        };
         let bits = v.to_bits();
         self.intern(Tag::Num, bits as u32, (bits >> 32) as u32)
     }
@@ -377,7 +395,10 @@ impl Flat {
             Tag::Sym => self.sym_name(na.a).cmp(self.sym_name(nb.a)),
             Tag::Cell => (na.a, na.b).cmp(&(nb.a, nb.b)),
             Tag::Pow => self.cmp(na.a, nb.a).then_with(|| self.cmp(na.b, nb.b)),
-            Tag::Apply => self.sym_name(na.a).cmp(self.sym_name(nb.a)).then_with(|| self.cmp(na.b, nb.b)),
+            Tag::Apply => self
+                .sym_name(na.a)
+                .cmp(self.sym_name(nb.a))
+                .then_with(|| self.cmp(na.b, nb.b)),
             Tag::Add | Tag::Mul => {
                 let (ka, kb) = (self.kids(a), self.kids(b));
                 for (x, y) in ka.iter().zip(kb) {
@@ -400,18 +421,32 @@ impl Flat {
             Tag::Cell => {
                 let v = cells[n.a as usize];
                 if n.b == 1 {
-                    if v.is_nan() { self.num(f64::NAN) } else { v as Handle }
+                    if v.is_nan() {
+                        self.num(f64::NAN)
+                    } else {
+                        v as Handle
+                    }
                 } else {
                     self.num(v)
                 }
             }
             Tag::Add | Tag::Mul => {
                 let ks: Vec<Handle> = self.kids(h).to_vec();
-                let ks: Vec<Handle> = ks.into_iter().map(|k| self.instantiate_rec(k, cells)).collect();
-                if n.tag == Tag::Add { self.add_raw(&ks) } else { self.mul_raw(&ks) }
+                let ks: Vec<Handle> = ks
+                    .into_iter()
+                    .map(|k| self.instantiate_rec(k, cells))
+                    .collect();
+                if n.tag == Tag::Add {
+                    self.add_raw(&ks)
+                } else {
+                    self.mul_raw(&ks)
+                }
             }
             Tag::Pow => {
-                let (b, e) = (self.instantiate_rec(n.a, cells), self.instantiate_rec(n.b, cells));
+                let (b, e) = (
+                    self.instantiate_rec(n.a, cells),
+                    self.instantiate_rec(n.b, cells),
+                );
                 self.pow_raw(b, e)
             }
             Tag::Apply => {
@@ -556,7 +591,11 @@ impl SymEngine for Flat {
                 break;
             }
         }
-        if agree == 0 { self.equals_syntax(a, b) } else { true }
+        if agree == 0 {
+            self.equals_syntax(a, b)
+        } else {
+            true
+        }
     }
 
     /// The same tree as written (flattened), as math-expressions'
@@ -571,9 +610,22 @@ impl SymEngine for Flat {
         Some(match n.tag {
             Tag::Num | Tag::Rat => Tree::Num(self.number(h).unwrap()),
             Tag::Sym => Tree::Sym(self.sym_name(n.a).to_string()),
-            Tag::Cell => Tree::Cell { cell: n.a, math: n.b == 1 },
-            Tag::Add => Tree::Add(self.kids(h).iter().map(|&k| self.export(k)).collect::<Option<_>>()?),
-            Tag::Mul => Tree::Mul(self.kids(h).iter().map(|&k| self.export(k)).collect::<Option<_>>()?),
+            Tag::Cell => Tree::Cell {
+                cell: n.a,
+                math: n.b == 1,
+            },
+            Tag::Add => Tree::Add(
+                self.kids(h)
+                    .iter()
+                    .map(|&k| self.export(k))
+                    .collect::<Option<_>>()?,
+            ),
+            Tag::Mul => Tree::Mul(
+                self.kids(h)
+                    .iter()
+                    .map(|&k| self.export(k))
+                    .collect::<Option<_>>()?,
+            ),
             Tag::Pow => Tree::Pow(Box::new(self.export(n.a)?), Box::new(self.export(n.b)?)),
             Tag::Apply => Tree::Apply(self.sym_name(n.a).to_string(), Box::new(self.export(n.b)?)),
         })

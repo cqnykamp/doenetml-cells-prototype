@@ -20,7 +20,10 @@ pub type Handle = u32;
 pub enum Tree {
     Num(f64),
     Sym(String),
-    Cell { cell: u32, math: bool },
+    Cell {
+        cell: u32,
+        math: bool,
+    },
     Add(Vec<Tree>),
     Mul(Vec<Tree>),
     Sub(Box<Tree>, Box<Tree>),

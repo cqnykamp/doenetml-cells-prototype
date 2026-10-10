@@ -48,8 +48,14 @@ impl Document {
     }
 
     /// `load` from a deserialized DAST.
-    pub fn load_dast(dast: Arc<Dast>, options: LoadOptions, t: &mut LoadTimings) -> crate::Result<Document> {
-        let mut engine = options.engine.unwrap_or_else(|| Box::new(cells_sym::flat::Flat::new()));
+    pub fn load_dast(
+        dast: Arc<Dast>,
+        options: LoadOptions,
+        t: &mut LoadTimings,
+    ) -> crate::Result<Document> {
+        let mut engine = options
+            .engine
+            .unwrap_or_else(|| Box::new(cells_sym::flat::Flat::new()));
         let mut prior = crate::build::Prior::new(options.seed, options.sample_with_engine);
         for _ in 0..MAX_PASSES {
             let clock = web_time::Instant::now();
@@ -93,9 +99,17 @@ impl Document {
     pub fn warnings(&self) -> Vec<String> {
         let st = &self.structure;
         let mut out = Vec::new();
-        for ((r, &d), &cross) in st.repeats.iter().zip(&st.repeat_depths).zip(&st.repeat_cross_reads) {
+        for ((r, &d), &cross) in st
+            .repeats
+            .iter()
+            .zip(&st.repeat_depths)
+            .zip(&st.repeat_cross_reads)
+        {
             if cross {
-                let name = self.name(r.comp).map(str::to_string).unwrap_or_else(|| format!("<repeatForSequence>#{}", r.comp));
+                let name = self
+                    .name(r.comp)
+                    .map(str::to_string)
+                    .unwrap_or_else(|| format!("<repeatForSequence>#{}", r.comp));
                 out.push(format!("repeat '{name}' has structural depth {d}: its count reads a cell inside another repeat's iterations, so a change there costs {d} build passes instead of one"));
             }
         }
@@ -105,14 +119,23 @@ impl Document {
     /// Whether every repeat was expanded with the iteration count its
     /// `count` cell now holds.
     pub fn structure_settled(&self) -> bool {
-        self.structure.repeats.iter().all(|r| self.repeat_count(r) == r.n)
+        self.structure
+            .repeats
+            .iter()
+            .all(|r| self.repeat_count(r) == r.n)
     }
 
     /// The iteration count a repeat's `count` cell currently asks for.
     pub fn repeat_count(&self, r: &Repeat) -> u32 {
-        let pi = ComponentKind::RepeatForSequence.prop_index("count").unwrap();
+        let pi = ComponentKind::RepeatForSequence
+            .prop_index("count")
+            .unwrap();
         let v = self.cells[self.comp_cells(r.comp)[pi] as usize];
-        if v.is_nan() || v < 0.0 { 0 } else { v.min(u32::MAX as f64) as u32 }
+        if v.is_nan() || v < 0.0 {
+            0
+        } else {
+            v.min(u32::MAX as f64) as u32
+        }
     }
 
     /// Rebuild from the retained DAST, carrying iteration counts and
@@ -138,7 +161,11 @@ impl Document {
                 let clock = web_time::Instant::now();
                 let mut doc = u.schedule(dast.clone(), &mut engine)?;
                 if profile {
-                    eprintln!("rebuild/schedule: {:.2?} (creation order valid: {})", clock.elapsed(), doc.program.in_creation_order);
+                    eprintln!(
+                        "rebuild/schedule: {:.2?} (creation order valid: {})",
+                        clock.elapsed(),
+                        doc.program.in_creation_order
+                    );
                 }
                 let clock = web_time::Instant::now();
                 doc.recompute();

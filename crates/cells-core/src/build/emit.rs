@@ -25,7 +25,10 @@ impl<'c, 'a> Builder<'c, 'a> {
         for (s, src) in self.sources.iter().enumerate() {
             match src {
                 Source::Alias(_) => {}
-                Source::Unset => unreachable!("slot {} never received a source", self.slot_label(s as SlotId)),
+                Source::Unset => unreachable!(
+                    "slot {} never received a source",
+                    self.slot_label(s as SlotId)
+                ),
                 _ => {
                     let root = uf.find(s as SlotId) as usize;
                     debug_assert!(class_def[root] == NONE, "two sources in one alias class");
@@ -56,7 +59,13 @@ impl<'c, 'a> Builder<'c, 'a> {
             match &self.sources[s] {
                 Source::Literal(v) | Source::Default(v) => {
                     let (scope, tslot) = self.template_slot(s as SlotId);
-                    let value = self.prior.structure.values.get(scope as usize).and_then(|row| row.get(tslot as usize).copied().flatten()).unwrap_or(*v);
+                    let value = self
+                        .prior
+                        .structure
+                        .values
+                        .get(scope as usize)
+                        .and_then(|row| row.get(tslot as usize).copied().flatten())
+                        .unwrap_or(*v);
                     slot_cell[root] = cells.len() as CellIdx;
                     cells.push(value);
                     cell_def_slot.push(s as SlotId);
@@ -70,7 +79,9 @@ impl<'c, 'a> Builder<'c, 'a> {
         }
         let n_essential = cells.len();
         for &s in &fixed_defs {
-            let Source::Fixed(v) = self.sources[s] else { unreachable!() };
+            let Source::Fixed(v) = self.sources[s] else {
+                unreachable!()
+            };
             let root = roots[s] as usize;
             slot_cell[root] = cells.len() as CellIdx;
             cells.push(v);
@@ -91,7 +102,9 @@ impl<'c, 'a> Builder<'c, 'a> {
             }
         }
         for &s in &outputs {
-            let Source::VecOut(head, k) = self.sources[s] else { unreachable!() };
+            let Source::VecOut(head, k) = self.sources[s] else {
+                unreachable!()
+            };
             let head_cell = slot_cell[roots[head as usize] as usize];
             debug_assert!(head_cell != NONE, "vector output before its head");
             slot_cell[roots[s] as usize] = head_cell + k as CellIdx;
@@ -115,7 +128,11 @@ impl<'c, 'a> Builder<'c, 'a> {
                 _ => unreachable!(),
             };
             bound.clear();
-            bound.extend(self.op_inputs[start as usize..start as usize + count as usize].iter().map(|&i| slot_to_cell[i as usize]));
+            bound.extend(
+                self.op_inputs[start as usize..start as usize + count as usize]
+                    .iter()
+                    .map(|&i| slot_to_cell[i as usize]),
+            );
             if let OpSpec::Sym(kind) = spec {
                 if kind.makes_math() {
                     math[slot_to_cell[s] as usize] = true;
@@ -123,7 +140,10 @@ impl<'c, 'a> Builder<'c, 'a> {
                 // The template's leaves were slots; they are cells now.
                 if let SymKind::Instantiate { template, post } = kind {
                     let tree = rebind(&self.sym_templates[template as usize], &slot_to_cell);
-                    spec = OpSpec::Sym(SymKind::Instantiate { template: self.engine.import(&tree), post });
+                    spec = OpSpec::Sym(SymKind::Instantiate {
+                        template: self.engine.import(&tree),
+                        post,
+                    });
                 }
                 let input = self.op_inputs[start as usize];
                 // A derivative of a fixed shape is taken once, here; the tick
@@ -135,23 +155,34 @@ impl<'c, 'a> Builder<'c, 'a> {
                 {
                     bound.clear();
                     cell_leaves(&tree, &mut bound);
-                    spec = OpSpec::Sym(SymKind::Instantiate { template: d, post: Post::Simplify });
+                    spec = OpSpec::Sym(SymKind::Instantiate {
+                        template: d,
+                        post: Post::Simplify,
+                    });
                 }
                 // A curve of a fixed shape samples a compiled tape.
                 if compile
                     && kind == SymKind::Sample
                     && let Some(h) = self.fixed_shape(input, &slot_to_cell, &mut fixed_shape)
-                    && let Some(tape) = self.engine.export(h).and_then(|t| cells_sym::tape::Tape::compile(&t, "x"))
+                    && let Some(tape) = self
+                        .engine
+                        .export(h)
+                        .and_then(|t| cells_sym::tape::Tape::compile(&t, "x"))
                 {
                     let (lo, hi) = (bound[1], bound[2]);
                     bound.clear();
                     bound.extend([lo, hi]);
                     bound.extend_from_slice(&tape.params);
-                    spec = OpSpec::Sym(SymKind::SampleTape { tape: tapes.len() as u32 });
+                    spec = OpSpec::Sym(SymKind::SampleTape {
+                        tape: tapes.len() as u32,
+                    });
                     tapes.push(tape);
                 }
             }
-            instrs.push(Instr { out: slot_to_cell[s], op: spec.bind(&bound, &mut extra) });
+            instrs.push(Instr {
+                out: slot_to_cell[s],
+                op: spec.bind(&bound, &mut extra),
+            });
         }
         for &s in &self.math_slots {
             math[slot_to_cell[s as usize] as usize] = true;
@@ -164,9 +195,13 @@ impl<'c, 'a> Builder<'c, 'a> {
         self.comps.prop_cells = Vec::with_capacity(n);
         for c in 0..n_comps {
             let np = self.comps.kind[c].prop_defs().len();
-            self.comps.prop_base.push(self.comps.prop_cells.len() as u32);
+            self.comps
+                .prop_base
+                .push(self.comps.prop_cells.len() as u32);
             let base = self.slot_base[c] as usize;
-            self.comps.prop_cells.extend_from_slice(&slot_to_cell[base..base + np]);
+            self.comps
+                .prop_cells
+                .extend_from_slice(&slot_to_cell[base..base + np]);
         }
         lap("prop cells");
 
@@ -194,7 +229,12 @@ impl<'c, 'a> Builder<'c, 'a> {
         let slot_comp = self.slot_comp;
         let slot_base = self.slot_base;
         let kinds = self.comps.kind.clone();
-        let names: Vec<Option<String>> = self.comps.name.iter().map(|&s| (s != NONE).then(|| self.c.dast.strings.get(s).trim().to_string())).collect();
+        let names: Vec<Option<String>> = self
+            .comps
+            .name
+            .iter()
+            .map(|&s| (s != NONE).then(|| self.c.dast.strings.get(s).trim().to_string()))
+            .collect();
         let cell_label = Box::new(move |cell: CellIdx| {
             let slot = cell_def_slot[cell as usize];
             let comp = slot_comp[slot as usize];
@@ -202,7 +242,9 @@ impl<'c, 'a> Builder<'c, 'a> {
                 return "(anonymous cell)".to_string();
             }
             let pi = (slot - slot_base[comp as usize]) as usize;
-            let owner = names[comp as usize].clone().unwrap_or_else(|| format!("<{}>#{}", kinds[comp as usize].tag(), comp));
+            let owner = names[comp as usize]
+                .clone()
+                .unwrap_or_else(|| format!("<{}>#{}", kinds[comp as usize].tag(), comp));
             match kinds[comp as usize].prop_defs().get(pi) {
                 Some(def) => format!("{owner}.{}", def.name),
                 None => format!("{owner}.(hidden slot {pi})"),
@@ -219,14 +261,32 @@ impl<'c, 'a> Builder<'c, 'a> {
         comps.prop_cells.shrink_to_fit();
         comps.node.shrink_to_fit();
         comps.scope.shrink_to_fit();
-        Ok(Unscheduled { cells, n_essential, n_fixed, instrs, comps, strings: self.c.dast.strings.clone(), root: self.root, structure, extra, math, tapes, cell_label })
+        Ok(Unscheduled {
+            cells,
+            n_essential,
+            n_fixed,
+            instrs,
+            comps,
+            strings: self.c.dast.strings.clone(),
+            root: self.root,
+            structure,
+            extra,
+            math,
+            tapes,
+            cell_label,
+        })
     }
 
     /// The expression a slot will hold as a template over numeric cell
     /// leaves, when its shape is fixed at build time: a fixed handle, an
     /// instantiated template, or the derivative of one (taken here, once).
     /// `None` when it depends on a math cell whose shape can change.
-    fn fixed_shape(&mut self, slot: SlotId, slot_to_cell: &[CellIdx], memo: &mut HashMap<SlotId, Option<cells_sym::Handle>>) -> Option<cells_sym::Handle> {
+    fn fixed_shape(
+        &mut self,
+        slot: SlotId,
+        slot_to_cell: &[CellIdx],
+        memo: &mut HashMap<SlotId, Option<cells_sym::Handle>>,
+    ) -> Option<cells_sym::Handle> {
         let mut root = slot;
         while let Source::Alias(t) = self.sources[root as usize] {
             root = t;
@@ -238,11 +298,16 @@ impl<'c, 'a> Builder<'c, 'a> {
             Source::Fixed(h) if !h.is_nan() => Some(h as cells_sym::Handle),
             Source::Op(OpSpec::Sym(SymKind::Instantiate { template, .. }), _, _) => {
                 let tree = rebind(&self.sym_templates[template as usize], slot_to_cell);
-                if has_math_leaf(&tree) { None } else { Some(self.engine.import(&tree)) }
+                if has_math_leaf(&tree) {
+                    None
+                } else {
+                    Some(self.engine.import(&tree))
+                }
             }
             Source::Op(OpSpec::Sym(SymKind::Derivative), start, _) => {
                 let input = self.op_inputs[start as usize];
-                self.fixed_shape(input, slot_to_cell, memo).map(|h| self.engine.derivative(h, "x"))
+                self.fixed_shape(input, slot_to_cell, memo)
+                    .map(|h| self.engine.derivative(h, "x"))
             }
             _ => None,
         };
@@ -256,7 +321,10 @@ impl<'c, 'a> Builder<'c, 'a> {
         let comp = self.slot_comp[slot as usize];
         let inst = self.instances[self.comp_instance[comp as usize] as usize];
         let pi = slot - self.slot_base[comp as usize];
-        (inst.scope, self.c.templates[inst.template].elems[inst.elem].slot_off + pi)
+        (
+            inst.scope,
+            self.c.templates[inst.template].elems[inst.elem].slot_off + pi,
+        )
     }
 
     /// Structural depth per repeat: how many repeats must be expanded, in
@@ -264,7 +332,9 @@ impl<'c, 'a> Builder<'c, 'a> {
     /// one; a count that reads a cell inside another repeat's iterations adds
     /// one, and is flagged (`cross`) since authors can avoid it.
     pub(super) fn structural_depths(&self) -> (Vec<u32>, Vec<bool>) {
-        let count_pi = ComponentKind::RepeatForSequence.prop_index("count").unwrap();
+        let count_pi = ComponentKind::RepeatForSequence
+            .prop_index("count")
+            .unwrap();
         let mut owner: HashMap<ScopeId, usize> = HashMap::new();
         for (ri, r) in self.repeats.iter().enumerate() {
             for &s in &r.iter_scopes {
@@ -317,7 +387,9 @@ impl<'c, 'a> Builder<'c, 'a> {
                 }
                 match &self.sources[sl as usize] {
                     Source::Alias(t) => stack.push(*t),
-                    Source::Op(_, start, n) => stack.extend_from_slice(&self.op_inputs[*start as usize..*start as usize + *n as usize]),
+                    Source::Op(_, start, n) => stack.extend_from_slice(
+                        &self.op_inputs[*start as usize..*start as usize + *n as usize],
+                    ),
                     Source::VecOut(head, _) => stack.push(*head),
                     _ => {}
                 }
@@ -334,14 +406,20 @@ impl<'c, 'a> Builder<'c, 'a> {
                 return 1;
             }
             visiting[ri] = true;
-            let d = 1 + reads[ri].iter().map(|&o| depth(o, reads, memo, visiting)).max().unwrap_or(0);
+            let d = 1 + reads[ri]
+                .iter()
+                .map(|&o| depth(o, reads, memo, visiting))
+                .max()
+                .unwrap_or(0);
             visiting[ri] = false;
             memo[ri] = d;
             d
         }
         let mut memo = vec![0u32; self.repeats.len()];
         let mut visiting = vec![false; self.repeats.len()];
-        let depths = (0..self.repeats.len()).map(|ri| depth(ri, &reads, &mut memo, &mut visiting)).collect();
+        let depths = (0..self.repeats.len())
+            .map(|ri| depth(ri, &reads, &mut memo, &mut visiting))
+            .collect();
         (depths, cross)
     }
 }
@@ -351,7 +429,10 @@ fn rebind(t: &Tree, slot_to_cell: &[CellIdx]) -> Tree {
     let all = |ts: &[Tree]| ts.iter().map(|k| rebind(k, slot_to_cell)).collect();
     let one = |k: &Tree| Box::new(rebind(k, slot_to_cell));
     match t {
-        Tree::Cell { cell, math } => Tree::Cell { cell: slot_to_cell[*cell as usize], math: *math },
+        Tree::Cell { cell, math } => Tree::Cell {
+            cell: slot_to_cell[*cell as usize],
+            math: *math,
+        },
         Tree::Num(_) | Tree::Sym(_) => t.clone(),
         Tree::Add(ts) => Tree::Add(all(ts)),
         Tree::Mul(ts) => Tree::Mul(all(ts)),
@@ -397,7 +478,9 @@ struct UnionFind {
 
 impl UnionFind {
     fn new(n: usize) -> Self {
-        UnionFind { parent: (0..n as u32).collect() }
+        UnionFind {
+            parent: (0..n as u32).collect(),
+        }
     }
     fn find(&mut self, mut x: u32) -> u32 {
         while self.parent[x as usize] != x {

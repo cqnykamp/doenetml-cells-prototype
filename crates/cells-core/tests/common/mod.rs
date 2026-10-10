@@ -7,16 +7,22 @@ use cells_core::reference;
 use cells_core::{Document, PointRequest, Request, Tick};
 
 pub fn req(doc: &Document, name: &str, prop: &str, value: f64) -> Request {
-    Request { cell: doc.cell(name, prop).unwrap(), value }
+    Request {
+        cell: doc.cell(name, prop).unwrap(),
+        value,
+    }
 }
 
 pub fn v(doc: &Document, name: &str, prop: &str) -> f64 {
-    doc.value(name, prop).unwrap_or_else(|| panic!("no {name}.{prop}"))
+    doc.value(name, prop)
+        .unwrap_or_else(|| panic!("no {name}.{prop}"))
 }
 
 /// Request `value` on `name.prop`.
 pub fn set(doc: &mut Document, name: &str, prop: &str, value: f64) -> Tick {
-    let cell = doc.cell(name, prop).unwrap_or_else(|| panic!("no {name}.{prop}"));
+    let cell = doc
+        .cell(name, prop)
+        .unwrap_or_else(|| panic!("no {name}.{prop}"));
     doc.request(&[Request { cell, value }])
 }
 
@@ -40,7 +46,14 @@ macro_rules! assert_close {
 
 /// A whole-shape drag: the shape's points requested together (ADR 0006).
 pub fn move_points(doc: &mut Document, name: &str, props: &[(&str, &str)], at: &[(f64, f64)]) {
-    let pts: Vec<PointRequest> = props.iter().zip(at).map(|(&(px, py), &(x, y))| PointRequest { cells: [doc.cell(name, px).unwrap(), doc.cell(name, py).unwrap()], values: [x, y] }).collect();
+    let pts: Vec<PointRequest> = props
+        .iter()
+        .zip(at)
+        .map(|(&(px, py), &(x, y))| PointRequest {
+            cells: [doc.cell(name, px).unwrap(), doc.cell(name, py).unwrap()],
+            values: [x, y],
+        })
+        .collect();
     let t = doc.request_points(&pts);
     assert!(t.dropped.is_empty(), "dropped {:?}", t.dropped);
     assert_eq!(reference::check(doc), None);

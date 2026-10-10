@@ -119,16 +119,37 @@ pub const SECTION_TAGS: [(&str, &str, bool, bool); 6] = [
 pub const MAX_VERTICES: usize = 16;
 
 const fn attr(name: &'static str, default: f64) -> PropDef {
-    PropDef { name, default, from: PropFrom::Attribute, attr: None, bind: None, ref_prop: None }
+    PropDef {
+        name,
+        default,
+        from: PropFrom::Attribute,
+        attr: None,
+        bind: None,
+        ref_prop: None,
+    }
 }
 
 const fn computed(name: &'static str, op: OpSpec, args: &'static [u8]) -> PropDef {
-    PropDef { name, default: f64::NAN, from: PropFrom::Computed { op, args }, attr: None, bind: None, ref_prop: None }
+    PropDef {
+        name,
+        default: f64::NAN,
+        from: PropFrom::Computed { op, args },
+        attr: None,
+        bind: None,
+        ref_prop: None,
+    }
 }
 
 /// A prop whose source the builder plans from the element's specification.
 const fn planned(name: &'static str) -> PropDef {
-    PropDef { name, default: f64::NAN, from: PropFrom::Planned, attr: None, bind: None, ref_prop: None }
+    PropDef {
+        name,
+        default: f64::NAN,
+        from: PropFrom::Planned,
+        attr: None,
+        bind: None,
+        ref_prop: None,
+    }
 }
 
 /// `<circle>`. `cx`, `cy`, `radius` are the numerical center and radius;
@@ -139,12 +160,20 @@ const CIRCLE_PROPS: &[PropDef] = &[
     /* 1 */ planned("cy"),
     /* 2 */ planned("radius"),
     /* 3 */ computed("diameter", OpSpec::Scale { k: 2.0 }, &[2]),
-    /* 4 */ computed("circumference", OpSpec::Scale { k: std::f64::consts::TAU }, &[2]),
+    /* 4 */
+    computed(
+        "circumference",
+        OpSpec::Scale {
+            k: std::f64::consts::TAU,
+        },
+        &[2],
+    ),
     /* 5 */ planned("area"),
     // The center as a *reference*: the prescribed center when there is one
     // (so a point extending `$c.center` drags that point alone, as in the
     // current core), else the derived center.
-    /* 6 */ planned("centerX"),
+    /* 6 */
+    planned("centerX"),
     /* 7 */ planned("centerY"),
     /* 8 */ planned("throughX1"),
     /* 9 */ planned("throughY1"),
@@ -172,7 +201,12 @@ const LINE_PROPS: &[PropDef] = &[
     /* 10 */ planned("basedOnDirection"),
 ];
 
-const LINE_SEGMENT_PROPS: &[PropDef] = &[/* 0 */ planned("x1"), /* 1 */ planned("y1"), /* 2 */ planned("x2"), /* 3 */ planned("y2")];
+const LINE_SEGMENT_PROPS: &[PropDef] = &[
+    /* 0 */ planned("x1"),
+    /* 1 */ planned("y1"),
+    /* 2 */ planned("x2"),
+    /* 3 */ planned("y2"),
+];
 
 /// `vertexN` of a polygon, as prop name pairs.
 const VERTEX_PARTS: [[&str; 2]; MAX_VERTICES] = [
@@ -228,7 +262,14 @@ const SLIDER_PROPS: &[PropDef] = &[
     /* 1 */ attr("to", 10.0),
     /* 2 */ attr("step", 1.0),
     /* 3 */
-    PropDef { name: "preliminaryValue", default: 0.0, from: PropFrom::Attribute, attr: Some("initialValue"), bind: Some("bindValueTo"), ref_prop: None },
+    PropDef {
+        name: "preliminaryValue",
+        default: 0.0,
+        from: PropFrom::Attribute,
+        attr: Some("initialValue"),
+        bind: Some("bindValueTo"),
+        ref_prop: None,
+    },
     /* 4 */ computed("span", OpSpec::Sub, &[1, 0]),
     /* 5 */ computed("spanSteps", OpSpec::Div, &[4, 2]),
     /* 6 */ computed("spanStepsEps", OpSpec::Offset { k: 1e-10 }, &[5]),
@@ -237,7 +278,14 @@ const SLIDER_PROPS: &[PropDef] = &[
     /* 9 */ computed("rawIndex", OpSpec::Div, &[8, 2]),
     /* 10 */ computed("roundedIndex", OpSpec::Round, &[9]),
     /* 11 */
-    computed("nonNegIndex", OpSpec::Clamp { lo: 0.0, hi: f64::INFINITY }, &[10]),
+    computed(
+        "nonNegIndex",
+        OpSpec::Clamp {
+            lo: 0.0,
+            hi: f64::INFINITY,
+        },
+        &[10],
+    ),
     /* 12 */ computed("clampedIndex", OpSpec::Min, &[11, 7]),
     // A non-finite stored value is index 0, so the slider shows `from`,
     // as in the current core.
@@ -266,10 +314,24 @@ const REPEAT_PROPS: &[PropDef] = &[
     /* 6 */ computed("spanStepsEps", OpSpec::Offset { k: 1.0 + 1e-10 }, &[5]),
     /* 7 */ computed("lengthFromTo", OpSpec::Floor, &[6]),
     /* 8 */
-    PropDef { name: "length", default: f64::NAN, from: PropFrom::AttributeOr { alias: 7 }, attr: None, bind: None, ref_prop: None },
+    PropDef {
+        name: "length",
+        default: f64::NAN,
+        from: PropFrom::AttributeOr { alias: 7 },
+        attr: None,
+        bind: None,
+        ref_prop: None,
+    },
     /* 9 */ computed("lengthFloor", OpSpec::Floor, &[8]),
     /* 10 */
-    computed("lengthNonNeg", OpSpec::Clamp { lo: 0.0, hi: f64::INFINITY }, &[9]),
+    computed(
+        "lengthNonNeg",
+        OpSpec::Clamp {
+            lo: 0.0,
+            hi: f64::INFINITY,
+        },
+        &[9],
+    ),
     /* 11 */ computed("count", OpSpec::Min, &[10, 3]),
 ];
 
@@ -284,50 +346,131 @@ const SEQUENCE_VALUE_PROPS: &[PropDef] = &[
     /* 5 */ computed("value", OpSpec::Add, &[4, 0]),
 ];
 
-const GRAPH_PROPS: &[PropDef] = &[attr("xmin", -10.0), attr("xmax", 10.0), attr("ymin", -10.0), attr("ymax", 10.0)];
+const GRAPH_PROPS: &[PropDef] = &[
+    attr("xmin", -10.0),
+    attr("xmax", 10.0),
+    attr("ymin", -10.0),
+    attr("ymax", 10.0),
+];
 // `hide` is a boolean in the current core; here it is a 0/1 cell.
 const POINT_PROPS: &[PropDef] = &[planned("x"), planned("y"), planned("hide")];
 const BOOLEAN_INPUT_PROPS: &[PropDef] = &[attr("value", 0.0)];
 // Both of a math's props are set by the builder from its children.
 const MATH_PROPS: &[PropDef] = &[
-    PropDef { name: "expr", default: f64::NAN, from: PropFrom::Children, attr: None, bind: None, ref_prop: None },
-    PropDef { name: "value", default: f64::NAN, from: PropFrom::Children, attr: None, bind: None, ref_prop: None },
+    PropDef {
+        name: "expr",
+        default: f64::NAN,
+        from: PropFrom::Children,
+        attr: None,
+        bind: None,
+        ref_prop: None,
+    },
+    PropDef {
+        name: "value",
+        default: f64::NAN,
+        from: PropFrom::Children,
+        attr: None,
+        bind: None,
+        ref_prop: None,
+    },
 ];
 const EVALUATE_PROPS: &[PropDef] = &[
-    PropDef { name: "function", default: f64::NAN, from: PropFrom::Attribute, attr: None, bind: None, ref_prop: Some("expr") },
+    PropDef {
+        name: "function",
+        default: f64::NAN,
+        from: PropFrom::Attribute,
+        attr: None,
+        bind: None,
+        ref_prop: Some("expr"),
+    },
     attr("input", f64::NAN),
     computed("value", OpSpec::Sym(SymKind::EvalAt), &[0, 1]),
 ];
-const NUMBER_PROPS: &[PropDef] = &[PropDef { name: "value", default: f64::NAN, from: PropFrom::Children, attr: None, bind: None, ref_prop: None }];
+const NUMBER_PROPS: &[PropDef] = &[PropDef {
+    name: "value",
+    default: f64::NAN,
+    from: PropFrom::Children,
+    attr: None,
+    bind: None,
+    ref_prop: None,
+}];
 const NUMBER_INPUT_PROPS: &[PropDef] = &[attr("value", f64::NAN)];
 // A mathInput's value is bound by a child reference or `bindValueTo`,
 // else it is the `prefill` (the builder reads it). The builder plans
 // `expr` from what `value` turned out to be.
 const MATH_INPUT_PROPS: &[PropDef] = &[
-    PropDef { name: "value", default: f64::NAN, from: PropFrom::Children, attr: Some("prefill"), bind: Some("bindValueTo"), ref_prop: None },
-    PropDef { name: "expr", default: f64::NAN, from: PropFrom::Attribute, attr: Some("(planned)"), bind: None, ref_prop: None },
+    PropDef {
+        name: "value",
+        default: f64::NAN,
+        from: PropFrom::Children,
+        attr: Some("prefill"),
+        bind: Some("bindValueTo"),
+        ref_prop: None,
+    },
+    PropDef {
+        name: "expr",
+        default: f64::NAN,
+        from: PropFrom::Attribute,
+        attr: Some("(planned)"),
+        bind: None,
+        ref_prop: None,
+    },
 ];
 // Planned by the builder (`plan_symbolic`); `samples` is the first of
 // `SAMPLES` consecutive cells.
 const CURVE_PROPS: &[PropDef] = &[
-    PropDef { name: "expr", default: f64::NAN, from: PropFrom::Children, attr: None, bind: None, ref_prop: None },
+    PropDef {
+        name: "expr",
+        default: f64::NAN,
+        from: PropFrom::Children,
+        attr: None,
+        bind: None,
+        ref_prop: None,
+    },
     planned("xmin"),
     planned("xmax"),
     planned("samples"),
 ];
 const ANSWER_PROPS: &[PropDef] = &[
-    PropDef { name: "response", default: f64::NAN, from: PropFrom::Attribute, attr: None, bind: None, ref_prop: Some("expr") },
-    PropDef { name: "correct", default: f64::NAN, from: PropFrom::Children, attr: None, bind: None, ref_prop: None },
+    PropDef {
+        name: "response",
+        default: f64::NAN,
+        from: PropFrom::Attribute,
+        attr: None,
+        bind: None,
+        ref_prop: Some("expr"),
+    },
+    PropDef {
+        name: "correct",
+        default: f64::NAN,
+        from: PropFrom::Children,
+        attr: None,
+        bind: None,
+        ref_prop: None,
+    },
     attr("submitted", f64::NAN),
     planned("credit"),
     attr("weight", 1.0),
 ];
-const OP_PROPS: &[PropDef] = &[PropDef { name: "value", default: f64::NAN, from: PropFrom::Derived, attr: None, bind: None, ref_prop: None }];
+const OP_PROPS: &[PropDef] = &[PropDef {
+    name: "value",
+    default: f64::NAN,
+    from: PropFrom::Derived,
+    attr: None,
+    bind: None,
+    ref_prop: None,
+}];
 const COLLECT_PROPS: &[PropDef] = &[attr("count", 0.0)];
-const STICKY_GROUP_PROPS: &[PropDef] = &[attr("threshold", f64::NAN), attr("relativeToGraphScales", 0.0)];
+const STICKY_GROUP_PROPS: &[PropDef] = &[
+    attr("threshold", f64::NAN),
+    attr("relativeToGraphScales", 0.0),
+];
 // `creditAchieved` and `number` are wired after expansion; the
 // flags are literals the builder reads, since they decide the wiring.
-const DOCUMENT_PROPS: &[PropDef] = &[planned("creditAchieved"), computed("percentCreditAchieved", OpSpec::Scale { k: 100.0 }, &[0])];
+const DOCUMENT_PROPS: &[PropDef] = &[
+    planned("creditAchieved"),
+    computed("percentCreditAchieved", OpSpec::Scale { k: 100.0 }, &[0]),
+];
 const SECTION_PROPS: &[PropDef] = &[
     planned("creditAchieved"),
     computed("percentCreditAchieved", OpSpec::Scale { k: 100.0 }, &[0]),
@@ -337,7 +480,14 @@ const SECTION_PROPS: &[PropDef] = &[
     planned("includeParentNumber"),
     planned("label"),
 ];
-const TEXT_PROPS: &[PropDef] = &[PropDef { name: "value", default: f64::NAN, from: PropFrom::Children, attr: None, bind: None, ref_prop: None }];
+const TEXT_PROPS: &[PropDef] = &[PropDef {
+    name: "value",
+    default: f64::NAN,
+    from: PropFrom::Children,
+    attr: None,
+    bind: None,
+    ref_prop: None,
+}];
 // `hide` hides what the choice shows, not copies of its names.
 const CONDITIONAL_CONTENT_PROPS: &[PropDef] = &[planned("choice"), planned("hide")];
 const CASE_PROPS: &[PropDef] = &[planned("active")];
@@ -516,8 +666,23 @@ pub const SYMBOLIC: u8 = 8;
 /// Made by the builder, never by a tag in the source.
 pub const INTERNAL: u8 = 16;
 
-const fn row(kind: ComponentKind, tags: &'static [&'static str], props: &'static [PropDef], flags: u8) -> KindInfo {
-    KindInfo { kind, tags, props, default_prop: None, views: &[], arrays: &[], aliases: &[], flags, sticky: None }
+const fn row(
+    kind: ComponentKind,
+    tags: &'static [&'static str],
+    props: &'static [PropDef],
+    flags: u8,
+) -> KindInfo {
+    KindInfo {
+        kind,
+        tags,
+        props,
+        default_prop: None,
+        views: &[],
+        arrays: &[],
+        aliases: &[],
+        flags,
+        sticky: None,
+    }
 }
 
 impl KindInfo {
@@ -543,7 +708,11 @@ impl KindInfo {
     }
 }
 
-const LINE_POINTS: &[ArrayProp] = &[ArrayProp { names: &["points", "endpoints"], item: "point", items: &[["x1", "y1"], ["x2", "y2"]] }];
+const LINE_POINTS: &[ArrayProp] = &[ArrayProp {
+    names: &["points", "endpoints"],
+    item: "point",
+    items: &[["x1", "y1"], ["x2", "y2"]],
+}];
 
 pub const KINDS: [KindInfo; 31] = {
     use crate::tick::snap::Shape;
@@ -551,21 +720,58 @@ pub const KINDS: [KindInfo; 31] = {
     [
         row(K::Document, &["document"], DOCUMENT_PROPS, 0),
         row(K::Graph, &["graph"], GRAPH_PROPS, CONTAINER),
-        row(K::Point, &["point"], POINT_PROPS, COPYABLE | PLANNED).default_prop("coords").views(&[("coords", ["x", "y"])]).sticky(Shape::Point, prop::point::X, 1),
+        row(K::Point, &["point"], POINT_PROPS, COPYABLE | PLANNED)
+            .default_prop("coords")
+            .views(&[("coords", ["x", "y"])])
+            .sticky(Shape::Point, prop::point::X, 1),
         row(K::Number, &["number"], NUMBER_PROPS, COPYABLE).default_prop("value"),
-        row(K::NumberInput, &["numberInput"], NUMBER_INPUT_PROPS, COPYABLE).default_prop("value"),
+        row(
+            K::NumberInput,
+            &["numberInput"],
+            NUMBER_INPUT_PROPS,
+            COPYABLE,
+        )
+        .default_prop("value"),
         row(K::Op, &["op"], OP_PROPS, COPYABLE).default_prop("value"),
         row(K::Slider, &["slider"], SLIDER_PROPS, COPYABLE).default_prop("value"),
-        row(K::RepeatForSequence, &["repeatForSequence"], REPEAT_PROPS, 0),
+        row(
+            K::RepeatForSequence,
+            &["repeatForSequence"],
+            REPEAT_PROPS,
+            0,
+        ),
         row(K::Collect, &["collect"], COLLECT_PROPS, 0),
-        row(K::SequenceValue, &["sequenceValue"], SEQUENCE_VALUE_PROPS, COPYABLE | INTERNAL).default_prop("value"),
-        row(K::BooleanInput, &["booleanInput"], BOOLEAN_INPUT_PROPS, COPYABLE).default_prop("value"),
+        row(
+            K::SequenceValue,
+            &["sequenceValue"],
+            SEQUENCE_VALUE_PROPS,
+            COPYABLE | INTERNAL,
+        )
+        .default_prop("value"),
+        row(
+            K::BooleanInput,
+            &["booleanInput"],
+            BOOLEAN_INPUT_PROPS,
+            COPYABLE,
+        )
+        .default_prop("value"),
         row(K::Math, &["math"], MATH_PROPS, COPYABLE).default_prop("value"),
         row(K::Evaluate, &["evaluate"], EVALUATE_PROPS, COPYABLE).default_prop("value"),
         row(K::MathInput, &["mathInput"], MATH_INPUT_PROPS, COPYABLE).default_prop("value"),
         row(K::Circle, &["circle"], CIRCLE_PROPS, COPYABLE | PLANNED)
-            .views(&[("center", ["centerX", "centerY"]), ("numericalCenter", ["cx", "cy"])])
-            .arrays(&[ArrayProp { names: &["throughPoints"], item: "throughPoint", items: &[["throughX1", "throughY1"], ["throughX2", "throughY2"], ["throughX3", "throughY3"]] }])
+            .views(&[
+                ("center", ["centerX", "centerY"]),
+                ("numericalCenter", ["cx", "cy"]),
+            ])
+            .arrays(&[ArrayProp {
+                names: &["throughPoints"],
+                item: "throughPoint",
+                items: &[
+                    ["throughX1", "throughY1"],
+                    ["throughX2", "throughY2"],
+                    ["throughX3", "throughY3"],
+                ],
+            }])
             .aliases(&[
                 ("centerX1", "centerX"),
                 ("centerX2", "centerY"),
@@ -577,32 +783,80 @@ pub const KINDS: [KindInfo; 31] = {
                 ("throughPointX3_2", "throughY3"),
             ]),
         row(K::Line, &["line"], LINE_PROPS, COPYABLE | PLANNED).arrays(LINE_POINTS),
-        row(K::LineSegment, &["lineSegment"], LINE_SEGMENT_PROPS, COPYABLE | PLANNED).arrays(LINE_POINTS).sticky(Shape::Open, prop::segment::X1, 2),
-        row(K::Polygon, &["polygon", "triangle"], POLYGON_PROPS, COPYABLE | PLANNED)
-            .arrays(&[ArrayProp { names: &["vertices"], item: "vertex", items: &VERTEX_PARTS }])
-            .sticky(Shape::Closed, prop::polygon::X1, MAX_VERTICES),
+        row(
+            K::LineSegment,
+            &["lineSegment"],
+            LINE_SEGMENT_PROPS,
+            COPYABLE | PLANNED,
+        )
+        .arrays(LINE_POINTS)
+        .sticky(Shape::Open, prop::segment::X1, 2),
+        row(
+            K::Polygon,
+            &["polygon", "triangle"],
+            POLYGON_PROPS,
+            COPYABLE | PLANNED,
+        )
+        .arrays(&[ArrayProp {
+            names: &["vertices"],
+            item: "vertex",
+            items: &VERTEX_PARTS,
+        }])
+        .sticky(Shape::Closed, prop::polygon::X1, MAX_VERTICES),
         row(K::PointList, &["pointList"], &[], 0),
         row(K::P, &["p"], &[], CONTAINER),
         row(K::Setup, &["setup"], &[], CONTAINER),
-        row(K::StickyGroup, &["stickyGroup"], STICKY_GROUP_PROPS, CONTAINER),
+        row(
+            K::StickyGroup,
+            &["stickyGroup"],
+            STICKY_GROUP_PROPS,
+            CONTAINER,
+        ),
         row(K::Function, &["function"], CURVE_PROPS, COPYABLE | SYMBOLIC).default_prop("expr"),
-        row(K::Derivative, &["derivative"], CURVE_PROPS, COPYABLE | SYMBOLIC).default_prop("expr"),
+        row(
+            K::Derivative,
+            &["derivative"],
+            CURVE_PROPS,
+            COPYABLE | SYMBOLIC,
+        )
+        .default_prop("expr"),
         row(K::Answer, &["answer"], ANSWER_PROPS, COPYABLE | SYMBOLIC).default_prop("credit"),
         row(K::Text, &["text"], TEXT_PROPS, COPYABLE).default_prop("value"),
-        row(K::ConditionalContent, &["conditionalContent"], CONDITIONAL_CONTENT_PROPS, 0),
+        row(
+            K::ConditionalContent,
+            &["conditionalContent"],
+            CONDITIONAL_CONTENT_PROPS,
+            0,
+        ),
         row(K::Case, &["case"], CASE_PROPS, 0),
         row(K::Select, &["select"], SELECT_PROPS, 0),
         // Containers the prototype renders nothing special for.
         row(K::Group, &["group", "label"], &[], CONTAINER),
         // The parser writes `<section>` as `<division type="section">`.
-        row(K::Section, &["section", "division", "subsection", "subsubsection", "problem", "exercise", "example"], SECTION_PROPS, CONTAINER),
+        row(
+            K::Section,
+            &[
+                "section",
+                "division",
+                "subsection",
+                "subsubsection",
+                "problem",
+                "exercise",
+                "example",
+            ],
+            SECTION_PROPS,
+            CONTAINER,
+        ),
     ]
 };
 
 const _: () = {
     let mut i = 0;
     while i < KINDS.len() {
-        assert!(KINDS[i].kind as usize == i, "KINDS is in discriminant order");
+        assert!(
+            KINDS[i].kind as usize == i,
+            "KINDS is in discriminant order"
+        );
         i += 1;
     }
 };
@@ -623,8 +877,15 @@ impl ComponentKind {
     }
 
     pub fn from_tag(tag: &str) -> Option<Self> {
-        static BY_TAG: std::sync::OnceLock<std::collections::HashMap<&'static str, ComponentKind>> = std::sync::OnceLock::new();
-        let by_tag = BY_TAG.get_or_init(|| KINDS.iter().filter(|k| k.flags & INTERNAL == 0).flat_map(|k| k.tags.iter().map(move |&t| (t, k.kind))).collect());
+        static BY_TAG: std::sync::OnceLock<std::collections::HashMap<&'static str, ComponentKind>> =
+            std::sync::OnceLock::new();
+        let by_tag = BY_TAG.get_or_init(|| {
+            KINDS
+                .iter()
+                .filter(|k| k.flags & INTERNAL == 0)
+                .flat_map(|k| k.tags.iter().map(move |&t| (t, k.kind)))
+                .collect()
+        });
         by_tag.get(tag).copied()
     }
 
@@ -644,7 +905,11 @@ impl ComponentKind {
 
     /// A prop name with the current core's spellings mapped to ours.
     pub fn canonical_prop<'a>(self, name: &'a str) -> &'a str {
-        self.info().aliases.iter().find(|(from, _)| *from == name).map_or(name, |(_, to)| to)
+        self.info()
+            .aliases
+            .iter()
+            .find(|(from, _)| *from == name)
+            .map_or(name, |(_, to)| to)
     }
 
     /// Multi-cell props that are views over single-cell props: the kind's
@@ -656,7 +921,9 @@ impl ComponentKind {
         }
         info.arrays.iter().find_map(|a| {
             let k: usize = name.strip_prefix(a.item)?.parse().ok()?;
-            (1..=a.items.len()).contains(&k).then(|| &a.items[k - 1][..])
+            (1..=a.items.len())
+                .contains(&k)
+                .then(|| &a.items[k - 1][..])
         })
     }
 

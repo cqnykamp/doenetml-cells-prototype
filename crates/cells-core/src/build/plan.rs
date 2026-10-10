@@ -83,7 +83,10 @@ impl SourcePlan {
     }
     /// Operator over the element's own slots.
     pub(super) fn computed(op: OpSpec, args: Vec<usize>) -> Self {
-        SourcePlan::Op(op, args.into_iter().map(|a| Arg::Own(own_slot(a))).collect())
+        SourcePlan::Op(
+            op,
+            args.into_iter().map(|a| Arg::Own(own_slot(a))).collect(),
+        )
     }
     /// A kind's `PropFrom::Computed` prop.
     pub(super) fn from_def(op: OpSpec, args: &[u8]) -> Self {
@@ -245,7 +248,11 @@ pub(super) struct ElemPlan {
 
 impl ElemPlan {
     pub(super) fn new(n_public: usize) -> Self {
-        ElemPlan { props: vec![None; n_public], roles: HashMap::new(), role_attr: HashMap::new() }
+        ElemPlan {
+            props: vec![None; n_public],
+            roles: HashMap::new(),
+            role_attr: HashMap::new(),
+        }
     }
     pub(super) fn set(&mut self, i: usize, plan: SourcePlan) {
         self.props[i] = Some(plan);
@@ -279,7 +286,11 @@ impl ElemPlan {
         self.role_attr.insert(role, attr);
     }
     pub(super) fn finish(self) -> Vec<SourcePlan> {
-        self.props.into_iter().enumerate().map(|(i, p)| p.unwrap_or_else(|| panic!("public prop {i} left unplanned"))).collect()
+        self.props
+            .into_iter()
+            .enumerate()
+            .map(|(i, p)| p.unwrap_or_else(|| panic!("public prop {i} left unplanned")))
+            .collect()
     }
 }
 

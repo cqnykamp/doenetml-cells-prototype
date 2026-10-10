@@ -9,13 +9,18 @@ use common::req;
 fn round_trip(doc: &mut Document, name: &str, prop: &str, value: f64) {
     let tick = doc.request(&[req(doc, name, prop, value)]);
     assert!(tick.dropped.is_empty(), "request dropped");
-    assert_eq!(doc.value(name, prop), Some(value), "{name}.{prop} after request");
+    assert_eq!(
+        doc.value(name, prop),
+        Some(value),
+        "{name}.{prop} after request"
+    );
     assert_eq!(reference::check(doc), None);
 }
 
 #[test]
 fn dragging_an_aliased_copy_moves_the_original() {
-    let mut doc = load(r#"<point name="p1" x="1" y="2"/><point name="p2" extend="$p1" y="3"/>"#).unwrap();
+    let mut doc =
+        load(r#"<point name="p1" x="1" y="2"/><point name="p2" extend="$p1" y="3"/>"#).unwrap();
     let tick = doc.request(&[req(&doc, "p2", "x", 9.0), req(&doc, "p2", "y", 8.0)]);
     assert_eq!(doc.value("p1", "x"), Some(9.0));
     assert_eq!(doc.value("p1", "y"), Some(2.0));
@@ -47,7 +52,10 @@ fn unary_inverses_round_trip() {
 /// cell receives the clamped value, not the raw request.
 #[test]
 fn clamp_inverts_by_projection() {
-    let mut doc = load(r#"<numberInput name="n" value="0"/><op name="cl" kind="clamp" lo="-1" hi="1" args="$n"/>"#).unwrap();
+    let mut doc = load(
+        r#"<numberInput name="n" value="0"/><op name="cl" kind="clamp" lo="-1" hi="1" args="$n"/>"#,
+    )
+    .unwrap();
     let tick = doc.request(&[req(&doc, "cl", "value", 5.0)]);
     assert_eq!(doc.value("n", "value"), Some(1.0));
     assert_eq!(doc.value("cl", "value"), Some(1.0));
@@ -96,7 +104,10 @@ fn binary_inverses_write_the_first_argument() {
     )
     .unwrap();
     round_trip(&mut doc, "s", "value", 12.0);
-    assert_eq!((doc.value("a", "value"), doc.value("b", "value")), (Some(7.0), Some(5.0)));
+    assert_eq!(
+        (doc.value("a", "value"), doc.value("b", "value")),
+        (Some(7.0), Some(5.0))
+    );
     round_trip(&mut doc, "d", "value", 1.0);
     assert_eq!(doc.value("a", "value"), Some(6.0));
     round_trip(&mut doc, "m", "value", 20.0);
@@ -138,7 +149,9 @@ fn undefined_inverse_drops_the_request() {
 
 #[test]
 fn conflicting_requests_last_wins() {
-    let mut doc = load(r#"<numberInput name="n" value="0"/><op name="neg" kind="negate" args="$n"/>"#).unwrap();
+    let mut doc =
+        load(r#"<numberInput name="n" value="0"/><op name="neg" kind="negate" args="$n"/>"#)
+            .unwrap();
     let tick = doc.request(&[req(&doc, "n", "value", 1.0), req(&doc, "neg", "value", 5.0)]);
     assert_eq!(doc.value("n", "value"), Some(-5.0));
     let n = doc.cell("n", "value").unwrap();
@@ -147,11 +160,16 @@ fn conflicting_requests_last_wins() {
 
 #[test]
 fn unchanged_values_are_not_reported() {
-    let mut doc = load(r#"<numberInput name="n" value="3"/><op name="neg" kind="negate" args="$n"/>"#).unwrap();
+    let mut doc =
+        load(r#"<numberInput name="n" value="3"/><op name="neg" kind="negate" args="$n"/>"#)
+            .unwrap();
     let tick = doc.request(&[req(&doc, "n", "value", 3.0)]);
     assert!(tick.changed.is_empty());
     // A change upstream that leaves a derived cell equal is also silent.
-    let mut doc = load(r#"<numberInput name="n" value="3"/><op name="cl" kind="clamp" lo="0" hi="1" args="$n"/>"#).unwrap();
+    let mut doc = load(
+        r#"<numberInput name="n" value="3"/><op name="cl" kind="clamp" lo="0" hi="1" args="$n"/>"#,
+    )
+    .unwrap();
     let tick = doc.request(&[req(&doc, "n", "value", 4.0)]);
     assert_eq!(tick.changed, vec![doc.cell("n", "value").unwrap()]);
 }
@@ -165,7 +183,10 @@ fn evaluators_agree() {
         <op name="w" kind="lerp" t="0.5" args="$u $v"/>
         <numberInput name="c" value="1"/><op name="x" kind="offset" k="1" args="$c"/>"#;
     let base = load(src).unwrap();
-    let reqs = [req(&base, "s", "value", 20.0), req(&base, "u", "value", -1.0)];
+    let reqs = [
+        req(&base, "s", "value", 20.0),
+        req(&base, "u", "value", -1.0),
+    ];
     let mut evs: Vec<Box<dyn Evaluator>> = vec![
         Box::new(FullRecompute),
         Box::new(DirtyClosure::new(&base.program, base.cells.len())),
@@ -175,7 +196,9 @@ fn evaluators_agree() {
         let mut doc = base.clone();
         let mut tick = Tick::default();
         for &r in &reqs {
-            let inv = doc.program.invert_requests(&doc.cells, doc.n_essential, &[r], &[]);
+            let inv = doc
+                .program
+                .invert_requests(&doc.cells, doc.n_essential, &[r], &[]);
             let (cell, value) = inv.writes[0];
             doc.cells[cell as usize] = value;
             tick.changed.push(cell);

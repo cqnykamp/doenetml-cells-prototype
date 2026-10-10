@@ -39,17 +39,27 @@ fn main() {
             for i in 0..reps {
                 let cell = doc.cell(input, "value").unwrap();
                 let t = Instant::now();
-                let tick = doc.request(&[Request { cell, value: values[(i + 1) % 2] }]);
+                let tick = doc.request(&[Request {
+                    cell,
+                    value: values[(i + 1) % 2],
+                }]);
                 flips.push(t.elapsed().as_secs_f64() * 1e3);
                 rebuilt |= tick.rebuilt;
-                assert!(tick.rebuild_error.is_none(), "{spec}: {:?}", tick.rebuild_error);
+                assert!(
+                    tick.rebuild_error.is_none(),
+                    "{spec}: {:?}",
+                    tick.rebuild_error
+                );
             }
         }
         let mut drags = Vec::new();
         if let Some(target) = doc.cell("p0", "x") {
             for i in 0..reps {
                 let t = Instant::now();
-                std::hint::black_box(doc.request(&[Request { cell: target, value: 3.0 + (i % 2) as f64 }]));
+                std::hint::black_box(doc.request(&[Request {
+                    cell: target,
+                    value: 3.0 + (i % 2) as f64,
+                }]));
                 drags.push(t.elapsed().as_secs_f64() * 1e3);
             }
         }

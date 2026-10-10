@@ -10,8 +10,8 @@ use cells_sym::SymEngine;
 
 use crate::components::{ComponentKind, prop};
 use crate::dast::{Dast, NodeId, StrId, StringTable};
-use crate::tick::invert::PointRequest;
 use crate::program::Program;
+use crate::tick::invert::PointRequest;
 
 mod load;
 mod paths;
@@ -52,7 +52,10 @@ pub struct ScopeTable {
 
 impl Default for ScopeTable {
     fn default() -> Self {
-        ScopeTable { entries: vec![(NONE, NONE, 0)], index: HashMap::new() }
+        ScopeTable {
+            entries: vec![(NONE, NONE, 0)],
+            index: HashMap::new(),
+        }
     }
 }
 
@@ -175,7 +178,17 @@ pub struct Tick {
 
 impl Document {
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn new(cells: Vec<f64>, n_essential: usize, n_fixed: usize, program: Program, comps: ComponentTable, strings: StringTable, root: CompIdx, structure: Structure, dast: Arc<Dast>) -> Self {
+    pub(crate) fn new(
+        cells: Vec<f64>,
+        n_essential: usize,
+        n_fixed: usize,
+        program: Program,
+        comps: ComponentTable,
+        strings: StringTable,
+        root: CompIdx,
+        structure: Structure,
+        dast: Arc<Dast>,
+    ) -> Self {
         let mut doc = Document {
             cells,
             n_essential,
@@ -206,13 +219,24 @@ impl Document {
     /// The expression a math cell holds, as text; empty when blank.
     pub fn math_text(&self, cell: CellIdx) -> String {
         let h = self.cells[cell as usize];
-        if h.is_nan() { String::new() } else { self.program.sym.engine.borrow().text(h as cells_sym::Handle) }
+        if h.is_nan() {
+            String::new()
+        } else {
+            self.program
+                .sym
+                .engine
+                .borrow()
+                .text(h as cells_sym::Handle)
+        }
     }
 
     /// A `<mathInput>` holds any math value, infinity included; every other
     /// request site rejects an infinite ask as the current core does.
     fn accepts_infinity(&self, cell: CellIdx) -> bool {
-        (0..self.comps.len() as CompIdx).any(|c| self.kind(c) == ComponentKind::MathInput && self.comp_cells(c)[prop::math_input::VALUE] == cell)
+        (0..self.comps.len() as CompIdx).any(|c| {
+            self.kind(c) == ComponentKind::MathInput
+                && self.comp_cells(c)[prop::math_input::VALUE] == cell
+        })
     }
 
     pub fn is_essential(&self, cell: CellIdx) -> bool {
@@ -246,26 +270,42 @@ impl Document {
     /// Apply a point group: points dragged together, which keep their shape
     /// when one of them is constrained (ADR 0006).
     pub fn request_points(&mut self, points: &[PointRequest]) -> Tick {
-        self.request_with_groups(&mut crate::tick::eval::FullRecompute, &[], &[points.to_vec()])
+        self.request_with_groups(
+            &mut crate::tick::eval::FullRecompute,
+            &[],
+            &[points.to_vec()],
+        )
     }
 
     /// Scalar requests and point groups in one tick.
-    pub fn request_with_groups(&mut self, evaluator: &mut (impl crate::tick::eval::Evaluator + ?Sized), requests: &[Request], groups: &[Vec<PointRequest>]) -> Tick {
+    pub fn request_with_groups(
+        &mut self,
+        evaluator: &mut (impl crate::tick::eval::Evaluator + ?Sized),
+        requests: &[Request],
+        groups: &[Vec<PointRequest>],
+    ) -> Tick {
         let mut tick = Tick::default();
         // An infinite ask is never meaningful state (NaN is: an emptied
         // input), and the current core rejects it; drop it before inverting.
-        let (mut finite, infinite): (Vec<Request>, Vec<Request>) = requests.iter().partition(|r| !r.value.is_infinite() || self.accepts_infinity(r.cell));
+        let (mut finite, infinite): (Vec<Request>, Vec<Request>) = requests
+            .iter()
+            .partition(|r| !r.value.is_infinite() || self.accepts_infinity(r.cell));
         tick.dropped.extend(infinite);
         let mut finite_groups: Vec<Vec<PointRequest>> = Vec::with_capacity(groups.len());
         for g in groups {
             if g.iter().any(|p| p.values.iter().any(|v| v.is_infinite())) {
-                tick.dropped.extend(g.iter().map(|p| Request { cell: p.cells[0], value: p.values[0] }));
+                tick.dropped.extend(g.iter().map(|p| Request {
+                    cell: p.cells[0],
+                    value: p.values[0],
+                }));
             } else {
                 finite_groups.push(g.clone());
             }
         }
         self.snap_sticky(&mut finite, &mut finite_groups);
-        let inv = self.program.invert_requests(&self.cells, self.n_essential, &finite, &finite_groups);
+        let inv =
+            self.program
+                .invert_requests(&self.cells, self.n_essential, &finite, &finite_groups);
         tick.dropped.extend(inv.dropped);
         for (cell, value) in inv.writes {
             let old = self.cells[cell as usize];

@@ -8,7 +8,12 @@ use std::fmt::Write;
 pub fn points(n: usize) -> String {
     let mut s = String::from("<graph name=\"g\">\n");
     for i in 0..n {
-        let _ = writeln!(s, "  <point name=\"p{i}\" x=\"{}\" y=\"{}\"/>", i % 20, (i * 7) % 20);
+        let _ = writeln!(
+            s,
+            "  <point name=\"p{i}\" x=\"{}\" y=\"{}\"/>",
+            i % 20,
+            (i * 7) % 20
+        );
     }
     s.push_str("</graph>\n");
     s
@@ -21,7 +26,10 @@ pub fn points(n: usize) -> String {
 pub fn chain(l: usize) -> String {
     let mut s = String::from("<numberInput name=\"n\" value=\"1\"/>\n");
     let last = op_chain(&mut s, l, true);
-    let _ = writeln!(s, "<graph name=\"g\"><point name=\"p\" x=\"${last}\" y=\"$n\"/></graph>");
+    let _ = writeln!(
+        s,
+        "<graph name=\"g\"><point name=\"p\" x=\"${last}\" y=\"$n\"/></graph>"
+    );
     s
 }
 
@@ -81,11 +89,19 @@ pub fn grid(n: usize, l: usize) -> String {
         let mut prev = format!("n{j}");
         for i in 0..l {
             let name = format!("c{j}_{i}");
-            let op = if i % 2 == 0 { "kind=\"offset\" k=\"1\"" } else { "kind=\"negate\"" };
+            let op = if i % 2 == 0 {
+                "kind=\"offset\" k=\"1\""
+            } else {
+                "kind=\"negate\""
+            };
             let _ = writeln!(s, "<op name=\"{name}\" {op} args=\"${prev}\"/>");
             prev = name;
         }
-        let _ = writeln!(points, "  <point name=\"p{j}\" x=\"${prev}\" y=\"{}\"/>", j % 20);
+        let _ = writeln!(
+            points,
+            "  <point name=\"p{j}\" x=\"${prev}\" y=\"{}\"/>",
+            j % 20
+        );
     }
     points.push_str("</graph>\n");
     s + &points
@@ -98,8 +114,14 @@ pub fn grid(n: usize, l: usize) -> String {
 pub fn slider_chain(l: usize) -> String {
     let mut s = String::from("<numberInput name=\"n\" value=\"1\"/>\n");
     let last = op_chain(&mut s, l, false);
-    let _ = writeln!(s, "<slider name=\"s\" from=\"-9\" to=\"9\" step=\"0.5\" bindValueTo=\"${last}\"/>");
-    let _ = writeln!(s, "<graph name=\"g\"><point name=\"p\" x=\"$s\" y=\"0\"/></graph>");
+    let _ = writeln!(
+        s,
+        "<slider name=\"s\" from=\"-9\" to=\"9\" step=\"0.5\" bindValueTo=\"${last}\"/>"
+    );
+    let _ = writeln!(
+        s,
+        "<graph name=\"g\"><point name=\"p\" x=\"$s\" y=\"0\"/></graph>"
+    );
     s
 }
 
@@ -107,12 +129,22 @@ pub fn slider_chain(l: usize) -> String {
 /// first holding the stored value; a point shows the last. Dragging the
 /// last slider runs K snap chains in sequence.
 pub fn slider_stack(k: usize) -> String {
-    let mut s = String::from("<slider name=\"s0\" from=\"-9\" to=\"9\" step=\"0.25\" initialValue=\"1\"/>\n");
+    let mut s = String::from(
+        "<slider name=\"s0\" from=\"-9\" to=\"9\" step=\"0.25\" initialValue=\"1\"/>\n",
+    );
     for i in 1..k {
         let step = if i % 2 == 0 { "0.25" } else { "0.5" };
-        let _ = writeln!(s, "<slider name=\"s{i}\" from=\"-9\" to=\"9\" step=\"{step}\" bindValueTo=\"$s{}\"/>", i - 1);
+        let _ = writeln!(
+            s,
+            "<slider name=\"s{i}\" from=\"-9\" to=\"9\" step=\"{step}\" bindValueTo=\"$s{}\"/>",
+            i - 1
+        );
     }
-    let _ = writeln!(s, "<graph name=\"g\"><point name=\"p\" x=\"$s{}\" y=\"0\"/></graph>", k.saturating_sub(1));
+    let _ = writeln!(
+        s,
+        "<graph name=\"g\"><point name=\"p\" x=\"$s{}\" y=\"0\"/></graph>",
+        k.saturating_sub(1)
+    );
     s
 }
 
@@ -175,7 +207,10 @@ pub fn intchain(l: usize) -> String {
         let _ = writeln!(s, "<op name=\"{name}\" {op} args=\"${prev}\"/>");
         prev = name;
     }
-    let _ = writeln!(s, "<graph name=\"g\"><point name=\"p\" x=\"${prev}\" y=\"$n\"/></graph>");
+    let _ = writeln!(
+        s,
+        "<graph name=\"g\"><point name=\"p\" x=\"${prev}\" y=\"$n\"/></graph>"
+    );
     s
 }
 
@@ -184,7 +219,12 @@ pub fn intchain(l: usize) -> String {
 pub fn hidden(n: usize) -> String {
     let mut s = String::from("<booleanInput name=\"b\" value=\"false\"/>\n<graph name=\"g\">\n");
     for i in 0..n {
-        let _ = writeln!(s, "  <point name=\"p{i}\" x=\"{}\" y=\"{}\" hide=\"$b\"/>", (i % 17) as i64 - 8, ((i * 7) % 17) as i64 - 8);
+        let _ = writeln!(
+            s,
+            "  <point name=\"p{i}\" x=\"{}\" y=\"{}\" hide=\"$b\"/>",
+            (i % 17) as i64 - 8,
+            ((i * 7) % 17) as i64 - 8
+        );
     }
     s.push_str("</graph>\n");
     s
@@ -200,7 +240,10 @@ pub fn mathchain(l: usize) -> String {
     for i in 0..l {
         let name = format!("c{i}");
         if i + 1 == l {
-            let _ = writeln!(s, "<op name=\"{name}\" kind=\"clamp\" lo=\"-9\" hi=\"9\" args=\"${prev}\"/>");
+            let _ = writeln!(
+                s,
+                "<op name=\"{name}\" kind=\"clamp\" lo=\"-9\" hi=\"9\" args=\"${prev}\"/>"
+            );
         } else {
             let body = match i % 3 {
                 0 => format!("${prev} + 1"),
@@ -211,7 +254,10 @@ pub fn mathchain(l: usize) -> String {
         }
         prev = name;
     }
-    let _ = writeln!(s, "<graph name=\"g\"><point name=\"p\" x=\"${prev}\" y=\"$n\"/></graph>");
+    let _ = writeln!(
+        s,
+        "<graph name=\"g\"><point name=\"p\" x=\"${prev}\" y=\"$n\"/></graph>"
+    );
     s
 }
 
@@ -226,7 +272,10 @@ pub fn circles3(n: usize) -> String {
         let _ = writeln!(
             s,
             "  <point name=\"a{i}\" x=\"$n\" y=\"{y}\"/><point name=\"b{i}\" x=\"{}\" y=\"{}\"/><point name=\"c{i}\" x=\"{}\" y=\"{}\"/><circle name=\"k{i}\" through=\"$a{i} $b{i} $c{i}\"/>",
-            x + 1.0, y, x, y + 1.0
+            x + 1.0,
+            y,
+            x,
+            y + 1.0
         );
     }
     s.push_str("</graph>\n");
@@ -248,11 +297,19 @@ pub fn sticky(n: usize, sticky: bool) -> String {
         let verts: Vec<String> = (0..k)
             .map(|j| {
                 let t = std::f64::consts::TAU * j as f64 / k as f64;
-                format!("({},{})", cx + (t.cos() * 100.0).round() / 100.0, cy + (t.sin() * 100.0).round() / 100.0)
+                format!(
+                    "({},{})",
+                    cx + (t.cos() * 100.0).round() / 100.0,
+                    cy + (t.sin() * 100.0).round() / 100.0
+                )
             })
             .collect();
         let rigid = if i % 4 == 3 { " rigid" } else { "" };
-        let _ = writeln!(s, "  <polygon name=\"p{i}\" vertices=\"{}\"{rigid}/>", verts.join(" "));
+        let _ = writeln!(
+            s,
+            "  <polygon name=\"p{i}\" vertices=\"{}\"{rigid}/>",
+            verts.join(" ")
+        );
     }
     if sticky {
         s.push_str("</stickyGroup>\n");
@@ -267,7 +324,11 @@ pub fn sticky(n: usize, sticky: bool) -> String {
 pub fn answers(n: usize) -> String {
     let mut s = String::new();
     for i in 0..n {
-        let _ = writeln!(s, "<mathInput name=\"mi{i}\"/><answer name=\"a{i}\" response=\"$mi{i}\">{}</answer>", correct_answer(i));
+        let _ = writeln!(
+            s,
+            "<mathInput name=\"mi{i}\"/><answer name=\"a{i}\" response=\"$mi{i}\">{}</answer>",
+            correct_answer(i)
+        );
     }
     s
 }
@@ -294,7 +355,11 @@ pub fn curves(n: usize) -> String {
     }
     s.push_str("<graph name=\"g\" xmin=\"-5\" xmax=\"5\">\n");
     for i in 0..n {
-        let _ = writeln!(s, "  <function name=\"f{i}\">$a x^2 + $b{i} x + {}</function><derivative name=\"df{i}\">$f{i}</derivative>", i % 7);
+        let _ = writeln!(
+            s,
+            "  <function name=\"f{i}\">$a x^2 + $b{i} x + {}</function><derivative name=\"df{i}\">$f{i}</derivative>",
+            i % 7
+        );
     }
     s.push_str("</graph>\n");
     s
@@ -306,7 +371,9 @@ pub fn curves(n: usize) -> String {
 /// number → math). Typing reruns everything; dragging `t` reruns the chain
 /// from the first evaluate on.
 pub fn symchain(n: usize) -> String {
-    let mut s = String::from("<mathInput name=\"mi\" prefill=\"x^2+1\"/>\n<numberInput name=\"t\" value=\"1\"/>\n");
+    let mut s = String::from(
+        "<mathInput name=\"mi\" prefill=\"x^2+1\"/>\n<numberInput name=\"t\" value=\"1\"/>\n",
+    );
     let mut prev = "mi".to_string();
     for i in 0..n {
         let k = i % 5 + 1;
@@ -314,7 +381,10 @@ pub fn symchain(n: usize) -> String {
             0 => format!("${prev} + {k} x"),
             1 => format!("${prev} - {k} x"),
             _ => {
-                let _ = writeln!(s, "<evaluate name=\"e{i}\" function=\"${prev}\" input=\"$t\"/>");
+                let _ = writeln!(
+                    s,
+                    "<evaluate name=\"e{i}\" function=\"${prev}\" input=\"$t\"/>"
+                );
                 format!("${prev} + 0.001 $e{i}")
             }
         };
@@ -322,7 +392,11 @@ pub fn symchain(n: usize) -> String {
         prev = format!("m{i}");
     }
     for i in 0..n {
-        let _ = writeln!(s, "<math name=\"f{i}\" simplify>{} $mi + x</math>", i % 9 + 1);
+        let _ = writeln!(
+            s,
+            "<math name=\"f{i}\" simplify>{} $mi + x</math>",
+            i % 9 + 1
+        );
     }
     s
 }
@@ -333,7 +407,9 @@ pub fn symchain(n: usize) -> String {
 /// point `p0` to drag that no choice reads. Each choice's interface is a
 /// `<math>` and a `<number>`, both copied outside it.
 pub fn wording(n: usize) -> String {
-    let mut s = String::from("<numberInput name=\"n\" value=\"1\"/>\n<graph name=\"g\"><point name=\"p0\" x=\"1\" y=\"2\"/></graph>\n");
+    let mut s = String::from(
+        "<numberInput name=\"n\" value=\"1\"/>\n<graph name=\"g\"><point name=\"p0\" x=\"1\" y=\"2\"/></graph>\n",
+    );
     for i in 0..n {
         let a = i % 9 + 1;
         let _ = writeln!(
@@ -347,10 +423,15 @@ pub fn wording(n: usize) -> String {
 /// `wording` with the first case's content written out and no choices: the
 /// same visible document, for comparison.
 pub fn wording_flat(n: usize) -> String {
-    let mut s = String::from("<numberInput name=\"n\" value=\"1\"/>\n<graph name=\"g\"><point name=\"p0\" x=\"1\" y=\"2\"/></graph>\n");
+    let mut s = String::from(
+        "<numberInput name=\"n\" value=\"1\"/>\n<graph name=\"g\"><point name=\"p0\" x=\"1\" y=\"2\"/></graph>\n",
+    );
     for i in 0..n {
         let a = i % 9 + 1;
-        let _ = writeln!(s, "<p>Positive: <math name=\"m{i}\">{a}x+1</math> and <number name=\"k{i}\">{i}</number>.</p><p>$m{i}, $k{i}</p>");
+        let _ = writeln!(
+            s,
+            "<p>Positive: <math name=\"m{i}\">{a}x+1</math> and <number name=\"k{i}\">{i}</number>.</p><p>$m{i}, $k{i}</p>"
+        );
     }
     s
 }
@@ -358,7 +439,9 @@ pub fn wording_flat(n: usize) -> String {
 /// `wording` with all three cases' content written out and no choices:
 /// the same content the built mechanism holds, without the machinery.
 pub fn wording_all(n: usize) -> String {
-    let mut s = String::from("<numberInput name=\"n\" value=\"1\"/>\n<graph name=\"g\"><point name=\"p0\" x=\"1\" y=\"2\"/></graph>\n");
+    let mut s = String::from(
+        "<numberInput name=\"n\" value=\"1\"/>\n<graph name=\"g\"><point name=\"p0\" x=\"1\" y=\"2\"/></graph>\n",
+    );
     for i in 0..n {
         let a = i % 9 + 1;
         let _ = writeln!(
@@ -375,7 +458,11 @@ pub fn select_all(n: usize) -> String {
     for i in 0..n {
         s.push_str("<p>");
         for o in 1..=4 {
-            let _ = write!(s, "Pick {o}: <number name=\"v{i}_{o}\">{}</number> <math name=\"m{i}_{o}\">x+{o}</math>", i * 4 + o);
+            let _ = write!(
+                s,
+                "Pick {o}: <number name=\"v{i}_{o}\">{}</number> <math name=\"m{i}_{o}\">x+{o}</math>",
+                i * 4 + o
+            );
         }
         let _ = writeln!(s, " $v{i}_1</p>");
     }
@@ -391,17 +478,34 @@ pub fn adventure(k: usize, size: usize) -> String {
     for j in 0..k {
         let _ = write!(s, "<conditionalContent name=\"a{j}\">");
         for b in 1..=4 {
-            let cond = if j == 0 { format!("$path = {b}") } else { format!("$a{}.score = {b}", j - 1) };
-            let open = if b == 4 { "<else>".to_string() } else { format!("<case condition=\"{cond}\">") };
+            let cond = if j == 0 {
+                format!("$path = {b}")
+            } else {
+                format!("$a{}.score = {b}", j - 1)
+            };
+            let open = if b == 4 {
+                "<else>".to_string()
+            } else {
+                format!("<case condition=\"{cond}\">")
+            };
             let _ = write!(s, "{open}<number name=\"score\">{b}</number><graph>");
             for i in 0..size.saturating_sub(2) {
-                let _ = write!(s, "<point x=\"{}\" y=\"{}\"/>", (i * b) % 17, (i * 7 + j) % 17);
+                let _ = write!(
+                    s,
+                    "<point x=\"{}\" y=\"{}\"/>",
+                    (i * b) % 17,
+                    (i * 7 + j) % 17
+                );
             }
             let _ = write!(s, "</graph>{}", if b == 4 { "</else>" } else { "</case>" });
         }
         s.push_str("</conditionalContent>\n");
     }
-    let _ = writeln!(s, "<number name=\"end\">$a{}.score</number>", k.saturating_sub(1));
+    let _ = writeln!(
+        s,
+        "<number name=\"end\">$a{}.score</number>",
+        k.saturating_sub(1)
+    );
     s
 }
 
@@ -412,7 +516,11 @@ pub fn select(n: usize) -> String {
     for i in 0..n {
         let _ = write!(s, "<p><select name=\"s{i}\">");
         for o in 1..=4 {
-            let _ = write!(s, "<option>Pick {o}: <number name=\"v\">{}</number> <math name=\"m\">x+{o}</math></option>", i * 4 + o);
+            let _ = write!(
+                s,
+                "<option>Pick {o}: <number name=\"v\">{}</number> <math name=\"m\">x+{o}</math></option>",
+                i * 4 + o
+            );
         }
         let _ = writeln!(s, "</select> $s{i}.v</p>");
     }
@@ -423,7 +531,11 @@ pub fn select(n: usize) -> String {
 pub fn select_flat(n: usize) -> String {
     let mut s = String::new();
     for i in 0..n {
-        let _ = writeln!(s, "<p>Pick 1: <number name=\"v{i}\">{}</number> <math name=\"m{i}\">x+1</math> $v{i}</p>", i * 4 + 1);
+        let _ = writeln!(
+            s,
+            "<p>Pick 1: <number name=\"v{i}\">{}</number> <math name=\"m{i}\">x+1</math> $v{i}</p>",
+            i * 4 + 1
+        );
     }
     s
 }
@@ -434,11 +546,20 @@ pub fn select_flat(n: usize) -> String {
 pub fn choice_sweep(size: usize, background: usize) -> String {
     let mut s = String::from("<numberInput name=\"n\" value=\"1\"/>\n<graph name=\"g\">");
     for i in 0..background.max(1) {
-        let _ = write!(s, "<point name=\"p{i}\" x=\"{}\" y=\"{}\"/>", i % 20, (i * 7) % 20);
+        let _ = write!(
+            s,
+            "<point name=\"p{i}\" x=\"{}\" y=\"{}\"/>",
+            i % 20,
+            (i * 7) % 20
+        );
     }
     s.push_str("</graph>\n<conditionalContent name=\"cc\">");
     for b in 1..=4 {
-        let open = if b == 4 { "<else>".to_string() } else { format!("<case condition=\"$n = {b}\">") };
+        let open = if b == 4 {
+            "<else>".to_string()
+        } else {
+            format!("<case condition=\"$n = {b}\">")
+        };
         let _ = write!(s, "{open}<graph>");
         // Derived, so an inactive built branch costs work on every tick.
         for i in 0..size {
@@ -454,9 +575,15 @@ pub fn choice_sweep(size: usize, background: usize) -> String {
 /// branches, each a graph of `n` curves that read `a`, so dragging `a`
 /// resamples the inactive branches' curves too.
 pub fn choice_curves(n: usize) -> String {
-    let mut s = String::from("<numberInput name=\"n\" value=\"1\"/>\n<graph name=\"g\"><point name=\"p0\" x=\"1\" y=\"1\"/></graph>\n<conditionalContent name=\"cc\">");
+    let mut s = String::from(
+        "<numberInput name=\"n\" value=\"1\"/>\n<graph name=\"g\"><point name=\"p0\" x=\"1\" y=\"1\"/></graph>\n<conditionalContent name=\"cc\">",
+    );
     for b in 1..=4 {
-        let open = if b == 4 { "<else>".to_string() } else { format!("<case condition=\"$n = {b}\">") };
+        let open = if b == 4 {
+            "<else>".to_string()
+        } else {
+            format!("<case condition=\"$n = {b}\">")
+        };
         let _ = write!(s, "{open}<graph>");
         for i in 0..n {
             let _ = write!(s, "<function>$p0.x x^2 + {}</function>", (i * b) % 7);
@@ -511,30 +638,83 @@ pub fn from_spec(spec: &str) -> Option<String> {
 
 /// The default sweep used by `scripts/gen-fixtures.sh` and the benches.
 pub const DEFAULT_SWEEP: &[&str] = &[
-    "points-10", "points-100", "points-1000", "points-10000", "points-50000",
-    "chain-10", "chain-100", "chain-1000", "chain-10000", "chain-100000",
-    "fanout-10", "fanout-100", "fanout-1000", "fanout-10000", "fanout-50000",
-    "aliases-10", "aliases-1000", "aliases-10000",
-    "grid-100x10", "grid-1000x10", "grid-100x100", "grid-1000x100",
-    "sliderchain-10", "sliderchain-1000", "sliderchain-100000",
-    "sliderstack-10", "sliderstack-1000",
-    "repeat-100", "repeat-1000", "repeat-10000", "repeat-50000",
-    "recur-100", "recur-1000", "recur-10000",
-    "intchain-1000", "intchain-100000",
-    "mathchain-1000", "mathchain-100000",
+    "points-10",
+    "points-100",
+    "points-1000",
+    "points-10000",
+    "points-50000",
+    "chain-10",
+    "chain-100",
+    "chain-1000",
+    "chain-10000",
+    "chain-100000",
+    "fanout-10",
+    "fanout-100",
+    "fanout-1000",
+    "fanout-10000",
+    "fanout-50000",
+    "aliases-10",
+    "aliases-1000",
+    "aliases-10000",
+    "grid-100x10",
+    "grid-1000x10",
+    "grid-100x100",
+    "grid-1000x100",
+    "sliderchain-10",
+    "sliderchain-1000",
+    "sliderchain-100000",
+    "sliderstack-10",
+    "sliderstack-1000",
+    "repeat-100",
+    "repeat-1000",
+    "repeat-10000",
+    "repeat-50000",
+    "recur-100",
+    "recur-1000",
+    "recur-10000",
+    "intchain-1000",
+    "intchain-100000",
+    "mathchain-1000",
+    "mathchain-100000",
     "hidden-1000",
-    "circles3-1000", "circles3-10000",
-    "sticky-100", "sticky-1000", "stickyfree-100", "stickyfree-1000",
-    "answers-10", "answers-100", "answers-1000", "answers-10000",
-    "curves-10", "curves-100", "curves-1000",
-    "symchain-10", "symchain-100", "symchain-1000", "symchain-10000",
-    "wording-100", "wording-1000", "wording-10000",
-    "wordingflat-100", "wordingflat-1000", "wordingflat-10000",
-    "adventure-1", "adventure-3", "adventure-5",
-    "select-100", "select-1000", "select-10000",
-    "selectflat-100", "selectflat-1000", "selectflat-10000",
-    "wordingall-100", "wordingall-1000", "wordingall-10000",
-    "selectall-100", "selectall-1000", "selectall-10000",
+    "circles3-1000",
+    "circles3-10000",
+    "sticky-100",
+    "sticky-1000",
+    "stickyfree-100",
+    "stickyfree-1000",
+    "answers-10",
+    "answers-100",
+    "answers-1000",
+    "answers-10000",
+    "curves-10",
+    "curves-100",
+    "curves-1000",
+    "symchain-10",
+    "symchain-100",
+    "symchain-1000",
+    "symchain-10000",
+    "wording-100",
+    "wording-1000",
+    "wording-10000",
+    "wordingflat-100",
+    "wordingflat-1000",
+    "wordingflat-10000",
+    "adventure-1",
+    "adventure-3",
+    "adventure-5",
+    "select-100",
+    "select-1000",
+    "select-10000",
+    "selectflat-100",
+    "selectflat-1000",
+    "selectflat-10000",
+    "wordingall-100",
+    "wordingall-1000",
+    "wordingall-10000",
+    "selectall-100",
+    "selectall-1000",
+    "selectall-10000",
 ];
 
 /// The current-core counterpart of a spec, for the baseline measurement.
@@ -619,7 +799,11 @@ pub fn to_legacy(doc: &str) -> String {
                 };
                 let name = attr("name").unwrap_or_default();
                 let kind = attr("kind").unwrap_or_default();
-                let args: Vec<String> = attr("args").unwrap_or_default().split_whitespace().map(String::from).collect();
+                let args: Vec<String> = attr("args")
+                    .unwrap_or_default()
+                    .split_whitespace()
+                    .map(String::from)
+                    .collect();
                 let a = args.first().cloned().unwrap_or_default();
                 let b = args.get(1).cloned().unwrap_or_default();
                 let expr = match kind.as_str() {
@@ -647,7 +831,10 @@ pub fn to_legacy(doc: &str) -> String {
             let is_number = translated.is_some();
             // The current core has no numberInput; mathInput with prefill is
             // the equivalent input.
-            let text = translated.unwrap_or_else(|| t.replace("<numberInput ", "<mathInput ").replace(" value=\"", " prefill=\""));
+            let text = translated.unwrap_or_else(|| {
+                t.replace("<numberInput ", "<mathInput ")
+                    .replace(" value=\"", " prefill=\"")
+            });
             let starts_graph = t.starts_with("<graph");
             let ends_graph = t.contains("</graph>");
             if starts_graph {

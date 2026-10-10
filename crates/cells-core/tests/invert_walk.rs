@@ -21,10 +21,21 @@ fn the_walk_matches_the_queue() {
         for cell in 0..doc.cells.len() as u32 {
             for value in [0.5, -3.0, 7.25] {
                 let r = Request { cell, value };
-                let alone = doc.program.invert_requests(&doc.cells, doc.n_essential, &[r], &[]);
-                let twice = doc.program.invert_requests(&doc.cells, doc.n_essential, &[r, r], &[]);
-                assert_eq!(alone.writes, twice.writes, "cell {cell} <- {value} in {src}");
-                assert_eq!(alone.dropped.is_empty(), twice.dropped.is_empty(), "cell {cell} <- {value} in {src}");
+                let alone = doc
+                    .program
+                    .invert_requests(&doc.cells, doc.n_essential, &[r], &[]);
+                let twice = doc
+                    .program
+                    .invert_requests(&doc.cells, doc.n_essential, &[r, r], &[]);
+                assert_eq!(
+                    alone.writes, twice.writes,
+                    "cell {cell} <- {value} in {src}"
+                );
+                assert_eq!(
+                    alone.dropped.is_empty(),
+                    twice.dropped.is_empty(),
+                    "cell {cell} <- {value} in {src}"
+                );
                 checked += 1;
             }
         }

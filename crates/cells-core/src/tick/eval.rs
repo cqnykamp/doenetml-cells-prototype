@@ -58,7 +58,11 @@ impl DirtyClosure {
                 fill[input as usize] += 1;
             }
         }
-        DirtyClosure { dep_start, dependents, dirty: vec![0; program.len().div_ceil(64)] }
+        DirtyClosure {
+            dep_start,
+            dependents,
+            dirty: vec![0; program.len().div_ceil(64)],
+        }
     }
 
     /// Mark the readers of `cell`. Readers in word `w` go into `bits`, the
@@ -66,7 +70,10 @@ impl DirtyClosure {
     /// raised to the highest word marked in `dirty`.
     #[inline(always)]
     fn mark_dependents(&mut self, cell: CellIdx, w: usize, bits: &mut u64, hi: &mut usize) {
-        let (s, e) = (self.dep_start[cell as usize] as usize, self.dep_start[cell as usize + 1] as usize);
+        let (s, e) = (
+            self.dep_start[cell as usize] as usize,
+            self.dep_start[cell as usize + 1] as usize,
+        );
         for &i in &self.dependents[s..e] {
             let dw = i as usize / 64;
             let bit = 1u64 << (i % 64);
@@ -88,7 +95,11 @@ impl Evaluator for DirtyClosure {
         let mut lo = usize::MAX;
         let mut hi = 0;
         for &c in changed.iter() {
-            if let Some(&first) = self.dependents.get(self.dep_start[c as usize] as usize..self.dep_start[c as usize + 1] as usize).and_then(|d| d.first()) {
+            if let Some(&first) = self
+                .dependents
+                .get(self.dep_start[c as usize] as usize..self.dep_start[c as usize + 1] as usize)
+                .and_then(|d| d.first())
+            {
                 lo = lo.min(first as usize / 64);
             }
             // No word is being scanned yet: every mark lands in `dirty`.

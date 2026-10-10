@@ -49,9 +49,14 @@ impl ComponentTable {
                     continue;
                 }
                 match self.kind[k as usize] {
-                    ComponentKind::RepeatForSequence | ComponentKind::Collect | ComponentKind::Group | ComponentKind::Select | ComponentKind::ConditionalContent => stack.push((k, gates.clone())),
+                    ComponentKind::RepeatForSequence
+                    | ComponentKind::Collect
+                    | ComponentKind::Group
+                    | ComponentKind::Select
+                    | ComponentKind::ConditionalContent => stack.push((k, gates.clone())),
                     ComponentKind::Case => {
-                        let active = self.prop_cells[self.prop_base[k as usize] as usize + prop::case::ACTIVE];
+                        let active = self.prop_cells
+                            [self.prop_base[k as usize] as usize + prop::case::ACTIVE];
                         stack.push((k, [gates.as_slice(), &[active]].concat()));
                     }
                     kind if kind.sticky_layout().is_some() => out.push((k, gates.clone())),
@@ -102,8 +107,17 @@ impl Document {
     }
 
     pub fn children(&self, c: CompIdx) -> impl Iterator<Item = Child<'_>> + '_ {
-        let (s, n) = (self.comps.child_start[c as usize] as usize, self.comps.child_count[c as usize] as usize);
-        self.comps.child_list[s..s + n].iter().map(move |&e| if e & TEXT_BIT != 0 { Child::Text(self.strings.get(e & !TEXT_BIT)) } else { Child::Component(e) })
+        let (s, n) = (
+            self.comps.child_start[c as usize] as usize,
+            self.comps.child_count[c as usize] as usize,
+        );
+        self.comps.child_list[s..s + n].iter().map(move |&e| {
+            if e & TEXT_BIT != 0 {
+                Child::Text(self.strings.get(e & !TEXT_BIT))
+            } else {
+                Child::Component(e)
+            }
+        })
     }
 
     /// Cells of the single-cell props of `c`, in `kind.prop_defs()` order.
@@ -122,10 +136,17 @@ impl Document {
     }
 
     fn push_text(&self, c: CompIdx, out: &mut String) {
-        let value = |prop: &str| self.prop_cells(c, prop).map(|cells| self.cells[cells[0] as usize]);
+        let value = |prop: &str| {
+            self.prop_cells(c, prop)
+                .map(|cells| self.cells[cells[0] as usize])
+        };
         match self.kind(c) {
-            ComponentKind::Text => out.push_str(&self.text_value(self.comp_cells(c)[prop::text::VALUE])),
-            ComponentKind::Number | ComponentKind::NumberInput | ComponentKind::Slider => out.push_str(&format_number(value("value").unwrap_or(f64::NAN))),
+            ComponentKind::Text => {
+                out.push_str(&self.text_value(self.comp_cells(c)[prop::text::VALUE]))
+            }
+            ComponentKind::Number | ComponentKind::NumberInput | ComponentKind::Slider => {
+                out.push_str(&format_number(value("value").unwrap_or(f64::NAN)))
+            }
             ComponentKind::Math | ComponentKind::MathInput => {
                 let expr = self.prop_cells(c, "expr").map(|cells| cells[0]);
                 match expr {
@@ -133,8 +154,10 @@ impl Document {
                     _ => out.push_str(&format_number(value("value").unwrap_or(f64::NAN))),
                 }
             }
-            ComponentKind::Case if self.cells[self.comp_cells(c)[prop::case::ACTIVE] as usize] != 1.0 => {}
-            ComponentKind::ConditionalContent | ComponentKind::Select if value("hide").is_some_and(|h| h != 0.0 && !h.is_nan()) => {}
+            ComponentKind::Case
+                if self.cells[self.comp_cells(c)[prop::case::ACTIVE] as usize] != 1.0 => {}
+            ComponentKind::ConditionalContent | ComponentKind::Select
+                if value("hide").is_some_and(|h| h != 0.0 && !h.is_nan()) => {}
             _ => {
                 for ch in self.children(c) {
                     match ch {
@@ -149,7 +172,11 @@ impl Document {
     /// The string a `<text>` value cell holds (its string id), or "".
     pub fn text_value(&self, cell: CellIdx) -> String {
         let v = self.cells[cell as usize];
-        if v.is_nan() || v < 0.0 || v as usize >= self.strings.len() { String::new() } else { self.strings.get(v as u32).to_string() }
+        if v.is_nan() || v < 0.0 || v as usize >= self.strings.len() {
+            String::new()
+        } else {
+            self.strings.get(v as u32).to_string()
+        }
     }
 
     /// The component a path names; see `resolve_path`.
@@ -163,14 +190,24 @@ impl Document {
     pub fn prop_cells(&self, comp: CompIdx, prop: &str) -> Option<Vec<CellIdx>> {
         let kind = self.kind(comp);
         if let Some(parts) = kind.virtual_prop(prop) {
-            return parts.iter().map(|p| self.prop_cells(comp, p).map(|v| v[0])).collect();
+            return parts
+                .iter()
+                .map(|p| self.prop_cells(comp, p).map(|v| v[0]))
+                .collect();
         }
         if let Some(items) = kind.array_prop(prop) {
             let live = match kind {
-                ComponentKind::Polygon => self.cells[self.comp_cells(comp)[prop::polygon::NUM_VERTICES] as usize] as usize,
+                ComponentKind::Polygon => {
+                    self.cells[self.comp_cells(comp)[prop::polygon::NUM_VERTICES] as usize] as usize
+                }
                 _ => items.len(),
             };
-            return items.iter().take(live).map(|[x, y]| Some([self.prop_cells(comp, x)?[0], self.prop_cells(comp, y)?[0]])).collect::<Option<Vec<_>>>().map(|v| v.concat());
+            return items
+                .iter()
+                .take(live)
+                .map(|[x, y]| Some([self.prop_cells(comp, x)?[0], self.prop_cells(comp, y)?[0]]))
+                .collect::<Option<Vec<_>>>()
+                .map(|v| v.concat());
         }
         let i = kind.prop_index(prop)?;
         Some(vec![self.comp_cells(comp)[i]])
@@ -189,12 +226,20 @@ impl Document {
     pub fn memory_estimate(&self) -> MemoryEstimate {
         MemoryEstimate {
             cells: self.cells.capacity() * 8,
-            program: self.program.instrs.capacity() * std::mem::size_of::<crate::program::ops::Instr>() + self.program.producer.capacity() * 4 + self.program.sym.engine.borrow().heap_bytes(),
+            program: self.program.instrs.capacity()
+                * std::mem::size_of::<crate::program::ops::Instr>()
+                + self.program.producer.capacity() * 4
+                + self.program.sym.engine.borrow().heap_bytes(),
             components: self.comps.heap_bytes(),
             strings: self.strings.heap_bytes(),
             structure: self.structure.scopes.heap_bytes()
                 + self.structure.essential_slots.capacity() * 8
-                + self.structure.values.iter().map(|r| r.capacity() * 16 + 24).sum::<usize>(),
+                + self
+                    .structure
+                    .values
+                    .iter()
+                    .map(|r| r.capacity() * 16 + 24)
+                    .sum::<usize>(),
             dast: self.dast.heap_bytes(),
         }
     }
@@ -212,6 +257,10 @@ fn format_number(v: f64) -> String {
     if v.fract() == 0.0 && v.abs() < 1e15 {
         return format!("{}", v as i64);
     }
-    let s = format!("{:.*}", (9 - v.abs().log10().floor() as i32).clamp(0, 15) as usize, v);
+    let s = format!(
+        "{:.*}",
+        (9 - v.abs().log10().floor() as i32).clamp(0, 15) as usize,
+        v
+    );
     s.trim_end_matches('0').trim_end_matches('.').to_string()
 }

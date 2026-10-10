@@ -36,14 +36,22 @@ impl<'a> Compiler<'a> {
     /// at each, the ancestor's own name wins, then a unique descendant with
     /// the name; several descendants are an ambiguity. Then continue in the
     /// enclosing template from the repeat element. Returns (hops, element).
-    pub(super) fn lookup(&self, mut t: TemplateId, mut from: ElemId, name: &str) -> Result<Option<(u32, ElemId)>> {
+    pub(super) fn lookup(
+        &self,
+        mut t: TemplateId,
+        mut from: ElemId,
+        name: &str,
+    ) -> Result<Option<(u32, ElemId)>> {
         let name = name.trim();
         let mut hops = 0;
         loop {
             let tpl = &self.c.templates[t];
             let mut a = from;
             loop {
-                if a != ROOT_SCOPE && tpl.elems[a].name != NONE && self.c.dast.strings.get(tpl.elems[a].name).trim() == name {
+                if a != ROOT_SCOPE
+                    && tpl.elems[a].name != NONE
+                    && self.c.dast.strings.get(tpl.elems[a].name).trim() == name
+                {
                     return Ok(Some((hops, a)));
                 }
                 match tpl.names.get(&(a, name.to_string())).map(Vec::as_slice) {
@@ -66,8 +74,17 @@ impl<'a> Compiler<'a> {
     }
 
     /// A unique descendant of `e` with `name`, for a dotted path.
-    pub(super) fn child_named(&self, t: TemplateId, e: ElemId, name: &str) -> Result<Option<ElemId>> {
-        match self.c.templates[t].names.get(&(e, name.trim().to_string())).map(Vec::as_slice) {
+    pub(super) fn child_named(
+        &self,
+        t: TemplateId,
+        e: ElemId,
+        name: &str,
+    ) -> Result<Option<ElemId>> {
+        match self.c.templates[t]
+            .names
+            .get(&(e, name.trim().to_string()))
+            .map(Vec::as_slice)
+        {
             Some([c]) => Ok(Some(*c)),
             Some([_, _, ..]) => Err(Error::AmbiguousName(name.trim().to_string())),
             _ => Ok(None),
@@ -80,7 +97,9 @@ impl<'a> Compiler<'a> {
         let names = d.macro_path(m);
         let parts: Vec<_> = d.macro_parts(m).collect();
         let first = d.strings.get(names[0]);
-        let (hops, e0) = self.lookup(t, scope, first)?.ok_or_else(|| Error::UnknownName(first.into()))?;
+        let (hops, e0) = self
+            .lookup(t, scope, first)?
+            .ok_or_else(|| Error::UnknownName(first.into()))?;
         let mut cur_t = t;
         for _ in 0..hops {
             cur_t = self.c.templates[cur_t].parent.unwrap().0;
@@ -95,7 +114,14 @@ impl<'a> Compiler<'a> {
                 let name = d.strings.get(names[i]);
                 let choice_here = match at {
                     At::Elem(e) if !after_iface => match self.c.templates[cur_t].elems[e].body {
-                        Body::Choice(cid) if self.c.templates[cur_t].elems[e].kind.prop_index(name).is_none() => Some(cid),
+                        Body::Choice(cid)
+                            if self.c.templates[cur_t].elems[e]
+                                .kind
+                                .prop_index(name)
+                                .is_none() =>
+                        {
+                            Some(cid)
+                        }
                         _ => None,
                     },
                     At::SelectPick(cid) => Some(cid),
@@ -105,9 +131,14 @@ impl<'a> Compiler<'a> {
                     if matches!(at, At::Elem(_)) && !self.c.choices[cid].reactive {
                         // `$s.x` is `$s[1].x` when the select picks one option.
                         if self.c.choices[cid].num_to_select != 1 {
-                            return Err(Error::Banned(format!("'${display}' needs an index: the select picks {} options", self.c.choices[cid].num_to_select)));
+                            return Err(Error::Banned(format!(
+                                "'${display}' needs an index: the select picks {} options",
+                                self.c.choices[cid].num_to_select
+                            )));
                         }
-                        steps.push(Step::Index(IndexPlan { terms: vec![IndexTerm::Const(1)] }));
+                        steps.push(Step::Index(IndexPlan {
+                            terms: vec![IndexTerm::Const(1)],
+                        }));
                     }
                     let (step, tpl, x) = self.iface_step(cid, name, &display)?;
                     steps.push(step);
@@ -115,14 +146,18 @@ impl<'a> Compiler<'a> {
                     at = At::Elem(x);
                     after_iface = true;
                     if d.part_indices(part).next().is_some() {
-                        return Err(Error::Banned(format!("'${display}': an index after an interface name")));
+                        return Err(Error::Banned(format!(
+                            "'${display}': an index after an interface name"
+                        )));
                     }
                     continue;
                 }
                 match at {
                     // A select's pick always takes the choice branch above.
                     At::Iteration | At::SelectPick(_) => {
-                        let e = self.child_named(cur_t, ROOT_SCOPE, name)?.ok_or_else(|| Error::UnknownName(display.clone()))?;
+                        let e = self
+                            .child_named(cur_t, ROOT_SCOPE, name)?
+                            .ok_or_else(|| Error::UnknownName(display.clone()))?;
                         steps.push(Step::Elem(e));
                         at = At::Elem(e);
                     }
@@ -143,7 +178,10 @@ impl<'a> Compiler<'a> {
                         // items of an array prop, by literal index.
                         let name = kind.canonical_prop(name);
                         if let Some(items) = kind.array_prop(name) {
-                            let idx: Vec<i64> = d.part_indices(part).map(|expr| self.literal_index(expr, &display)).collect::<Result<_>>()?;
+                            let idx: Vec<i64> = d
+                                .part_indices(part)
+                                .map(|expr| self.literal_index(expr, &display))
+                                .collect::<Result<_>>()?;
                             let (Some(&k), rest) = (idx.first(), &idx[1.min(idx.len())..]) else {
                                 if i + 1 != parts.len() {
                                     return Err(Error::PathTooDeep(display));
@@ -157,11 +195,13 @@ impl<'a> Compiler<'a> {
                             let item = items[k as usize - 1];
                             let coord = match (rest.first(), parts.get(i + 1)) {
                                 (Some(&j), None) => Some(j),
-                                (None, Some(_)) if i + 2 == parts.len() => Some(match d.strings.get(names[i + 1]).trim() {
-                                    "x" | "1" => 1,
-                                    "y" | "2" => 2,
-                                    _ => return Err(Error::PathTooDeep(display)),
-                                }),
+                                (None, Some(_)) if i + 2 == parts.len() => {
+                                    Some(match d.strings.get(names[i + 1]).trim() {
+                                        "x" | "1" => 1,
+                                        "y" | "2" => 2,
+                                        _ => return Err(Error::PathTooDeep(display)),
+                                    })
+                                }
                                 (None, None) => None,
                                 _ => return Err(Error::PathTooDeep(display)),
                             };
@@ -169,14 +209,21 @@ impl<'a> Compiler<'a> {
                                 Some(1) => item[0].to_string(),
                                 Some(2) => item[1].to_string(),
                                 Some(_) => return Err(Error::BadIndex(display)),
-                                None => kind.array_item_prop(name, k as usize).ok_or_else(|| Error::PathTooDeep(display.clone()))?,
+                                None => kind
+                                    .array_item_prop(name, k as usize)
+                                    .ok_or_else(|| Error::PathTooDeep(display.clone()))?,
                             });
                             break;
                         }
                         // `$l.point1[2]`: a coordinate of a point-valued prop.
-                        if let (Some(parts_of), Some(expr)) = (kind.virtual_prop(name), d.part_indices(part).next()) {
+                        if let (Some(parts_of), Some(expr)) =
+                            (kind.virtual_prop(name), d.part_indices(part).next())
+                        {
                             let k = self.literal_index(expr, &display)?;
-                            if !(1..=2).contains(&k) || d.part_indices(part).nth(1).is_some() || i + 1 != parts.len() {
+                            if !(1..=2).contains(&k)
+                                || d.part_indices(part).nth(1).is_some()
+                                || i + 1 != parts.len()
+                            {
                                 return Err(Error::PathTooDeep(display));
                             }
                             prop = Some(parts_of[k as usize - 1].to_string());
@@ -188,7 +235,9 @@ impl<'a> Compiler<'a> {
                         // A prop name, or a coordinate of a point-valued prop
                         // (`$c.center.y`), which must end the path.
                         if i + 1 != parts.len() {
-                            let parts_of = kind.virtual_prop(name).ok_or_else(|| Error::PathTooDeep(display.clone()))?;
+                            let parts_of = kind
+                                .virtual_prop(name)
+                                .ok_or_else(|| Error::PathTooDeep(display.clone()))?;
                             let coord = d.strings.get(names[i + 1]).trim();
                             let j = match coord {
                                 "x" | "1" => 0,
@@ -201,8 +250,14 @@ impl<'a> Compiler<'a> {
                             prop = Some(parts_of[j].to_string());
                             break;
                         }
-                        if kind.prop_index(name).is_none() && kind.virtual_prop(name).is_none() && kind.array_prop(name).is_none() {
-                            return Err(Error::UnknownProp { name: self.elem_label(cur_t, e), prop: name.into() });
+                        if kind.prop_index(name).is_none()
+                            && kind.virtual_prop(name).is_none()
+                            && kind.array_prop(name).is_none()
+                        {
+                            return Err(Error::UnknownProp {
+                                name: self.elem_label(cur_t, e),
+                                prop: name.into(),
+                            });
                         }
                         prop = Some(name.to_string());
                         break;
@@ -212,7 +267,9 @@ impl<'a> Compiler<'a> {
             for expr in d.part_indices(part) {
                 let At::Elem(e) = at else {
                     if matches!(at, At::SelectPick(_)) {
-                        return Err(Error::Banned(format!("'${display}' reaches into a select's option by position; name the content and use $s[k].name")));
+                        return Err(Error::Banned(format!(
+                            "'${display}' reaches into a select's option by position; name the content and use $s[k].name"
+                        )));
                     }
                     return Err(Error::NotIndexable(display));
                 };
@@ -260,11 +317,21 @@ impl<'a> Compiler<'a> {
             && !self.c.choices[cid].reactive
         {
             if self.c.choices[cid].num_to_select != 1 {
-                return Err(Error::Banned(format!("'${display}' needs an index: the select picks {} options", self.c.choices[cid].num_to_select)));
+                return Err(Error::Banned(format!(
+                    "'${display}' needs an index: the select picks {} options",
+                    self.c.choices[cid].num_to_select
+                )));
             }
-            steps.push(Step::Index(IndexPlan { terms: vec![IndexTerm::Const(1)] }));
+            steps.push(Step::Index(IndexPlan {
+                terms: vec![IndexTerm::Const(1)],
+            }));
         }
-        self.c.refs.push(RefPlan { hops, steps, prop, display });
+        self.c.refs.push(RefPlan {
+            hops,
+            steps,
+            prop,
+            display,
+        });
         Ok(self.c.refs.len() - 1)
     }
 
@@ -280,11 +347,18 @@ impl<'a> Compiler<'a> {
                 _ => {}
             }
         }
-        text.trim().parse::<i64>().map_err(|_| Error::BadIndex(display.to_string()))
+        text.trim()
+            .parse::<i64>()
+            .map_err(|_| Error::BadIndex(display.to_string()))
     }
 
     /// An index expression: a sum of literal integers and iteration indices.
-    pub(super) fn plan_index(&self, t: TemplateId, expr: &[NodeId], display: &str) -> Result<IndexPlan> {
+    pub(super) fn plan_index(
+        &self,
+        t: TemplateId,
+        expr: &[NodeId],
+        display: &str,
+    ) -> Result<IndexPlan> {
         let d = self.c.dast;
         let mut terms = Vec::new();
         for &n in expr {
@@ -294,7 +368,11 @@ impl<'a> Compiler<'a> {
                     if s.is_empty() {
                         continue;
                     }
-                    terms.push(IndexTerm::Const(s.trim_start_matches('+').parse::<i64>().map_err(|_| Error::BadIndex(display.to_string()))?));
+                    terms.push(IndexTerm::Const(
+                        s.trim_start_matches('+')
+                            .parse::<i64>()
+                            .map_err(|_| Error::BadIndex(display.to_string()))?,
+                    ));
                 }
                 NodeKind::Macro => {
                     let path = d.macro_path(n);
@@ -302,14 +380,18 @@ impl<'a> Compiler<'a> {
                         return Err(Error::DynamicIndex(display.to_string()));
                     }
                     let name = d.strings.get(path[0]);
-                    let (hops, e) = self.lookup(t, ROOT_SCOPE, name)?.ok_or_else(|| Error::UnknownName(name.into()))?;
+                    let (hops, e) = self
+                        .lookup(t, ROOT_SCOPE, name)?
+                        .ok_or_else(|| Error::UnknownName(name.into()))?;
                     let mut tt = t;
                     for _ in 0..hops {
                         tt = self.c.templates[tt].parent.unwrap().0;
                     }
                     let el = &self.c.templates[tt].elems[e];
                     match (el.kind, el.props.first()) {
-                        (ComponentKind::Number, Some(SourcePlan::IterIndex)) => terms.push(IndexTerm::Iter(hops)),
+                        (ComponentKind::Number, Some(SourcePlan::IterIndex)) => {
+                            terms.push(IndexTerm::Iter(hops))
+                        }
                         _ => return Err(Error::DynamicIndex(display.to_string())),
                     }
                 }

@@ -35,7 +35,11 @@ impl Coef {
             Tag::Rat => Some(Coef::R(n.a as i32 as i64, n.b as i64)),
             Tag::Num => {
                 let v = f.number(h).unwrap();
-                Some(if v.fract() == 0.0 && v.abs() < 9.0e15 { Coef::R(v as i64, 1) } else { Coef::F(v) })
+                Some(if v.fract() == 0.0 && v.abs() < 9.0e15 {
+                    Coef::R(v as i64, 1)
+                } else {
+                    Coef::F(v)
+                })
             }
             _ => None,
         }
@@ -70,19 +74,28 @@ impl Coef {
             a.max(1)
         };
         let (p, q) = (p / g, q / g);
-        if p.abs() < LIM && q.abs() < LIM { Coef::R(p as i64, q as i64).normalized() } else { Coef::F(p as f64 / q as f64) }
+        if p.abs() < LIM && q.abs() < LIM {
+            Coef::R(p as i64, q as i64).normalized()
+        } else {
+            Coef::F(p as f64 / q as f64)
+        }
     }
 
     pub fn add(self, o: Coef) -> Coef {
         match (self, o) {
-            (Coef::R(a, b), Coef::R(c, d)) => Coef::from_i128(a as i128 * d as i128 + c as i128 * b as i128, b as i128 * d as i128),
+            (Coef::R(a, b), Coef::R(c, d)) => Coef::from_i128(
+                a as i128 * d as i128 + c as i128 * b as i128,
+                b as i128 * d as i128,
+            ),
             _ => Coef::F(self.value() + o.value()),
         }
     }
 
     pub fn mul(self, o: Coef) -> Coef {
         match (self, o) {
-            (Coef::R(a, b), Coef::R(c, d)) => Coef::from_i128(a as i128 * c as i128, b as i128 * d as i128),
+            (Coef::R(a, b), Coef::R(c, d)) => {
+                Coef::from_i128(a as i128 * c as i128, b as i128 * d as i128)
+            }
             _ => Coef::F(self.value() * o.value()),
         }
     }
@@ -94,7 +107,11 @@ impl Coef {
         }
         match self {
             Coef::R(p, q) if n.abs() <= 64 => {
-                let (b, e) = if n >= 0 { (Coef::R(p, q), n) } else { (Coef::R(q, p).normalized(), -n) };
+                let (b, e) = if n >= 0 {
+                    (Coef::R(p, q), n)
+                } else {
+                    (Coef::R(q, p).normalized(), -n)
+                };
                 let mut r = Coef::R(1, 1);
                 for _ in 0..e {
                     r = r.mul(b);
@@ -123,7 +140,9 @@ impl Coef {
     pub fn to_node(self, f: &mut Flat) -> Handle {
         match self.normalized() {
             Coef::R(p, 1) => f.num(p as f64),
-            Coef::R(p, q) if p.abs() <= i32::MAX as i64 && q <= u32::MAX as i64 => f.intern(Tag::Rat, p as i32 as u32, q as u32),
+            Coef::R(p, q) if p.abs() <= i32::MAX as i64 && q <= u32::MAX as i64 => {
+                f.intern(Tag::Rat, p as i32 as u32, q as u32)
+            }
             c => f.num(c.value()),
         }
     }
@@ -176,7 +195,10 @@ fn degree(f: &Flat, h: Handle) -> f64 {
 
 fn term_order(f: &Flat, a: Handle, b: Handle) -> Ordering {
     let (ra, rb) = (strip_coef(f, a), strip_coef(f, b));
-    degree(f, rb).total_cmp(&degree(f, ra)).then_with(|| factor_order(f, ra, rb)).then_with(|| f.cmp(a, b))
+    degree(f, rb)
+        .total_cmp(&degree(f, ra))
+        .then_with(|| factor_order(f, ra, rb))
+        .then_with(|| f.cmp(a, b))
 }
 
 /// Factors by base, then exponent: `x^2 y` keeps `x` first.
@@ -383,7 +405,9 @@ pub fn apply(f: &mut Flat, func: u32, arg: Handle) -> Handle {
     }
     if an.tag == Tag::Apply {
         let inner = f.sym_name(an.a);
-        if (name == "exp" && (inner == "ln" || inner == "log")) || ((name == "ln" || name == "log") && inner == "exp") {
+        if (name == "exp" && (inner == "ln" || inner == "log"))
+            || ((name == "ln" || name == "log") && inner == "exp")
+        {
             return an.b;
         }
     }

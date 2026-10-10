@@ -23,24 +23,43 @@ pub enum Error {
     #[error("cannot copy a <{0}>")]
     UncopyableKind(String),
     #[error("extend=\"${referent}\" is a <{referent_kind}> but the element is a <{kind}>")]
-    ExtendKindMismatch { referent: String, referent_kind: String, kind: String },
-    #[error("prop '{prop}' of <{kind}> expects {expected} cell(s) but the reference supplies {got}")]
-    ArityMismatch { kind: String, prop: String, expected: usize, got: usize },
-    #[error("attribute '{attr}' must be a number or a single reference, got '{text}' (math expressions are out of scope)")]
+    ExtendKindMismatch {
+        referent: String,
+        referent_kind: String,
+        kind: String,
+    },
+    #[error(
+        "prop '{prop}' of <{kind}> expects {expected} cell(s) but the reference supplies {got}"
+    )]
+    ArityMismatch {
+        kind: String,
+        prop: String,
+        expected: usize,
+        got: usize,
+    },
+    #[error(
+        "attribute '{attr}' must be a number or a single reference, got '{text}' (math expressions are out of scope)"
+    )]
     BadValue { attr: String, text: String },
     #[error("<op> attribute '{0}' must be a literal number")]
     BadLiteralParam(String),
     #[error("unknown <op> kind '{0}'")]
     UnknownOp(String),
     #[error("<op kind=\"{kind}\"> takes {expected} argument(s), got {got}")]
-    OpArity { kind: String, expected: usize, got: usize },
+    OpArity {
+        kind: String,
+        expected: usize,
+        got: usize,
+    },
     #[error("<op kind=\"{kind}\"> is missing attribute '{attr}'")]
     MissingParam { kind: String, attr: String },
     #[error("<op> args must be references only; literal arguments are not supported")]
     LiteralArg,
     #[error("dependency cycle involving component '{0}'")]
     Cycle(String),
-    #[error("index in '${0}' is not a constant: only literal integers and iteration index names (plus or minus a literal) are supported")]
+    #[error(
+        "index in '${0}' is not a constant: only literal integers and iteration index names (plus or minus a literal) are supported"
+    )]
     DynamicIndex(String),
     #[error("bad index in '${0}'")]
     BadIndex(String),
@@ -61,7 +80,11 @@ pub enum Error {
     #[error("not allowed (ADR 0009): {0}")]
     Banned(String),
     #[error("'{name}' is not in the branch interface of '{choice}': {reason}")]
-    NotInInterface { choice: String, name: String, reason: String },
+    NotInInterface {
+        choice: String,
+        name: String,
+        reason: String,
+    },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

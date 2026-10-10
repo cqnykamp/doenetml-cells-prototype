@@ -93,7 +93,11 @@ impl Tape {
                     self.emit(k, var, depth)?;
                 }
                 let n = ts.len();
-                let op = if matches!(t, Tree::Add(_)) { TapeOp::Add(n as u32) } else { TapeOp::Mul(n as u32) };
+                let op = if matches!(t, Tree::Add(_)) {
+                    TapeOp::Add(n as u32)
+                } else {
+                    TapeOp::Mul(n as u32)
+                };
                 self.push(op, depth, n)
             }
             Tree::Sub(a, b) | Tree::Div(a, b) | Tree::Pow(a, b) => {
@@ -167,11 +171,16 @@ impl Tape {
                     match op {
                         TapeOp::Sub => dst.iter_mut().zip(&*src).for_each(|(d, s)| *d -= s),
                         TapeOp::Div => dst.iter_mut().zip(&*src).for_each(|(d, s)| *d /= s),
-                        _ => dst.iter_mut().zip(&*src).for_each(|(d, s)| *d = pow(*d, *s)),
+                        _ => dst
+                            .iter_mut()
+                            .zip(&*src)
+                            .for_each(|(d, s)| *d = pow(*d, *s)),
                     }
                     top -= 1;
                 }
-                TapeOp::Neg => stack[(top - 1) * n..top * n].iter_mut().for_each(|d| *d = -*d),
+                TapeOp::Neg => stack[(top - 1) * n..top * n]
+                    .iter_mut()
+                    .for_each(|d| *d = -*d),
                 TapeOp::Apply(f) => {
                     let col = &mut stack[(top - 1) * n..top * n];
                     let g: fn(f64) -> f64 = match f {
@@ -229,8 +238,14 @@ mod tests {
 
     #[test]
     fn evaluates_columns() {
-        assert_eq!(sample("3x^2 - 2x + 1", &[], &[0.0, 1.0, 2.0]), vec![1.0, 2.0, 9.0]);
-        assert_eq!(sample("#7 x + #9", &[2.0, 5.0], &[0.0, 1.0, 3.0]), vec![5.0, 7.0, 11.0]);
+        assert_eq!(
+            sample("3x^2 - 2x + 1", &[], &[0.0, 1.0, 2.0]),
+            vec![1.0, 2.0, 9.0]
+        );
+        assert_eq!(
+            sample("#7 x + #9", &[2.0, 5.0], &[0.0, 1.0, 3.0]),
+            vec![5.0, 7.0, 11.0]
+        );
         let s = sample("sin(x)^2 + cos(x)^2", &[], &[0.3, 1.7]);
         assert!(s.iter().all(|v| (v - 1.0).abs() < 1e-12));
         assert!(sample("x + y", &[], &[1.0])[0].is_nan());
@@ -238,6 +253,15 @@ mod tests {
 
     #[test]
     fn a_math_leaf_does_not_compile() {
-        assert!(Tape::compile(&Tree::Cell { cell: 3, math: true }, "x").is_none());
+        assert!(
+            Tape::compile(
+                &Tree::Cell {
+                    cell: 3,
+                    math: true
+                },
+                "x"
+            )
+            .is_none()
+        );
     }
 }

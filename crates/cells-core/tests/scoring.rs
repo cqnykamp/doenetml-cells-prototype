@@ -105,7 +105,11 @@ fn sections_aggregate_only_when_asked_and_are_transparent_otherwise() {
 "#,
     )
     .unwrap();
-    assert_eq!(credit(&doc, "sec22"), 0.0, "a section that does not aggregate has no credit");
+    assert_eq!(
+        credit(&doc, "sec22"),
+        0.0,
+        "a section that does not aggregate has no credit"
+    );
     answer(&mut doc, "m3", "a3", "3");
     assert_credit!(credit(&doc, "sec1"), 2.0 / 3.0);
     answer(&mut doc, "m5", "a5", "5");
@@ -208,7 +212,9 @@ fn many_answers_combine_through_a_tree_of_means() {
     let mut src = String::from(r#"<numberInput name="k" value="0"/>"#);
     for i in 1..=70 {
         let w = if i > 63 { r#" weight="2""# } else { "" };
-        src.push_str(&format!(r#"<mathInput name="m{i}"/><answer name="a{i}" response="$m{i}"{w}>{i}</answer>"#));
+        src.push_str(&format!(
+            r#"<mathInput name="m{i}"/><answer name="a{i}" response="$m{i}"{w}>{i}</answer>"#
+        ));
     }
     let mut doc = load(&src).unwrap();
     assert_credit!(doc_credit(&doc), 0.0);
@@ -237,7 +243,10 @@ fn nested_sections_number_through_their_parents() {
     assert_eq!(number(&doc, "s211"), "2.1.1");
     assert_eq!(number(&doc, "s22"), "2");
     assert_eq!(number(&doc, "s23"), "2.3");
-    assert_eq!(doc.section_title(doc.component("s21").unwrap()).unwrap(), "Section 2.1");
+    assert_eq!(
+        doc.section_title(doc.component("s21").unwrap()).unwrap(),
+        "Section 2.1"
+    );
 }
 
 #[test]
@@ -247,8 +256,21 @@ fn problems_exercises_and_examples_share_one_counter() {
         r#"<section name="s1"><problem name="a"/><exercise name="b"/><example name="c"/><problem name="d"/><exercise name="e"/><example name="f"/></section>"#,
     )
     .unwrap();
-    let titles: Vec<String> = ["a", "b", "c", "d", "e", "f"].iter().map(|n| doc.section_title(doc.component(n).unwrap()).unwrap()).collect();
-    assert_eq!(titles, ["Problem 1", "Exercise 2", "Example 3", "Problem 4", "Exercise 5", "Example 6"]);
+    let titles: Vec<String> = ["a", "b", "c", "d", "e", "f"]
+        .iter()
+        .map(|n| doc.section_title(doc.component(n).unwrap()).unwrap())
+        .collect();
+    assert_eq!(
+        titles,
+        [
+            "Problem 1",
+            "Exercise 2",
+            "Example 3",
+            "Problem 4",
+            "Exercise 5",
+            "Example 6"
+        ]
+    );
 }
 
 #[test]
@@ -294,6 +316,11 @@ fn repeated_sections_number_in_order() {
 
 #[test]
 fn section_flags_must_be_literals() {
-    let e = load(r#"<booleanInput name="b"/><section aggregateScores="$b"/>"#).err().unwrap();
-    assert!(matches!(e, cells_core::Error::Unsupported(ref m) if m.contains("aggregateScores")), "{e}");
+    let e = load(r#"<booleanInput name="b"/><section aggregateScores="$b"/>"#)
+        .err()
+        .unwrap();
+    assert!(
+        matches!(e, cells_core::Error::Unsupported(ref m) if m.contains("aggregateScores")),
+        "{e}"
+    );
 }

@@ -33,7 +33,11 @@ fn requests_snap_to_the_nearest_step_and_clamp_to_the_range() {
     doc.request(&[req(&doc, "s", "value", -3.0)]);
     assert_eq!(v(&doc, "s", "value"), 0.0);
     doc.request(&[req(&doc, "s", "value", 2.5)]);
-    assert_eq!(v(&doc, "s", "value"), 3.0, "half rounds away from zero as in Math.round");
+    assert_eq!(
+        v(&doc, "s", "value"),
+        3.0,
+        "half rounds away from zero as in Math.round"
+    );
     assert_eq!(reference::check(&doc), None);
 }
 
@@ -79,7 +83,11 @@ fn bind_value_to_aliases_the_bound_value_and_sends_the_snapped_value_down() {
     assert_eq!(doc.cell("s", "preliminaryValue"), doc.cell("n", "value"));
     assert_eq!(v(&doc, "s", "value"), 2.0);
     doc.request(&[req(&doc, "s", "value", 7.4)]);
-    assert_eq!(v(&doc, "n", "value"), 7.0, "bound component receives the snapped value");
+    assert_eq!(
+        v(&doc, "n", "value"),
+        7.0,
+        "bound component receives the snapped value"
+    );
     assert_eq!(v(&doc, "s", "value"), 7.0);
     // Writing an off-grid value to the input shows snapped on the slider while
     // the input keeps the raw value; nothing writes back.
@@ -105,7 +113,11 @@ fn bind_value_to_a_derived_number_continues_the_inverse_chain() {
     doc.request(&[req(&doc, "s", "value", 7.4)]);
     assert_eq!(v(&doc, "s", "value"), 7.0);
     assert_eq!(v(&doc, "d", "value"), 7.0);
-    assert_eq!(v(&doc, "n", "value"), 3.5, "the chain crosses the derived number into the input");
+    assert_eq!(
+        v(&doc, "n", "value"),
+        3.5,
+        "the chain crosses the derived number into the input"
+    );
     assert_eq!(reference::check(&doc), None);
 }
 
@@ -116,7 +128,11 @@ fn slider_bound_to_a_slider_with_a_different_step() {
            <slider name="coarse" from="0" to="10" step="2" bindValueTo="$fine"/>"#,
     )
     .unwrap();
-    assert_eq!(v(&doc, "coarse", "value"), 4.0, "3 snaps up to 4 on the coarse grid");
+    assert_eq!(
+        v(&doc, "coarse", "value"),
+        4.0,
+        "3 snaps up to 4 on the coarse grid"
+    );
     // Dragging the coarse slider: coarse snaps to 6, fine stores 6 (on its grid).
     doc.request(&[req(&doc, "coarse", "value", 5.3)]);
     assert_eq!(v(&doc, "coarse", "value"), 6.0);
@@ -158,4 +174,3 @@ fn referencing_a_slider_value_from_a_point() {
     assert_eq!(v(&doc, "p", "x"), 3.0);
     assert_eq!(v(&doc, "s", "value"), 3.0);
 }
-

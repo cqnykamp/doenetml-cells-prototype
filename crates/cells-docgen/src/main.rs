@@ -14,11 +14,17 @@ fn main() {
         }
         return;
     }
-    let doc = if legacy { cells_docgen::legacy_from_spec(&arg) } else { cells_docgen::from_spec(&arg) };
+    let doc = if legacy {
+        cells_docgen::legacy_from_spec(&arg)
+    } else {
+        cells_docgen::from_spec(&arg)
+    };
     match doc {
         Some(doc) => print!("{doc}"),
         None => {
-            eprintln!("usage: cells-docgen <points|chain|fanout|aliases>-<N> | grid-<N>x<L> | --sweep");
+            eprintln!(
+                "usage: cells-docgen <points|chain|fanout|aliases>-<N> | grid-<N>x<L> | --sweep"
+            );
             std::process::exit(2);
         }
     }

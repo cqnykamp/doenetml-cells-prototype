@@ -46,7 +46,10 @@ pub struct StringTable {
 
 impl StringTable {
     pub fn new() -> Self {
-        StringTable { offsets: vec![0], bytes: Vec::new() }
+        StringTable {
+            offsets: vec![0],
+            bytes: Vec::new(),
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -59,7 +62,10 @@ impl StringTable {
 
     #[inline]
     pub fn get(&self, i: StrId) -> &str {
-        let (a, b) = (self.offsets[i as usize] as usize, self.offsets[i as usize + 1] as usize);
+        let (a, b) = (
+            self.offsets[i as usize] as usize,
+            self.offsets[i as usize + 1] as usize,
+        );
         // Validated once at load (binary) or produced from `str` (JSON).
         unsafe { std::str::from_utf8_unchecked(&self.bytes[a..b]) }
     }
@@ -132,7 +138,10 @@ impl Dast {
 
     #[inline]
     pub fn children(&self, n: NodeId) -> &[NodeId] {
-        let (s, c) = (self.c_start[n as usize] as usize, self.c_count[n as usize] as usize);
+        let (s, c) = (
+            self.c_start[n as usize] as usize,
+            self.c_count[n as usize] as usize,
+        );
         &self.children[s..s + c]
     }
 
@@ -148,19 +157,26 @@ impl Dast {
 
     #[inline]
     pub fn attr_children(&self, a: AttrId) -> &[NodeId] {
-        let (s, c) = (self.attr_c_start[a as usize] as usize, self.attr_c_count[a as usize] as usize);
+        let (s, c) = (
+            self.attr_c_start[a as usize] as usize,
+            self.attr_c_count[a as usize] as usize,
+        );
         &self.children[s..s + c]
     }
 
     /// An attribute by name; DoenetML attribute names ignore case.
     pub fn attr(&self, n: NodeId, name: &str) -> Option<AttrId> {
-        self.attrs(n).find(|&a| self.attr_name(a).eq_ignore_ascii_case(name))
+        self.attrs(n)
+            .find(|&a| self.attr_name(a).eq_ignore_ascii_case(name))
     }
 
     /// Path parts of a macro node, as string ids.
     #[inline]
     pub fn macro_path(&self, n: NodeId) -> &[StrId] {
-        let (s, c) = (self.a_start[n as usize] as usize, self.a_count[n as usize] as usize);
+        let (s, c) = (
+            self.a_start[n as usize] as usize,
+            self.a_count[n as usize] as usize,
+        );
         &self.path[s..s + c]
     }
 
@@ -175,7 +191,10 @@ impl Dast {
     /// (`$r[3]` gives one index holding a text node; `$r[$i-2]` gives one
     /// index holding a macro and a text node).
     pub fn part_indices(&self, part: PathPart) -> impl Iterator<Item = &[NodeId]> + '_ {
-        let (s, c) = (self.path_i_start[part as usize] as usize, self.path_i_count[part as usize] as usize);
+        let (s, c) = (
+            self.path_i_start[part as usize] as usize,
+            self.path_i_count[part as usize] as usize,
+        );
         (s..s + c).map(move |i| {
             let (cs, cc) = (self.idx_c_start[i] as usize, self.idx_c_count[i] as usize);
             &self.children[cs..cs + cc]
@@ -184,11 +203,16 @@ impl Dast {
 
     /// Whether any part of the macro path carries an index.
     pub fn macro_has_index(&self, n: NodeId) -> bool {
-        self.macro_parts(n).any(|p| self.path_i_count[p as usize] > 0)
+        self.macro_parts(n)
+            .any(|p| self.path_i_count[p as usize] > 0)
     }
 
     pub fn macro_display(&self, n: NodeId) -> String {
-        self.macro_path(n).iter().map(|&p| self.strings.get(p)).collect::<Vec<_>>().join(".")
+        self.macro_path(n)
+            .iter()
+            .map(|&p| self.strings.get(p))
+            .collect::<Vec<_>>()
+            .join(".")
     }
 
     pub fn heap_bytes(&self) -> usize {
@@ -230,7 +254,13 @@ impl Dast {
 
     /// Load from DAST JSON as produced by `@doenet/parser`.
     pub fn from_json(json: &str) -> crate::Result<Dast> {
-        let mut b = JsonBuilder { dast: Dast { strings: StringTable::new(), ..Default::default() }, intern: HashMap::new() };
+        let mut b = JsonBuilder {
+            dast: Dast {
+                strings: StringTable::new(),
+                ..Default::default()
+            },
+            intern: HashMap::new(),
+        };
         let empty = b.intern("");
         let root = b.dast.push_node(NodeKind::Element, empty);
         let kids = b.parse_root(json)?;
@@ -264,8 +294,20 @@ impl Dast {
         } else {
             0
         };
-        let extra = if version >= 2 { n_path * 4 * 2 + n_index * 4 * 2 } else { 0 };
-        let need = r.pos + (n_strings + 1) * 4 + strings_len.div_ceil(4) * 4 + n_nodes.div_ceil(4) * 4 + n_nodes * 4 * 5 + n_attrs * 4 * 3 + n_children * 4 + n_path * 4 + extra;
+        let extra = if version >= 2 {
+            n_path * 4 * 2 + n_index * 4 * 2
+        } else {
+            0
+        };
+        let need = r.pos
+            + (n_strings + 1) * 4
+            + strings_len.div_ceil(4) * 4
+            + n_nodes.div_ceil(4) * 4
+            + n_nodes * 4 * 5
+            + n_attrs * 4 * 3
+            + n_children * 4
+            + n_path * 4
+            + extra;
         if bytes.len() < need {
             return Err(bad("truncated"));
         }
@@ -276,7 +318,10 @@ impl Dast {
         let kind = r.bytes(n_nodes).to_vec();
         r.align4();
         let dast = Dast {
-            strings: StringTable { offsets, bytes: string_bytes },
+            strings: StringTable {
+                offsets,
+                bytes: string_bytes,
+            },
             kind,
             str_: r.u32s(n_nodes),
             a_start: r.u32s(n_nodes),
@@ -288,14 +333,33 @@ impl Dast {
             attr_c_count: r.u32s(n_attrs),
             children: r.u32s(n_children),
             path: r.u32s(n_path),
-            path_i_start: if version >= 2 { r.u32s(n_path) } else { vec![0; n_path] },
-            path_i_count: if version >= 2 { r.u32s(n_path) } else { vec![0; n_path] },
-            idx_c_start: if version >= 2 { r.u32s(n_index) } else { Vec::new() },
-            idx_c_count: if version >= 2 { r.u32s(n_index) } else { Vec::new() },
+            path_i_start: if version >= 2 {
+                r.u32s(n_path)
+            } else {
+                vec![0; n_path]
+            },
+            path_i_count: if version >= 2 {
+                r.u32s(n_path)
+            } else {
+                vec![0; n_path]
+            },
+            idx_c_start: if version >= 2 {
+                r.u32s(n_index)
+            } else {
+                Vec::new()
+            },
+            idx_c_count: if version >= 2 {
+                r.u32s(n_index)
+            } else {
+                Vec::new()
+            },
         };
         // Bounds checks so accessors can index without panicking on bad input.
         let ns = dast.strings.len() as u32;
-        if dast.str_.iter().any(|&s| s >= ns) || dast.attr_name.iter().any(|&s| s >= ns) || dast.path.iter().any(|&s| s >= ns) {
+        if dast.str_.iter().any(|&s| s >= ns)
+            || dast.attr_name.iter().any(|&s| s >= ns)
+            || dast.path.iter().any(|&s| s >= ns)
+        {
             return Err(bad("string index out of range"));
         }
         if dast.children.iter().any(|&c| c as usize >= n_nodes) {
@@ -307,7 +371,11 @@ impl Dast {
                 return Err(bad("child range out of range"));
             }
             let (a, ac) = (dast.a_start[n] as usize, dast.a_count[n] as usize);
-            let limit = if dast.kind[n] == NodeKind::Macro as u8 { n_path } else { n_attrs };
+            let limit = if dast.kind[n] == NodeKind::Macro as u8 {
+                n_path
+            } else {
+                n_attrs
+            };
             if a + ac > limit {
                 return Err(bad("attribute or path range out of range"));
             }
@@ -334,16 +402,48 @@ impl Dast {
     pub fn to_binary(&self) -> Vec<u8> {
         let mut out = Vec::with_capacity(64 + self.strings.bytes.len() + self.len() * 24);
         out.extend_from_slice(b"CDST");
-        for v in [2u32, self.strings.len() as u32, self.strings.bytes.len() as u32, self.len() as u32, self.attr_name.len() as u32, self.children.len() as u32, self.path.len() as u32, self.idx_c_start.len() as u32] {
+        for v in [
+            2u32,
+            self.strings.len() as u32,
+            self.strings.bytes.len() as u32,
+            self.len() as u32,
+            self.attr_name.len() as u32,
+            self.children.len() as u32,
+            self.path.len() as u32,
+            self.idx_c_start.len() as u32,
+        ] {
             out.extend_from_slice(&v.to_le_bytes());
         }
-        let u32s = |out: &mut Vec<u8>, v: &[u32]| for x in v { out.extend_from_slice(&x.to_le_bytes()) };
+        let u32s = |out: &mut Vec<u8>, v: &[u32]| {
+            for x in v {
+                out.extend_from_slice(&x.to_le_bytes())
+            }
+        };
         u32s(&mut out, &self.strings.offsets);
         out.extend_from_slice(&self.strings.bytes);
-        while out.len() % 4 != 0 { out.push(0); }
+        while out.len() % 4 != 0 {
+            out.push(0);
+        }
         out.extend_from_slice(&self.kind);
-        while out.len() % 4 != 0 { out.push(0); }
-        for v in [&self.str_, &self.a_start, &self.a_count, &self.c_start, &self.c_count, &self.attr_name, &self.attr_c_start, &self.attr_c_count, &self.children, &self.path, &self.path_i_start, &self.path_i_count, &self.idx_c_start, &self.idx_c_count] {
+        while out.len() % 4 != 0 {
+            out.push(0);
+        }
+        for v in [
+            &self.str_,
+            &self.a_start,
+            &self.a_count,
+            &self.c_start,
+            &self.c_count,
+            &self.attr_name,
+            &self.attr_c_start,
+            &self.attr_c_count,
+            &self.children,
+            &self.path,
+            &self.path_i_start,
+            &self.path_i_count,
+            &self.idx_c_start,
+            &self.idx_c_count,
+        ] {
             u32s(&mut out, v);
         }
         out
@@ -403,7 +503,14 @@ impl JsonBuilder {
 
     fn parse_root(&mut self, json: &str) -> crate::Result<Vec<NodeId>> {
         let mut de = serde_json::Deserializer::from_str(json);
-        let kids = Seed(self, Field { key: "children", what: "a DAST root object" }).deserialize(&mut de)?;
+        let kids = Seed(
+            self,
+            Field {
+                key: "children",
+                what: "a DAST root object",
+            },
+        )
+        .deserialize(&mut de)?;
         Ok(kids)
     }
 }
@@ -415,7 +522,11 @@ use std::fmt;
 /// One kind of JSON value the builder reads; `Seed` adapts it to serde.
 trait Item: Copy {
     type Value;
-    fn read<'de, D: de::Deserializer<'de>>(self, b: &mut JsonBuilder, d: D) -> Result<Self::Value, D::Error>;
+    fn read<'de, D: de::Deserializer<'de>>(
+        self,
+        b: &mut JsonBuilder,
+        d: D,
+    ) -> Result<Self::Value, D::Error>;
 }
 
 struct Seed<'b, I>(&'b mut JsonBuilder, I);
@@ -433,7 +544,11 @@ struct Seq<I>(I, &'static str);
 
 impl<I: Item> Item for Seq<I> {
     type Value = Vec<I::Value>;
-    fn read<'de, D: de::Deserializer<'de>>(self, b: &mut JsonBuilder, d: D) -> Result<Self::Value, D::Error> {
+    fn read<'de, D: de::Deserializer<'de>>(
+        self,
+        b: &mut JsonBuilder,
+        d: D,
+    ) -> Result<Self::Value, D::Error> {
         struct V<'b, I>(&'b mut JsonBuilder, Seq<I>);
         impl<'de, I: Item> Visitor<'de> for V<'_, I> {
             type Value = Vec<I::Value>;
@@ -462,7 +577,11 @@ struct Field {
 
 impl Item for Field {
     type Value = Vec<NodeId>;
-    fn read<'de, D: de::Deserializer<'de>>(self, b: &mut JsonBuilder, d: D) -> Result<Self::Value, D::Error> {
+    fn read<'de, D: de::Deserializer<'de>>(
+        self,
+        b: &mut JsonBuilder,
+        d: D,
+    ) -> Result<Self::Value, D::Error> {
         struct V<'b>(&'b mut JsonBuilder, Field);
         impl<'de> Visitor<'de> for V<'_> {
             type Value = Vec<NodeId>;
@@ -493,7 +612,11 @@ struct Node;
 
 impl Item for Node {
     type Value = NodeId;
-    fn read<'de, D: de::Deserializer<'de>>(self, b: &mut JsonBuilder, d: D) -> Result<Self::Value, D::Error> {
+    fn read<'de, D: de::Deserializer<'de>>(
+        self,
+        b: &mut JsonBuilder,
+        d: D,
+    ) -> Result<Self::Value, D::Error> {
         struct V<'b>(&'b mut JsonBuilder);
         impl<'de> Visitor<'de> for V<'_> {
             type Value = NodeId;
@@ -529,7 +652,10 @@ impl Item for Node {
                             let s: Cow<str> = m.next_value()?;
                             value = Some(b.intern(&s));
                         }
-                        "path" => path = m.next_value_seed(Seed(&mut *b, Seq(Part, "a macro path array")))?,
+                        "path" => {
+                            path =
+                                m.next_value_seed(Seed(&mut *b, Seq(Part, "a macro path array")))?
+                        }
                         "attributes" => attrs = m.next_value_seed(Seed(&mut *b, Attrs))?,
                         "children" => kids = m.next_value_seed(Seed(&mut *b, NODES))?,
                         _ => {
@@ -584,7 +710,11 @@ struct Part;
 
 impl Item for Part {
     type Value = (StrId, Vec<Vec<NodeId>>);
-    fn read<'de, D: de::Deserializer<'de>>(self, b: &mut JsonBuilder, d: D) -> Result<Self::Value, D::Error> {
+    fn read<'de, D: de::Deserializer<'de>>(
+        self,
+        b: &mut JsonBuilder,
+        d: D,
+    ) -> Result<Self::Value, D::Error> {
         struct V<'b>(&'b mut JsonBuilder);
         impl<'de> Visitor<'de> for V<'_> {
             type Value = (StrId, Vec<Vec<NodeId>>);
@@ -601,7 +731,18 @@ impl Item for Part {
                             name = Some(self.0.intern(&s));
                         }
                         // Only each index object's `value` node list matters.
-                        "index" => indices = m.next_value_seed(Seed(&mut *self.0, Seq(Field { key: "value", what: "an index object" }, "an index array")))?,
+                        "index" => {
+                            indices = m.next_value_seed(Seed(
+                                &mut *self.0,
+                                Seq(
+                                    Field {
+                                        key: "value",
+                                        what: "an index object",
+                                    },
+                                    "an index array",
+                                ),
+                            ))?
+                        }
                         _ => {
                             m.next_value::<de::IgnoredAny>()?;
                         }
@@ -621,7 +762,11 @@ struct Attrs;
 
 impl Item for Attrs {
     type Value = Vec<(StrId, Vec<NodeId>)>;
-    fn read<'de, D: de::Deserializer<'de>>(self, b: &mut JsonBuilder, d: D) -> Result<Self::Value, D::Error> {
+    fn read<'de, D: de::Deserializer<'de>>(
+        self,
+        b: &mut JsonBuilder,
+        d: D,
+    ) -> Result<Self::Value, D::Error> {
         struct V<'b>(&'b mut JsonBuilder);
         impl<'de> Visitor<'de> for V<'_> {
             type Value = Vec<(StrId, Vec<NodeId>)>;
@@ -633,7 +778,13 @@ impl Item for Attrs {
                 while let Some(key) = m.next_key::<Cow<str>>()? {
                     let name = self.0.intern(&key);
                     // Only each attribute object's `children` matter.
-                    let kids = m.next_value_seed(Seed(&mut *self.0, Field { key: "children", what: "an attribute object" }))?;
+                    let kids = m.next_value_seed(Seed(
+                        &mut *self.0,
+                        Field {
+                            key: "children",
+                            what: "an attribute object",
+                        },
+                    ))?;
                     v.push((name, kids));
                 }
                 Ok(v)
@@ -648,7 +799,8 @@ pub fn load(bytes: &[u8]) -> crate::Result<Dast> {
     if bytes.starts_with(b"CDST") {
         Dast::from_binary(bytes)
     } else {
-        let s = std::str::from_utf8(bytes).map_err(|_| crate::Error::WireFormat("not UTF-8 JSON".into()))?;
+        let s = std::str::from_utf8(bytes)
+            .map_err(|_| crate::Error::WireFormat("not UTF-8 JSON".into()))?;
         Dast::from_json(s)
     }
 }

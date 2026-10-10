@@ -2,9 +2,9 @@
 //! their own siblings.
 
 mod common;
+use cells_core::Request;
 use cells_core::reference;
 use cells_core::test_utils::load;
-use cells_core::{Request};
 use common::*;
 
 #[test]
@@ -20,13 +20,22 @@ fn rigid_polygon_rotates_about_its_centroid_when_one_vertex_is_dragged() {
     .unwrap();
     assert_eq!(v(&doc, "g1.pg", "numVertices"), 4.0);
     let mut verts = [[3.0, 7.0], [-4.0, -1.0], [8.0, 2.0], [-3.0, 4.0]];
-    let c = [verts.iter().map(|p| p[0]).sum::<f64>() / 4.0, verts.iter().map(|p| p[1]).sum::<f64>() / 4.0];
+    let c = [
+        verts.iter().map(|p| p[0]).sum::<f64>() / 4.0,
+        verts.iter().map(|p| p[1]).sum::<f64>() / 4.0,
+    ];
     // Rotate 90 degrees counterclockwise about the centroid, asking for half the length.
-    let requested = [-0.5 * (verts[1][1] - c[1]) + c[0], 0.5 * (verts[1][0] - c[0]) + c[1]];
+    let requested = [
+        -0.5 * (verts[1][1] - c[1]) + c[0],
+        0.5 * (verts[1][0] - c[0]) + c[1],
+    ];
     for p in &mut verts {
         *p = [-(p[1] - c[1]) + c[0], p[0] - c[0] + c[1]];
     }
-    doc.request(&[req(&doc, "g1.pg", "x2", requested[0]), req(&doc, "g1.pg", "y2", requested[1])]);
+    doc.request(&[
+        req(&doc, "g1.pg", "x2", requested[0]),
+        req(&doc, "g1.pg", "y2", requested[1]),
+    ]);
     for (i, p) in verts.iter().enumerate() {
         assert_close!(v(&doc, &format!("p{}", i + 1), "x"), p[0]);
         assert_close!(v(&doc, &format!("p{}", i + 1), "y"), p[1]);
@@ -45,7 +54,16 @@ fn rigid_polygon_rotates_about_its_centroid_when_one_vertex_is_dragged() {
         .flat_map(|(i, p)| {
             let cx = doc.prop_cells(g3, &format!("x{}", i + 1)).unwrap()[0];
             let cy = doc.prop_cells(g3, &format!("y{}", i + 1)).unwrap()[0];
-            [Request { cell: cx, value: p[0] + 3.0 + i as f64 }, Request { cell: cy, value: p[1] + 2.0 + 2.0 * i as f64 }]
+            [
+                Request {
+                    cell: cx,
+                    value: p[0] + 3.0 + i as f64,
+                },
+                Request {
+                    cell: cy,
+                    value: p[1] + 2.0 + 2.0 * i as f64,
+                },
+            ]
         })
         .collect();
     doc.request(&moved);

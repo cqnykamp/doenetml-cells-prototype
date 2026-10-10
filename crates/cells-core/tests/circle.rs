@@ -2,15 +2,22 @@
 //! core's tests drag it.
 
 mod common;
+use cells_core::Request;
 use cells_core::reference;
 use cells_core::test_utils::load;
-use cells_core::{Request};
 use common::*;
 
 #[test]
 fn circle_defaults_to_unit_circle_with_essential_center_and_radius() {
     let mut doc = load(r#"<graph><circle name="c"/></graph>"#).unwrap();
-    assert_eq!((v(&doc, "c", "cx"), v(&doc, "c", "cy"), v(&doc, "c", "radius")), (0.0, 0.0, 1.0));
+    assert_eq!(
+        (
+            v(&doc, "c", "cx"),
+            v(&doc, "c", "cy"),
+            v(&doc, "c", "radius")
+        ),
+        (0.0, 0.0, 1.0)
+    );
     doc.request(&[req(&doc, "c", "cx", 2.0), req(&doc, "c", "cy", 3.0)]);
     assert_eq!((v(&doc, "c", "cx"), v(&doc, "c", "cy")), (2.0, 3.0));
     // A negative radius clamps to zero (projection, ADR 0003).
@@ -27,7 +34,14 @@ fn circle_with_center_point_and_bound_radius() {
            <point name="cc" extend="$c.center"/>"#,
     )
     .unwrap();
-    assert_eq!((v(&doc, "c", "cx"), v(&doc, "c", "cy"), v(&doc, "c", "radius")), (-3.0, 5.0, 3.0));
+    assert_eq!(
+        (
+            v(&doc, "c", "cx"),
+            v(&doc, "c", "cy"),
+            v(&doc, "c", "radius")
+        ),
+        (-3.0, 5.0, 3.0)
+    );
     // Dragging the circle moves the defining point.
     doc.request(&[req(&doc, "c", "cx", 2.0), req(&doc, "c", "cy", 3.0)]);
     assert_eq!((v(&doc, "p", "x"), v(&doc, "p", "y")), (2.0, 3.0));
@@ -69,11 +83,18 @@ fn circle_through_three_points_drags_rigidly_and_scales_about_center() {
            </graph>"#,
     )
     .unwrap();
-    let (cx, cy, r) = (v(&doc, "c", "cx"), v(&doc, "c", "cy"), v(&doc, "c", "radius"));
+    let (cx, cy, r) = (
+        v(&doc, "c", "cx"),
+        v(&doc, "c", "cy"),
+        v(&doc, "c", "radius"),
+    );
     for (x, y) in [(2.0, -3.0), (3.0, 4.0), (-3.0, 4.0)] {
         assert_close!((x - cx).hypot(y - cy), r);
     }
-    doc.request(&[req(&doc, "c", "cx", cx + 3.0), req(&doc, "c", "cy", cy + 4.0)]);
+    doc.request(&[
+        req(&doc, "c", "cx", cx + 3.0),
+        req(&doc, "c", "cy", cy + 4.0),
+    ]);
     assert_close!(v(&doc, "p1", "x"), 5.0);
     assert_close!(v(&doc, "p1", "y"), 1.0);
     assert_close!(v(&doc, "p3", "x"), 0.0);
@@ -92,7 +113,10 @@ fn circle_with_radius_and_two_points() {
     // The current core's closed form puts the center on the left of p1 -> p2.
     assert_close!(v(&doc, "c", "cx"), 1.0);
     assert_close!(v(&doc, "c", "cy"), 3f64.sqrt());
-    doc.request(&[req(&doc, "c", "cx", 11.0), req(&doc, "c", "cy", 10.0 + 3f64.sqrt())]);
+    doc.request(&[
+        req(&doc, "c", "cx", 11.0),
+        req(&doc, "c", "cy", 10.0 + 3f64.sqrt()),
+    ]);
     assert_close!(v(&doc, "p1", "x"), 10.0);
     assert_close!(v(&doc, "p1", "y"), 10.0);
     assert_close!(v(&doc, "p2", "x"), 12.0);
@@ -128,7 +152,10 @@ fn circle_through_three_points_one_constrained() {
     )
     .unwrap();
     let (cx, cy) = (v(&doc, "c", "cx"), v(&doc, "c", "cy"));
-    doc.request(&[req(&doc, "c", "cx", cx + 1.0), req(&doc, "c", "cy", cy + 1.0)]);
+    doc.request(&[
+        req(&doc, "c", "cx", cx + 1.0),
+        req(&doc, "c", "cy", cy + 1.0),
+    ]);
     // p1 snapped to (0,2): the shift (-1, +1) is applied to every point.
     assert_eq!((v(&doc, "p1", "x"), v(&doc, "p1", "y")), (0.0, 2.0));
     assert_close!(v(&doc, "p2", "x"), 4.0);
@@ -140,8 +167,15 @@ fn circle_through_three_points_one_constrained() {
 #[test]
 fn circle_through_triangle_vertices() {
     let doc = load(r#"<graph><triangle name="t" vertices="(1,2) (3,5) (-5,2)"/><circle name="c" through="$t.vertex1 $t.vertex2 $t.vertex3"/></graph>"#).unwrap();
-    assert_eq!((v(&doc, "t", "x1"), v(&doc, "t", "y2"), v(&doc, "t", "x3")), (1.0, 5.0, -5.0));
-    let (cx, cy, r) = (v(&doc, "c", "cx"), v(&doc, "c", "cy"), v(&doc, "c", "radius"));
+    assert_eq!(
+        (v(&doc, "t", "x1"), v(&doc, "t", "y2"), v(&doc, "t", "x3")),
+        (1.0, 5.0, -5.0)
+    );
+    let (cx, cy, r) = (
+        v(&doc, "c", "cx"),
+        v(&doc, "c", "cy"),
+        v(&doc, "c", "radius"),
+    );
     assert!(r > 0.0, "radius {r}, center ({cx}, {cy})");
     assert_close!((1.0 - cx).hypot(2.0 - cy), r);
     assert_close!((-5.0 - cx).hypot(2.0 - cy), r);
@@ -159,9 +193,16 @@ fn fixed_number_and_inscribed_triangle_drag() {
     )
     .unwrap();
     let z = doc.cell("fixedZero", "value").unwrap();
-    let tick = doc.request(&[Request { cell: z, value: 5.0 }]);
+    let tick = doc.request(&[Request {
+        cell: z,
+        value: 5.0,
+    }]);
     assert_eq!(tick.dropped.len(), 1, "a fixed number must reject writes");
-    let (cx, cy, r) = (v(&doc, "c", "cx"), v(&doc, "c", "cy"), v(&doc, "c", "radius"));
+    let (cx, cy, r) = (
+        v(&doc, "c", "cx"),
+        v(&doc, "c", "cy"),
+        v(&doc, "c", "radius"),
+    );
     // The y request lands on the fixed zero and is dropped; x moves the circle.
     let tick = doc.request(&[req(&doc, "x", "x", -3.0), req(&doc, "x", "y", 0.0)]);
     assert_eq!(tick.dropped.len(), 1);

@@ -80,9 +80,18 @@ fn instantiate_substitutes_cell_leaves() {
     let mut f = Flat::new();
     // n x + 2 x, with n a numeric leaf on cell 0 and m a math leaf on cell 1.
     let t = f.import(&Tree::Add(vec![
-        Tree::Mul(vec![Tree::Cell { cell: 0, math: false }, Tree::Sym("x".into())]),
+        Tree::Mul(vec![
+            Tree::Cell {
+                cell: 0,
+                math: false,
+            },
+            Tree::Sym("x".into()),
+        ]),
         Tree::Mul(vec![Tree::Num(2.0), Tree::Sym("x".into())]),
-        Tree::Cell { cell: 1, math: true },
+        Tree::Cell {
+            cell: 1,
+            math: true,
+        },
     ]));
     let y2 = p(&mut f, "y^2");
     let h = f.instantiate(t, &[3.0, y2 as f64]);

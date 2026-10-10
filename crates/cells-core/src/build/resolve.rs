@@ -5,18 +5,36 @@ use super::*;
 
 impl<'c, 'a> Builder<'c, 'a> {
     /// The slot an `Arg` names for component `comp` in `scope`.
-    pub(super) fn arg_slot(&mut self, arg: Arg, comp: CompIdx, scope: ScopeId, kind: ComponentKind, pi: usize) -> Result<SlotId> {
+    pub(super) fn arg_slot(
+        &mut self,
+        arg: Arg,
+        comp: CompIdx,
+        scope: ScopeId,
+        kind: ComponentKind,
+        pi: usize,
+    ) -> Result<SlotId> {
         Ok(match arg {
             Arg::Own(a) => self.slot(comp, a as usize),
             Arg::Elem(el, slot) => {
                 let other = self.scope_comps[scope as usize][el];
                 self.slot(other, slot as usize)
             }
-            Arg::Ref(p, Sel::Whole) => self.resolve_one(p, scope).map_err(|e| arity_error(e, kind, kind.prop_defs().get(pi).map(|d| d.name).unwrap_or("args")))?,
+            Arg::Ref(p, Sel::Whole) => self.resolve_one(p, scope).map_err(|e| {
+                arity_error(
+                    e,
+                    kind,
+                    kind.prop_defs().get(pi).map(|d| d.name).unwrap_or("args"),
+                )
+            })?,
             Arg::Ref(p, Sel::Coord(j)) => {
                 let targets = self.resolve_ref(p, scope, Some(2))?;
                 if targets.len() != 2 {
-                    return Err(Error::ArityMismatch { kind: kind.tag().into(), prop: "coords".into(), expected: 2, got: targets.len() });
+                    return Err(Error::ArityMismatch {
+                        kind: kind.tag().into(),
+                        prop: "coords".into(),
+                        expected: 2,
+                        got: targets.len(),
+                    });
                 }
                 targets[j as usize]
             }
@@ -32,7 +50,11 @@ impl<'c, 'a> Builder<'c, 'a> {
 
     /// Walk a plan from `scope`. Returns where it arrived and the prop it
     /// named, if any. Every step is an array read.
-    pub(super) fn resolve(&self, plan: RefId, scope: ScopeId) -> Result<(Resolved, Option<&'c str>)> {
+    pub(super) fn resolve(
+        &self,
+        plan: RefId,
+        scope: ScopeId,
+    ) -> Result<(Resolved, Option<&'c str>)> {
         let p = &self.c.refs[plan];
         let mut sc = scope;
         for _ in 0..p.hops {
@@ -65,20 +87,37 @@ impl<'c, 'a> Builder<'c, 'a> {
                         Resolved::Comp(c) => match self.comps.kind[c as usize] {
                             ComponentKind::RepeatForSequence => {
                                 let r = &self.repeats[self.comp_repeat[c as usize] as usize];
-                                if k < 1 || k > r.n as i64 { Resolved::Missing } else { Resolved::Iter(c, r.iter_scopes[(k - 1) as usize]) }
+                                if k < 1 || k > r.n as i64 {
+                                    Resolved::Missing
+                                } else {
+                                    Resolved::Iter(c, r.iter_scopes[(k - 1) as usize])
+                                }
                             }
                             ComponentKind::Collect => match self.collected.get(&c) {
-                                Some(items) if k >= 1 && (k as usize) <= items.len() => Resolved::Comp(items[(k - 1) as usize]),
+                                Some(items) if k >= 1 && (k as usize) <= items.len() => {
+                                    Resolved::Comp(items[(k - 1) as usize])
+                                }
                                 Some(_) => Resolved::Missing,
                                 None => return Err(Error::NotIndexable(p.display.clone())),
                             },
                             ComponentKind::PointList => {
-                                let (s, n) = (self.comps.child_start[c as usize] as usize, self.comps.child_count[c as usize] as usize);
-                                if k >= 1 && (k as usize) <= n { Resolved::Comp(self.comps.child_list[s + k as usize - 1]) } else { Resolved::Missing }
+                                let (s, n) = (
+                                    self.comps.child_start[c as usize] as usize,
+                                    self.comps.child_count[c as usize] as usize,
+                                );
+                                if k >= 1 && (k as usize) <= n {
+                                    Resolved::Comp(self.comps.child_list[s + k as usize - 1])
+                                } else {
+                                    Resolved::Missing
+                                }
                             }
                             ComponentKind::Select => {
                                 let inst = &self.choice_insts[self.comp_choice[&c]];
-                                if k < 1 || k as usize > inst.scopes.len() { Resolved::Missing } else { Resolved::Iter(c, inst.scopes[(k - 1) as usize]) }
+                                if k < 1 || k as usize > inst.scopes.len() {
+                                    Resolved::Missing
+                                } else {
+                                    Resolved::Iter(c, inst.scopes[(k - 1) as usize])
+                                }
                             }
                             _ => return Err(Error::NotIndexable(p.display.clone())),
                         },
@@ -112,14 +151,27 @@ impl<'c, 'a> Builder<'c, 'a> {
             Resolved::Comp(c) => Ok(c),
             Resolved::Iter(repeat, s) => {
                 let comps = self.iteration_components(repeat, s);
-                if comps.len() == 1 { Ok(comps[0]) } else { Err(Error::AmbiguousIteration(self.c.refs[plan].display.clone(), comps.len())) }
+                if comps.len() == 1 {
+                    Ok(comps[0])
+                } else {
+                    Err(Error::AmbiguousIteration(
+                        self.c.refs[plan].display.clone(),
+                        comps.len(),
+                    ))
+                }
             }
             Resolved::Missing => Err(Error::UnknownName(self.c.refs[plan].display.clone())),
         }
     }
 
     /// Slots named by a resolved path, using the default prop when none was given.
-    pub(super) fn targets_of(&mut self, target: Resolved, prop: Option<&str>, plan: RefId, expected: Option<usize>) -> Result<Vec<SlotId>> {
+    pub(super) fn targets_of(
+        &mut self,
+        target: Resolved,
+        prop: Option<&str>,
+        plan: RefId,
+        expected: Option<usize>,
+    ) -> Result<Vec<SlotId>> {
         let comp = match target {
             Resolved::Missing => {
                 let s = self.missing_slot();
@@ -130,16 +182,29 @@ impl<'c, 'a> Builder<'c, 'a> {
         let kind = self.comps.kind[comp as usize];
         let prop = match prop {
             Some(p) => p,
-            None => kind.default_prop().ok_or_else(|| Error::NoDefaultProp(self.comp_label(comp)))?,
+            None => kind
+                .default_prop()
+                .ok_or_else(|| Error::NoDefaultProp(self.comp_label(comp)))?,
         };
         if let Some(parts) = kind.virtual_prop(prop) {
-            return Ok(parts.iter().map(|p| self.slot(comp, kind.prop_index(p).unwrap())).collect());
+            return Ok(parts
+                .iter()
+                .map(|p| self.slot(comp, kind.prop_index(p).unwrap()))
+                .collect());
         }
-        let pi = kind.prop_index(prop).ok_or_else(|| Error::UnknownProp { name: self.comp_label(comp), prop: prop.into() })?;
+        let pi = kind.prop_index(prop).ok_or_else(|| Error::UnknownProp {
+            name: self.comp_label(comp),
+            prop: prop.into(),
+        })?;
         Ok(vec![self.slot(comp, pi)])
     }
 
-    pub(super) fn resolve_ref(&mut self, plan: RefId, scope: ScopeId, expected: Option<usize>) -> Result<Vec<SlotId>> {
+    pub(super) fn resolve_ref(
+        &mut self,
+        plan: RefId,
+        scope: ScopeId,
+        expected: Option<usize>,
+    ) -> Result<Vec<SlotId>> {
         let (target, prop) = self.resolve(plan, scope)?;
         self.targets_of(target, prop, plan, expected)
     }
@@ -156,12 +221,22 @@ impl<'c, 'a> Builder<'c, 'a> {
         let kind = self.comps.kind[comp as usize];
         let prop = match prop {
             Some(p) => p,
-            None => kind.default_prop().ok_or_else(|| Error::NoDefaultProp(self.comp_label(comp)))?,
+            None => kind
+                .default_prop()
+                .ok_or_else(|| Error::NoDefaultProp(self.comp_label(comp)))?,
         };
         if let Some(parts) = kind.virtual_prop(prop) {
-            return Err(Error::ArityMismatch { kind: String::new(), prop: String::new(), expected: 1, got: parts.len() });
+            return Err(Error::ArityMismatch {
+                kind: String::new(),
+                prop: String::new(),
+                expected: 1,
+                got: parts.len(),
+            });
         }
-        let pi = kind.prop_index(prop).ok_or_else(|| Error::UnknownProp { name: self.comp_label(comp), prop: prop.into() })?;
+        let pi = kind.prop_index(prop).ok_or_else(|| Error::UnknownProp {
+            name: self.comp_label(comp),
+            prop: prop.into(),
+        })?;
         Ok(self.slot(comp, pi))
     }
 }
@@ -169,7 +244,12 @@ impl<'c, 'a> Builder<'c, 'a> {
 /// Fill in the kind and prop of an arity error raised by `resolve_one`.
 fn arity_error(e: Error, kind: ComponentKind, prop: &str) -> Error {
     match e {
-        Error::ArityMismatch { expected, got, .. } => Error::ArityMismatch { kind: kind.tag().into(), prop: prop.into(), expected, got },
+        Error::ArityMismatch { expected, got, .. } => Error::ArityMismatch {
+            kind: kind.tag().into(),
+            prop: prop.into(),
+            expected,
+            got,
+        },
         other => other,
     }
 }

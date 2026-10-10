@@ -20,20 +20,36 @@ fn samples(doc: &Document, name: &str) -> Vec<f64> {
 }
 
 fn tapes(doc: &Document) -> usize {
-    doc.program.instrs.iter().filter(|i| matches!(i.op, Op::Sym(SymKind::SampleTape { .. }, ..))).count()
+    doc.program
+        .instrs
+        .iter()
+        .filter(|i| matches!(i.op, Op::Sym(SymKind::SampleTape { .. }, ..)))
+        .count()
 }
 
 #[test]
 fn tapes_sample_what_the_engine_samples() {
     let json = dast_json(SRC);
-    let mut slow = Document::load(json.as_bytes(), LoadOptions { sample_with_engine: true, ..Default::default() }).unwrap().0;
+    let mut slow = Document::load(
+        json.as_bytes(),
+        LoadOptions {
+            sample_with_engine: true,
+            ..Default::default()
+        },
+    )
+    .unwrap()
+    .0;
     let mut fast = Document::from_bytes(json.as_bytes()).unwrap();
     assert_eq!(tapes(&slow), 0);
     // f, df, g, dg, h compile; k and dk depend on a mathInput's expression.
     assert_eq!(tapes(&fast), 5);
     let check = |slow: &Document, fast: &Document| {
         for name in ["f", "df", "g", "dg", "h", "k", "dk"] {
-            for (i, (s, f)) in samples(slow, name).iter().zip(samples(fast, name)).enumerate() {
+            for (i, (s, f)) in samples(slow, name)
+                .iter()
+                .zip(samples(fast, name))
+                .enumerate()
+            {
                 let ok = (s.is_nan() && f.is_nan()) || (s - f).abs() <= 1e-9 * s.abs().max(1.0);
                 assert!(ok, "{name}[{i}]: engine {s}, tape {f}");
             }
@@ -42,11 +58,23 @@ fn tapes_sample_what_the_engine_samples() {
     check(&slow, &fast);
     for (a, b) in [(2.0, 0.5), (-1.0, 3.0), (0.25, -4.0)] {
         for doc in [&mut slow, &mut fast] {
-            let r = [Request { cell: doc.cell("a", "value").unwrap(), value: a }, Request { cell: doc.cell("b", "value").unwrap(), value: b }];
+            let r = [
+                Request {
+                    cell: doc.cell("a", "value").unwrap(),
+                    value: a,
+                },
+                Request {
+                    cell: doc.cell("b", "value").unwrap(),
+                    value: b,
+                },
+            ];
             doc.request(&r);
         }
         check(&slow, &fast);
-        assert_eq!(slow.math_text(slow.cell("df", "expr").unwrap()), fast.math_text(fast.cell("df", "expr").unwrap()));
+        assert_eq!(
+            slow.math_text(slow.cell("df", "expr").unwrap()),
+            fast.math_text(fast.cell("df", "expr").unwrap())
+        );
     }
     assert_eq!(cells_core::reference::check(&fast), None);
 }

@@ -4,9 +4,9 @@
 
 mod common;
 
+use cells_core::Document;
 use cells_core::reference;
 use cells_core::test_utils::load;
-use cells_core::Document;
 use common::{req, type_into};
 
 fn text(doc: &Document, name: &str) -> String {
@@ -20,7 +20,9 @@ fn runs(doc: &Document) -> u64 {
 
 #[test]
 fn simplify_reruns_when_a_numeric_leaf_changes() {
-    let mut doc = load(r#"<numberInput name="n" value="2"/><math name="m" simplify>$n x + 2x</math>"#).unwrap();
+    let mut doc =
+        load(r#"<numberInput name="n" value="2"/><math name="m" simplify>$n x + 2x</math>"#)
+            .unwrap();
     assert_eq!(text(&doc, "m"), "4 x");
     doc.request(&[req(&doc, "n", "value", 3.0)]);
     assert_eq!(text(&doc, "m"), "5 x");
@@ -29,13 +31,16 @@ fn simplify_reruns_when_a_numeric_leaf_changes() {
 
 #[test]
 fn expand_multiplies_out() {
-    let doc = load(r#"<numberInput name="n" value="3"/><math name="m" expand>(x + $n)^2</math>"#).unwrap();
+    let doc = load(r#"<numberInput name="n" value="3"/><math name="m" expand>(x + $n)^2</math>"#)
+        .unwrap();
     assert_eq!(text(&doc, "m"), "x^2 + 6 x + 9");
 }
 
 #[test]
 fn unbound_math_input_is_an_essential_math_cell() {
-    let mut doc = load(r#"<mathInput name="mi" prefill="x+1"/><math name="m" simplify>$mi + $mi</math>"#).unwrap();
+    let mut doc =
+        load(r#"<mathInput name="mi" prefill="x+1"/><math name="m" simplify>$mi + $mi</math>"#)
+            .unwrap();
     assert_eq!(text(&doc, "m"), "2 x + 2");
     assert!(doc.is_essential(doc.cell("mi", "expr").unwrap()));
     type_into(&mut doc, "mi", "y");
@@ -53,7 +58,9 @@ fn unbound_math_input_is_an_essential_math_cell() {
 
 #[test]
 fn a_bound_math_input_stays_numeric() {
-    let mut doc = load(r#"<numberInput name="a" value="2"/><mathInput name="mi" bindValueTo="$a"/>"#).unwrap();
+    let mut doc =
+        load(r#"<numberInput name="a" value="2"/><mathInput name="mi" bindValueTo="$a"/>"#)
+            .unwrap();
     assert!(doc.value("mi", "expr").unwrap().is_nan());
     doc.request(&[req(&doc, "mi", "value", 7.0)]);
     assert_eq!(doc.value("a", "value"), Some(7.0));
@@ -77,7 +84,11 @@ fn answers_check_only_on_submit() {
     assert_eq!(runs(&doc) - before, 1, "one check, nothing else reruns");
     let b = doc.resolve_path("b").unwrap();
     doc.submit(b);
-    assert_eq!(doc.value("b", "credit"), Some(0.0), "as written, 1+x^2 is not x^2+1");
+    assert_eq!(
+        doc.value("b", "credit"),
+        Some(0.0),
+        "as written, 1+x^2 is not x^2+1"
+    );
     type_into(&mut doc, "mi2", "x^2+1");
     doc.submit(b);
     assert_eq!(doc.value("b", "credit"), Some(1.0));
@@ -108,7 +119,11 @@ fn symbolic_instructions_are_gated_on_their_inputs() {
     let mut doc = load(r#"<numberInput name="a" value="1"/><numberInput name="b" value="1"/><math name="m" simplify>$a x + x</math>"#).unwrap();
     let before = runs(&doc);
     doc.request(&[req(&doc, "b", "value", 2.0)]);
-    assert_eq!(runs(&doc), before, "an unrelated drag runs no symbolic work");
+    assert_eq!(
+        runs(&doc),
+        before,
+        "an unrelated drag runs no symbolic work"
+    );
     doc.request(&[req(&doc, "a", "value", 2.0)]);
     assert_eq!(runs(&doc) - before, 2, "instantiate and evaluate");
 }
@@ -119,7 +134,11 @@ fn equal_handles_stop_downstream_reruns() {
     let mut doc = load(r#"<numberInput name="n" value="2"/><math name="m" simplify>0 $n + x</math><math name="m2" simplify>$m + 1</math>"#).unwrap();
     let before = runs(&doc);
     let tick = doc.request(&[req(&doc, "n", "value", 3.0)]);
-    assert_eq!(runs(&doc) - before, 1, "only m reruns; its handle is unchanged");
+    assert_eq!(
+        runs(&doc) - before,
+        1,
+        "only m reruns; its handle is unchanged"
+    );
     assert_eq!(tick.changed, vec![doc.cell("n", "value").unwrap()]);
 }
 
@@ -141,6 +160,9 @@ fn math_to_number_to_math() {
 
 #[test]
 fn a_copy_of_a_symbolic_math_shares_its_cell() {
-    let doc = load(r#"<numberInput name="n" value="2"/><math name="m">$n x</math><math name="c">$m</math>"#).unwrap();
+    let doc = load(
+        r#"<numberInput name="n" value="2"/><math name="m">$n x</math><math name="c">$m</math>"#,
+    )
+    .unwrap();
     assert_eq!(doc.cell("c", "expr"), doc.cell("m", "expr"));
 }
