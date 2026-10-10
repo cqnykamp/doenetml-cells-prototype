@@ -17,98 +17,115 @@ use crate::program::OpSpec;
 pub mod prop;
 mod types;
 
-pub use types::COMPONENT_TYPES;
+/// Declares every component type from one list: the `ComponentType` enum,
+/// `ComponentType::ALL`, and `COMPONENT_TYPES`, all in list order. Each
+/// entry names its type's row (built with `info`).
+macro_rules! component_types {
+    ($($(#[$doc:meta])* $variant:ident => $info:expr,)*) => {
+        /// `repr(u8)` so the renderer can read the type column as a byte
+        /// array; the discriminants follow the list in `component_types!`.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+        #[repr(u8)]
+        pub enum ComponentType {
+            $($(#[$doc])* $variant,)*
+        }
 
-/// `repr(u8)` so the renderer can read the type column as a byte array; the
-/// discriminant order matches `ComponentType::ALL`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[repr(u8)]
-pub enum ComponentType {
-    Document = 0,
-    Graph = 1,
-    Point = 2,
-    Number = 3,
-    NumberInput = 4,
+        impl ComponentType {
+            /// Every type, in discriminant order.
+            pub const ALL: &[ComponentType] = &[$(ComponentType::$variant,)*];
+        }
+
+        /// Every type's row, indexed by discriminant.
+        pub const COMPONENT_TYPES: &[ComponentTypeInfo] = &[$($info,)*];
+    };
+}
+
+component_types! {
+    Document => types::DOCUMENT,
+    Graph => types::GRAPH,
+    Point => types::POINT,
+    Number => types::NUMBER,
+    NumberInput => types::NUMBER_INPUT,
     /// Prototype-only tag that applies a numeric operator to referenced cells.
-    Op = 5,
-    Slider = 6,
+    Op => types::OP,
+    Slider => types::SLIDER,
     /// `<repeatForSequence>`: its children are every iteration's expanded
     /// template, flattened; its `count` prop is the structural cell.
-    RepeatForSequence = 7,
+    RepeatForSequence => types::REPEAT_FOR_SEQUENCE,
     /// `<collect>`: its children are copies of the collected components.
-    Collect = 8,
+    Collect => types::COLLECT,
     /// The hidden component behind a repeat's `valueName`: `from + (k-1) * step`.
-    SequenceValue = 9,
+    SequenceValue => types::SEQUENCE_VALUE,
     /// A checkbox: its value cell holds 0 or 1 like any other `f64` cell.
-    BooleanInput = 10,
+    BooleanInput => types::BOOLEAN_INPUT,
     /// `<math>`: lowered to a numeric chain in `value` when its expression
     /// is all numbers and numeric cells (`expr` is then NaN). Otherwise a
     /// math cell: `expr` holds an engine handle, instantiated from the
     /// template whenever a leaf changes (then simplified or expanded if the
     /// attribute says so), and `value` evaluates it (NaN with free symbols).
-    Math = 11,
+    Math => types::MATH,
     /// `<evaluate function="$m" input="$a"/>`: the math's expression with
     /// its free symbol set to the input.
-    Evaluate = 12,
+    Evaluate => types::EVALUATE,
     /// `<mathInput>`: bound to another cell by a child reference or
     /// `bindValueTo`, it is a numeric input (`expr` NaN). Unbound, its `expr`
     /// is an essential math cell (typing writes a parsed handle) and `value`
     /// evaluates it; a request on `value` writes a constant expression.
-    MathInput = 13,
+    MathInput => types::MATH_INPUT,
     /// `<circle>`: center and radius are derived or essential depending on
     /// how the circle is specified (ADR 0006). Chains are planned in `build/compile/geometry/`.
-    Circle = 14,
+    Circle => types::CIRCLE,
     /// `<line>`: its own two points are derived cells (ADR 0006); slope,
     /// intercepts and coefficients follow from them or from the equation.
-    Line = 15,
+    Line => types::LINE,
     /// `<lineSegment endpoints="$a $b">`.
-    LineSegment = 16,
+    LineSegment => types::LINE_SEGMENT,
     /// `<polygon vertices="...">`, optionally rigid. Up to `MAX_VERTICES`.
-    Polygon = 17,
+    Polygon => types::POLYGON,
     /// `<pointList extend="$l.points">`: its children are points aliasing
     /// the items of an array prop.
-    PointList = 18,
+    PointList => types::POINT_LIST,
     /// `<p>`: a rendered container with no props of its own.
-    P = 19,
+    P => types::P,
     /// `<setup>`: an unrendered container.
-    Setup = 20,
+    Setup => types::SETUP,
     /// `<stickyGroup>`: a container whose members snap to one another when
     /// dragged (ADR 0007). `threshold` NaN means the default.
-    StickyGroup = 21,
+    StickyGroup => types::STICKY_GROUP,
     /// `<function>`: a math cell `expr` (variable `x`) and, as a curve, the
     /// `SAMPLES` cells from `samples` on, filled by a `Sample` instruction
     /// over the enclosing graph's x-range.
-    Function = 22,
+    Function => types::FUNCTION,
     /// `<derivative>$f</derivative>`: d/dx of a function or math, sampled
     /// like a function.
-    Derivative = 23,
+    Derivative => types::DERIVATIVE,
     /// `<answer response="$mi">correct</answer>`: `submitted` is an
     /// essential math cell that a submit request sets to the response;
     /// `credit` compares it with `correct` (`symbolicEquality`: as written).
-    Answer = 24,
+    Answer => types::ANSWER,
     /// `<text>` with literal content: `value` is a fixed cell holding the
     /// string id of its text (ADR 0009). A cell's meaning is a property of
     /// the operators around it, so a text value never reaches a numeric one.
-    Text = 25,
+    Text => types::TEXT,
     /// `<conditionalContent>`, a reactive choice (ADR 0009). Its
     /// `choice` cell is the 1-based position of the first case whose
     /// condition holds, or 0. Its children are `Case` components.
-    ConditionalContent = 26,
+    ConditionalContent => types::CONDITIONAL_CONTENT,
     /// One built branch of a reactive choice: `active` is 1 while it is the
     /// chosen one. Its children are the branch's content. A renderer shows
     /// the children of an active case only.
-    Case = 27,
+    Case => types::CASE,
     /// `<select>`, a load-time choice: its children are the content of the
     /// options it picked, flattened like a repeat's iterations.
-    Select = 28,
+    Select => types::SELECT,
     /// `<group>`: a rendered container with no props of its own.
-    Group = 29,
+    Group => types::GROUP,
     /// `<section>`, `<subsection>`, `<subsubsection>`, `<problem>`,
     /// `<exercise>`, `<example>`: a rendered container that is numbered
     /// among its sibling sections and, when it aggregates scores, holds the
     /// weighted credit of the answers and sections inside it. Both are
     /// wired after expansion (`build/expand/scoring.rs`).
-    Section = 30,
+    Section => types::SECTION,
 }
 
 /// The tags that make a `Section`, in the order of its `label` cell, with
@@ -130,7 +147,6 @@ pub const MAX_VERTICES: usize = 16;
 /// What the core knows about a type apart from how it is planned and
 /// expanded: one row per type in `COMPONENT_TYPES`, indexed by discriminant.
 pub struct ComponentTypeInfo {
-    pub component_type: ComponentType,
     /// The tag the type shows as, then other tags that make it.
     pub tags: &'static [&'static str],
     pub props: &'static [PropDef],
@@ -175,13 +191,8 @@ const INTERNAL: u8 = 16;
 
 /// A row of `COMPONENT_TYPES`, to be finished with the builder methods:
 /// `info(..).copyable().default_prop("value")`.
-const fn info(
-    component_type: ComponentType,
-    tags: &'static [&'static str],
-    props: &'static [PropDef],
-) -> ComponentTypeInfo {
+const fn info(tags: &'static [&'static str], props: &'static [PropDef]) -> ComponentTypeInfo {
     ComponentTypeInfo {
-        component_type,
         tags,
         props,
         default_prop: None,
@@ -241,16 +252,6 @@ impl ComponentTypeInfo {
 }
 
 impl ComponentType {
-    pub const ALL: [ComponentType; 31] = {
-        let mut out = [ComponentType::Document; 31];
-        let mut i = 0;
-        while i < COMPONENT_TYPES.len() {
-            out[i] = COMPONENT_TYPES[i].component_type;
-            i += 1;
-        }
-        out
-    };
-
     pub fn info(self) -> &'static ComponentTypeInfo {
         &COMPONENT_TYPES[self as usize]
     }
@@ -259,10 +260,10 @@ impl ComponentType {
         static BY_TAG: std::sync::OnceLock<std::collections::HashMap<&'static str, ComponentType>> =
             std::sync::OnceLock::new();
         let by_tag = BY_TAG.get_or_init(|| {
-            COMPONENT_TYPES
+            ComponentType::ALL
                 .iter()
-                .filter(|k| k.flags & INTERNAL == 0)
-                .flat_map(|k| k.tags.iter().map(move |&t| (t, k.component_type)))
+                .filter(|k| k.info().flags & INTERNAL == 0)
+                .flat_map(|&k| k.info().tags.iter().map(move |&t| (t, k)))
                 .collect()
         });
         by_tag.get(tag).copied()

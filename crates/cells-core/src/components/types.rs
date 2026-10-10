@@ -1,10 +1,11 @@
 //! The data: every type's prop table and its row in `COMPONENT_TYPES`.
 
 use super::{
-    Args, ArrayProp, ComponentType, ComponentTypeInfo, MAX_ARGS, MAX_VERTICES, PropDef, PropFrom,
-    info, prop, str_eq,
+    Args, ArrayProp, ComponentTypeInfo, MAX_ARGS, MAX_VERTICES, PropDef, PropFrom, info, prop,
+    str_eq,
 };
 use crate::program::{OpSpec, SymKind};
+use crate::tick::snap::Shape;
 
 /// A prop as a table writes it: like a [`PropDef`], but naming the props a
 /// computed prop reads. [`props`] resolves the names to positions.
@@ -411,145 +412,154 @@ pub(super) const LINE_POINTS: &[ArrayProp] = &[ArrayProp {
     items: &[["x1", "y1"], ["x2", "y2"]],
 }];
 
-pub const COMPONENT_TYPES: [ComponentTypeInfo; 31] = {
-    use crate::tick::snap::Shape;
-    use ComponentType as K;
-    [
-        info(K::Document, &["document"], DOCUMENT_PROPS),
-        info(K::Graph, &["graph"], GRAPH_PROPS).container(),
-        info(K::Point, &["point"], POINT_PROPS)
-            .copyable()
-            .planned()
-            .default_prop("coords")
-            .views(&[("coords", ["x", "y"])])
-            .sticky(Shape::Point, prop::point::X, 1),
-        info(K::Number, &["number"], NUMBER_PROPS)
-            .copyable()
-            .default_prop("value"),
-        info(K::NumberInput, &["numberInput"], NUMBER_INPUT_PROPS)
-            .copyable()
-            .default_prop("value"),
-        info(K::Op, &["op"], OP_PROPS)
-            .copyable()
-            .default_prop("value"),
-        info(K::Slider, &["slider"], SLIDER_PROPS)
-            .copyable()
-            .default_prop("value"),
-        info(K::RepeatForSequence, &["repeatForSequence"], REPEAT_PROPS),
-        info(K::Collect, &["collect"], COLLECT_PROPS),
-        info(K::SequenceValue, &["sequenceValue"], SEQUENCE_VALUE_PROPS)
-            .copyable()
-            .internal()
-            .default_prop("value"),
-        info(K::BooleanInput, &["booleanInput"], BOOLEAN_INPUT_PROPS)
-            .copyable()
-            .default_prop("value"),
-        info(K::Math, &["math"], MATH_PROPS)
-            .copyable()
-            .default_prop("value"),
-        info(K::Evaluate, &["evaluate"], EVALUATE_PROPS)
-            .copyable()
-            .default_prop("value"),
-        info(K::MathInput, &["mathInput"], MATH_INPUT_PROPS)
-            .copyable()
-            .default_prop("value"),
-        info(K::Circle, &["circle"], CIRCLE_PROPS)
-            .copyable()
-            .planned()
-            .views(&[
-                ("center", ["centerX", "centerY"]),
-                ("numericalCenter", ["cx", "cy"]),
-            ])
-            .arrays(&[ArrayProp {
-                names: &["throughPoints"],
-                item: "throughPoint",
-                items: &[
-                    ["throughX1", "throughY1"],
-                    ["throughX2", "throughY2"],
-                    ["throughX3", "throughY3"],
-                ],
-            }])
-            .aliases(&[
-                ("centerX1", "centerX"),
-                ("centerX2", "centerY"),
-                ("throughPointX1_1", "throughX1"),
-                ("throughPointX1_2", "throughY1"),
-                ("throughPointX2_1", "throughX2"),
-                ("throughPointX2_2", "throughY2"),
-                ("throughPointX3_1", "throughX3"),
-                ("throughPointX3_2", "throughY3"),
-            ]),
-        info(K::Line, &["line"], LINE_PROPS)
-            .copyable()
-            .planned()
-            .arrays(LINE_POINTS),
-        info(K::LineSegment, &["lineSegment"], LINE_SEGMENT_PROPS)
-            .copyable()
-            .planned()
-            .arrays(LINE_POINTS)
-            .sticky(Shape::Open, prop::segment::X1, 2),
-        info(K::Polygon, &["polygon", "triangle"], POLYGON_PROPS)
-            .copyable()
-            .planned()
-            .arrays(&[ArrayProp {
-                names: &["vertices"],
-                item: "vertex",
-                items: &VERTEX_PARTS,
-            }])
-            .sticky(Shape::Closed, prop::polygon::X1, MAX_VERTICES),
-        info(K::PointList, &["pointList"], &[]),
-        info(K::P, &["p"], &[]).container(),
-        info(K::Setup, &["setup"], &[]).container(),
-        info(K::StickyGroup, &["stickyGroup"], STICKY_GROUP_PROPS).container(),
-        info(K::Function, &["function"], CURVE_PROPS)
-            .copyable()
-            .symbolic()
-            .default_prop("expr"),
-        info(K::Derivative, &["derivative"], CURVE_PROPS)
-            .copyable()
-            .symbolic()
-            .default_prop("expr"),
-        info(K::Answer, &["answer"], ANSWER_PROPS)
-            .copyable()
-            .symbolic()
-            .default_prop("credit"),
-        info(K::Text, &["text"], TEXT_PROPS)
-            .copyable()
-            .default_prop("value"),
-        info(
-            K::ConditionalContent,
-            &["conditionalContent"],
-            CONDITIONAL_CONTENT_PROPS,
-        ),
-        info(K::Case, &["case"], CASE_PROPS),
-        info(K::Select, &["select"], SELECT_PROPS),
-        // Containers the prototype renders nothing special for.
-        info(K::Group, &["group", "label"], &[]).container(),
-        // The parser writes `<section>` as `<division type="section">`.
-        info(
-            K::Section,
-            &[
-                "section",
-                "division",
-                "subsection",
-                "subsubsection",
-                "problem",
-                "exercise",
-                "example",
-            ],
-            SECTION_PROPS,
-        )
-        .container(),
-    ]
-};
+// Each type's row of `COMPONENT_TYPES`, named in `component_types!`.
 
-const _: () = {
-    let mut i = 0;
-    while i < COMPONENT_TYPES.len() {
-        assert!(
-            COMPONENT_TYPES[i].component_type as usize == i,
-            "COMPONENT_TYPES is in discriminant order"
-        );
-        i += 1;
-    }
-};
+pub(super) const DOCUMENT: ComponentTypeInfo = info(&["document"], DOCUMENT_PROPS);
+
+pub(super) const GRAPH: ComponentTypeInfo = info(&["graph"], GRAPH_PROPS).container();
+
+pub(super) const POINT: ComponentTypeInfo = info(&["point"], POINT_PROPS)
+    .copyable()
+    .planned()
+    .default_prop("coords")
+    .views(&[("coords", ["x", "y"])])
+    .sticky(Shape::Point, prop::point::X, 1);
+
+pub(super) const NUMBER: ComponentTypeInfo = info(&["number"], NUMBER_PROPS)
+    .copyable()
+    .default_prop("value");
+
+pub(super) const NUMBER_INPUT: ComponentTypeInfo = info(&["numberInput"], NUMBER_INPUT_PROPS)
+    .copyable()
+    .default_prop("value");
+
+pub(super) const OP: ComponentTypeInfo = info(&["op"], OP_PROPS).copyable().default_prop("value");
+
+pub(super) const SLIDER: ComponentTypeInfo = info(&["slider"], SLIDER_PROPS)
+    .copyable()
+    .default_prop("value");
+
+pub(super) const REPEAT_FOR_SEQUENCE: ComponentTypeInfo =
+    info(&["repeatForSequence"], REPEAT_PROPS);
+
+pub(super) const COLLECT: ComponentTypeInfo = info(&["collect"], COLLECT_PROPS);
+
+pub(super) const SEQUENCE_VALUE: ComponentTypeInfo = info(&["sequenceValue"], SEQUENCE_VALUE_PROPS)
+    .copyable()
+    .internal()
+    .default_prop("value");
+
+pub(super) const BOOLEAN_INPUT: ComponentTypeInfo = info(&["booleanInput"], BOOLEAN_INPUT_PROPS)
+    .copyable()
+    .default_prop("value");
+
+pub(super) const MATH: ComponentTypeInfo =
+    info(&["math"], MATH_PROPS).copyable().default_prop("value");
+
+pub(super) const EVALUATE: ComponentTypeInfo = info(&["evaluate"], EVALUATE_PROPS)
+    .copyable()
+    .default_prop("value");
+
+pub(super) const MATH_INPUT: ComponentTypeInfo = info(&["mathInput"], MATH_INPUT_PROPS)
+    .copyable()
+    .default_prop("value");
+
+pub(super) const CIRCLE: ComponentTypeInfo = info(&["circle"], CIRCLE_PROPS)
+    .copyable()
+    .planned()
+    .views(&[
+        ("center", ["centerX", "centerY"]),
+        ("numericalCenter", ["cx", "cy"]),
+    ])
+    .arrays(&[ArrayProp {
+        names: &["throughPoints"],
+        item: "throughPoint",
+        items: &[
+            ["throughX1", "throughY1"],
+            ["throughX2", "throughY2"],
+            ["throughX3", "throughY3"],
+        ],
+    }])
+    .aliases(&[
+        ("centerX1", "centerX"),
+        ("centerX2", "centerY"),
+        ("throughPointX1_1", "throughX1"),
+        ("throughPointX1_2", "throughY1"),
+        ("throughPointX2_1", "throughX2"),
+        ("throughPointX2_2", "throughY2"),
+        ("throughPointX3_1", "throughX3"),
+        ("throughPointX3_2", "throughY3"),
+    ]);
+
+pub(super) const LINE: ComponentTypeInfo = info(&["line"], LINE_PROPS)
+    .copyable()
+    .planned()
+    .arrays(LINE_POINTS);
+
+pub(super) const LINE_SEGMENT: ComponentTypeInfo = info(&["lineSegment"], LINE_SEGMENT_PROPS)
+    .copyable()
+    .planned()
+    .arrays(LINE_POINTS)
+    .sticky(Shape::Open, prop::segment::X1, 2);
+
+pub(super) const POLYGON: ComponentTypeInfo = info(&["polygon", "triangle"], POLYGON_PROPS)
+    .copyable()
+    .planned()
+    .arrays(&[ArrayProp {
+        names: &["vertices"],
+        item: "vertex",
+        items: &VERTEX_PARTS,
+    }])
+    .sticky(Shape::Closed, prop::polygon::X1, MAX_VERTICES);
+
+pub(super) const POINT_LIST: ComponentTypeInfo = info(&["pointList"], &[]);
+
+pub(super) const P: ComponentTypeInfo = info(&["p"], &[]).container();
+
+pub(super) const SETUP: ComponentTypeInfo = info(&["setup"], &[]).container();
+
+pub(super) const STICKY_GROUP: ComponentTypeInfo =
+    info(&["stickyGroup"], STICKY_GROUP_PROPS).container();
+
+pub(super) const FUNCTION: ComponentTypeInfo = info(&["function"], CURVE_PROPS)
+    .copyable()
+    .symbolic()
+    .default_prop("expr");
+
+pub(super) const DERIVATIVE: ComponentTypeInfo = info(&["derivative"], CURVE_PROPS)
+    .copyable()
+    .symbolic()
+    .default_prop("expr");
+
+pub(super) const ANSWER: ComponentTypeInfo = info(&["answer"], ANSWER_PROPS)
+    .copyable()
+    .symbolic()
+    .default_prop("credit");
+
+pub(super) const TEXT: ComponentTypeInfo =
+    info(&["text"], TEXT_PROPS).copyable().default_prop("value");
+
+pub(super) const CONDITIONAL_CONTENT: ComponentTypeInfo =
+    info(&["conditionalContent"], CONDITIONAL_CONTENT_PROPS);
+
+pub(super) const CASE: ComponentTypeInfo = info(&["case"], CASE_PROPS);
+
+pub(super) const SELECT: ComponentTypeInfo = info(&["select"], SELECT_PROPS);
+
+// Containers the prototype renders nothing special for.
+pub(super) const GROUP: ComponentTypeInfo = info(&["group", "label"], &[]).container();
+
+// The parser writes `<section>` as `<division type="section">`.
+pub(super) const SECTION: ComponentTypeInfo = info(
+    &[
+        "section",
+        "division",
+        "subsection",
+        "subsubsection",
+        "problem",
+        "exercise",
+        "example",
+    ],
+    SECTION_PROPS,
+)
+.container();
