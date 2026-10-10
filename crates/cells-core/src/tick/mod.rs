@@ -1,7 +1,7 @@
 //! A tick at run time: requests are snapped (`snap.rs`, for sticky groups),
 //! inverted down to essential cells (`invert.rs`), and the derived cells
 //! downstream recomputed (`eval.rs`). The build is not involved; a tick only
-//! reads the scheduled [`Program`](crate::Program) and writes cells.
+//! reads the scheduled [`Program`](crate::program::Program) and writes cells.
 //!
 //! The entry point is [`Document::request`](crate::Document::request) and
 //! its variants (`document/request.rs`), which run these stages in order and

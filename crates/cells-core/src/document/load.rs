@@ -59,11 +59,11 @@ impl Document {
         let mut carryover = crate::build::Carryover::new(options.seed, options.sample_with_engine);
         for _ in 0..MAX_PASSES {
             let clock = web_time::Instant::now();
-            let unscheduled = crate::build::build(&dast, &carryover, &mut *engine)?;
+            let built = crate::build::build(&dast, &carryover, &mut *engine)?;
             t.build += clock.elapsed();
 
             let clock = web_time::Instant::now();
-            let mut doc = unscheduled.schedule(dast.clone(), &mut engine)?;
+            let mut doc = built.schedule(dast.clone(), &mut engine)?;
             t.schedule += clock.elapsed();
 
             let clock = web_time::Instant::now();
@@ -154,12 +154,12 @@ impl Document {
         let result = (|| {
             for _ in 0..MAX_PASSES {
                 let clock = web_time::Instant::now();
-                let u = crate::build::build(&dast, &carryover, &mut *engine)?;
+                let built = crate::build::build(&dast, &carryover, &mut *engine)?;
                 if profile {
                     eprintln!("rebuild/build: {:.2?}", clock.elapsed());
                 }
                 let clock = web_time::Instant::now();
-                let mut doc = u.schedule(dast.clone(), &mut engine)?;
+                let mut doc = built.schedule(dast.clone(), &mut engine)?;
                 if profile {
                     eprintln!(
                         "rebuild/schedule: {:.2?} (creation order valid: {})",
