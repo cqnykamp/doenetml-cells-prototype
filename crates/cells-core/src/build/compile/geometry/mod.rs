@@ -342,6 +342,13 @@ impl<'a> Compiler<'a> {
                 let a = self.inline_symbolic_maths(t, a);
                 self.compiled.arena.push(Expr::Neg(a))
             }
+            Expr::Call(f, args) => {
+                let args = args
+                    .into_iter()
+                    .map(|a| self.inline_symbolic_maths(t, a))
+                    .collect();
+                self.compiled.arena.push(Expr::Call(f, args))
+            }
             Expr::Add(a, b)
             | Expr::Sub(a, b)
             | Expr::Mul(a, b)

@@ -21,6 +21,53 @@ pub enum Expr {
     Div(ExprId, ExprId),
     Pow(ExprId, ExprId),
     Neg(ExprId),
+    /// `round(x)`, `min(a, b)`: a function the lowering knows. A clamp's
+    /// bounds are always numbers (the parser checks).
+    Call(Func, Vec<ExprId>),
+}
+
+/// The functions numeric math text can call, each lowered to its operator.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Func {
+    Round,
+    Floor,
+    Min,
+    Max,
+    /// `clamp(x, lo, hi)`, with number bounds.
+    Clamp,
+}
+
+impl Func {
+    pub fn named(name: &str) -> Option<Func> {
+        Some(match name {
+            "round" => Func::Round,
+            "floor" => Func::Floor,
+            "min" => Func::Min,
+            "max" => Func::Max,
+            "clamp" => Func::Clamp,
+            _ => return None,
+        })
+    }
+
+    /// Whether `n` arguments are allowed: `min` and `max` take two or more.
+    fn takes(self, n: usize) -> bool {
+        match self {
+            Func::Round | Func::Floor => n == 1,
+            Func::Min | Func::Max => n >= 2,
+            Func::Clamp => n == 3,
+        }
+    }
+
+    /// The value over number arguments, as the operators compute it.
+    fn eval(self, args: &[f64]) -> f64 {
+        match self {
+            Func::Round => args[0].round(),
+            Func::Floor => args[0].floor(),
+            Func::Min => args.iter().copied().reduce(f64::min).unwrap(),
+            Func::Max => args.iter().copied().reduce(f64::max).unwrap(),
+            Func::Clamp => args[0].clamp(args[1], args[2]),
+        }
+    }
 }
 
 impl Expr {
@@ -55,6 +102,14 @@ impl Arena {
                 Expr::Num(x) => Some(Expr::Num(-x)),
                 _ => None,
             },
+            Expr::Call(f, args) => args
+                .iter()
+                .map(|&a| match self.nodes[a as usize] {
+                    Expr::Num(x) => Some(x),
+                    _ => None,
+                })
+                .collect::<Option<Vec<f64>>>()
+                .map(|xs| Expr::Num(f.eval(&xs))),
             _ => None,
         };
         self.nodes.push(folded.unwrap_or(e));
@@ -84,6 +139,7 @@ impl Arena {
             | Expr::Div(a, b)
             | Expr::Pow(a, b) => self.is_numeric(*a) && self.is_numeric(*b),
             Expr::Neg(a) => self.is_numeric(*a),
+            Expr::Call(_, args) => args.iter().all(|&a| self.is_numeric(a)),
         }
     }
 
@@ -105,6 +161,7 @@ impl Arena {
                 self.symbols(*b, out);
             }
             Expr::Neg(a) => self.symbols(*a, out),
+            Expr::Call(_, args) => args.iter().for_each(|&a| self.symbols(a, out)),
         }
     }
 
@@ -126,6 +183,21 @@ impl Arena {
                 self.cell_leaves(*b, out);
             }
             Expr::Neg(a) => self.cell_leaves(*a, out),
+            Expr::Call(_, args) => args.iter().for_each(|&a| self.cell_leaves(a, out)),
+        }
+    }
+
+    /// Whether the expression calls a function anywhere.
+    pub fn has_call(&self, id: ExprId) -> bool {
+        match self.get(id) {
+            Expr::Num(_) | Expr::Sym(_) | Expr::Cell(_) => false,
+            Expr::Add(a, b)
+            | Expr::Sub(a, b)
+            | Expr::Mul(a, b)
+            | Expr::Div(a, b)
+            | Expr::Pow(a, b) => self.has_call(*a) || self.has_call(*b),
+            Expr::Neg(a) => self.has_call(*a),
+            Expr::Call(..) => true,
         }
     }
 }
@@ -203,7 +275,9 @@ pub fn tokenize(text: &str, out: &mut Vec<Token>) -> Result<(), String> {
 }
 
 /// Recursive-descent parser over tokens: `+ - * / ^`, unary minus,
-/// parentheses, and juxtaposition as multiplication (`3x`, `2(x+1)`).
+/// parentheses, juxtaposition as multiplication (`3x`, `2(x+1)`), and calls
+/// to the functions in [`Func`] (a function name not followed by `(` is a
+/// symbol).
 pub struct Parser<'a> {
     toks: &'a [Token],
     pos: usize,
@@ -298,7 +372,13 @@ impl<'a> Parser<'a> {
         self.pos += 1;
         Ok(match t {
             Token::Num(v) => self.arena.push(Expr::Num(v)),
-            Token::Ident(s) => self.arena.push(Expr::Sym(s)),
+            Token::Ident(s) => match Func::named(&s) {
+                Some(f) if self.peek() == Some(&Token::LParen) => {
+                    self.pos += 1;
+                    self.call(f, &s)?
+                }
+                _ => self.arena.push(Expr::Sym(s)),
+            },
             Token::Cell(c) => self.arena.push(Expr::Cell(c)),
             Token::LParen => {
                 let e = self.expr()?;
@@ -310,6 +390,39 @@ impl<'a> Parser<'a> {
             }
             other => return Err(format!("unexpected token {other:?}")),
         })
+    }
+
+    /// A call's arguments, after its `(`.
+    fn call(&mut self, f: Func, name: &str) -> Result<ExprId, String> {
+        let mut args = vec![self.expr()?];
+        loop {
+            match self.peek() {
+                Some(Token::Comma) => {
+                    self.pos += 1;
+                    args.push(self.expr()?);
+                }
+                Some(Token::RParen) => {
+                    self.pos += 1;
+                    break;
+                }
+                _ => return Err(format!("missing ')' after {name}(")),
+            }
+        }
+        if !f.takes(args.len()) {
+            return Err(format!("{name} does not take {} arguments", args.len()));
+        }
+        if f == Func::Clamp {
+            let bound = |e: ExprId| match self.arena.get(e) {
+                Expr::Num(v) if !v.is_nan() => Some(*v),
+                _ => None,
+            };
+            match (bound(args[1]), bound(args[2])) {
+                (Some(lo), Some(hi)) if lo <= hi => {}
+                (Some(_), Some(_)) => return Err("clamp's lower bound is above its upper".into()),
+                _ => return Err("clamp's bounds must be numbers".into()),
+            }
+        }
+        Ok(self.arena.push(Expr::Call(f, args)))
     }
 }
 
@@ -442,6 +555,16 @@ pub fn linear_coeffs(arena: &mut Arena, id: ExprId, vx: &str, vy: &str) -> Optio
                     }
                 };
                 [div(a, l[0]), div(a, l[1]), div(a, l[2])]
+            }
+            // A call is linear only when it is constant in both symbols.
+            Expr::Call(_, args) => {
+                for arg in args {
+                    let [p, q, _] = go(a, arg, vx, vy)?;
+                    if !(is_zero(a, p) && is_zero(a, q)) {
+                        return None;
+                    }
+                }
+                [zero, zero, id]
             }
             Expr::Pow(x, y) => {
                 let l = go(a, x, vx, vy)?;

@@ -22,6 +22,12 @@ impl<'c, 'a> Builder<'c, 'a> {
                 text: format!("{:?}", self.compiled.arena.get(expr)),
                 reason: "no math text recorded".into(),
             })?;
+        if self.compiled.arena.has_call(expr) {
+            return Err(Error::BadMath {
+                text: text.clone(),
+                reason: "round, floor, min, max and clamp are for numeric math only".into(),
+            });
+        }
         let tree = cells_sym::parse::parse(text).map_err(|reason| Error::BadMath {
             text: text.clone(),
             reason,
@@ -244,6 +250,12 @@ impl<'c, 'a> Builder<'c, 'a> {
                 self.instantiate_expr(b, scope)?,
             ),
             Expr::Neg(a) => Expr::Neg(self.instantiate_expr(a, scope)?),
+            Expr::Call(f, args) => Expr::Call(
+                f,
+                args.into_iter()
+                    .map(|a| self.instantiate_expr(a, scope))
+                    .collect::<Result<_>>()?,
+            ),
         };
         Ok(self.arena.push(out))
     }
@@ -313,6 +325,30 @@ impl<'c, 'a> Builder<'c, 'a> {
             Expr::Pow(a, b) => {
                 let (a, b) = (self.lower(a), self.lower(b));
                 self.op_slot(OpSpec::Pow, &[a, b])
+            }
+            Expr::Call(f, args) => {
+                let mut xs = args.iter().map(|&a| self.lower(a)).collect::<Vec<_>>();
+                match f {
+                    Func::Round => self.op_slot(OpSpec::Round, &xs),
+                    Func::Floor => self.op_slot(OpSpec::Floor, &xs),
+                    // More than two arguments fold from the left.
+                    Func::Min | Func::Max => {
+                        let spec = if f == Func::Min {
+                            OpSpec::Min
+                        } else {
+                            OpSpec::Max
+                        };
+                        let first = xs.remove(0);
+                        xs.into_iter()
+                            .fold(first, |acc, x| self.op_slot(spec, &[acc, x]))
+                    }
+                    Func::Clamp => {
+                        let bound =
+                            |a: &Arena, e| num(a, e).expect("the parser checks clamp's bounds");
+                        let (lo, hi) = (bound(&self.arena, args[1]), bound(&self.arena, args[2]));
+                        self.op_slot(OpSpec::Clamp { lo, hi }, &xs[..1])
+                    }
+                }
             }
         }
     }

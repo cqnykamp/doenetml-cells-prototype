@@ -39,7 +39,9 @@ chain of `<math>` elements equals the same chain of `<op>` elements.
   instruction, so scheduling and dirty tracking see them.
 - Symbolic inverses are out of scope; a request on an evaluated cell is
   dropped. A real expression library would add them as operator inverses.
-- The hand parser here covers `+ - * / ^`, parentheses and juxtaposition.
+- The hand parser here covers `+ - * / ^`, parentheses and juxtaposition,
+  and the calls `round`, `floor`, `min`, `max` and `clamp` (number bounds),
+  each lowered to its operator; a symbolic math may not use them.
   The real parser lives with the future Rust expression library; the arena
   interface (flat nodes, cell leaves, evaluate, substitute) is what the core
   needs from it.

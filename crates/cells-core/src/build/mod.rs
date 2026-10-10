@@ -55,7 +55,7 @@ use crate::error::{Error, Result};
 use crate::program::{Instr, OpSpec, Post, SymKind};
 use crate::program::{Pivot, RigidOpts, VecOp};
 use crate::program::{Program, Sym};
-use compile::expr::{Arena, Expr, ExprId, Parser, Token};
+use compile::expr::{Arena, Expr, ExprId, Func, Parser, Token};
 
 mod compile;
 mod emit;

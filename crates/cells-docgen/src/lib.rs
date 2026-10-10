@@ -233,7 +233,8 @@ pub fn hidden(n: usize) -> String {
 /// `chain`, written with `<math>` instead of `<op>`: the same three
 /// operations as math text, lowered to the same operators at build time, so
 /// the tick cost should match `chain-L` exactly. The final clamp stays an
-/// `<op>` because it has no math syntax.
+/// `<op>`, as it was when math text had no `clamp`, so the measured
+/// fixtures are unchanged.
 pub fn mathchain(l: usize) -> String {
     let mut s = String::from("<numberInput name=\"n\" value=\"1\"/>\n");
     let mut prev = "n".to_string();

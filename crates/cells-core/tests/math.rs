@@ -103,3 +103,75 @@ fn math_parse_errors_are_reported() {
     let err = load(r#"<math name="m">(1 + 2</math>"#).unwrap_err();
     assert!(matches!(err, cells_core::Error::BadMath { .. }), "{err}");
 }
+
+#[test]
+fn function_calls_lower_to_their_operators() {
+    let mut doc = load(
+        r#"<numberInput name="a" value="2.6"/><numberInput name="b" value="-4"/>
+<number name="r">round($a)</number>
+<number name="f">floor($a) + 1</number>
+<number name="lo">min($a, $b, 0)</number>
+<number name="hi">max($a, 2$b)</number>
+<number name="c">clamp(3$a, -2*3, 6)</number>
+<number name="k">max(1, round(2.5)) + floor(-0.5)</number>"#,
+    )
+    .unwrap();
+    assert_eq!(doc.value("r", "value"), Some(3.0));
+    assert_eq!(doc.value("f", "value"), Some(3.0));
+    assert_eq!(doc.value("lo", "value"), Some(-4.0));
+    assert_eq!(doc.value("hi", "value"), Some(2.6));
+    assert_eq!(doc.value("c", "value"), Some(6.0));
+    assert_eq!(doc.value("k", "value"), Some(2.0), "constant calls fold");
+    assert!(!has_evaluate(&doc));
+    // A clamp inverts by projection: asking for 9 asks for 6, so a = 2.
+    doc.request(&[req(&doc, "c", "value", 9.0)]);
+    assert_eq!(doc.value("a", "value"), Some(2.0));
+    assert_eq!(reference::check(&doc), None);
+}
+
+#[test]
+fn function_calls_build_the_same_operators_as_op() {
+    let ops = |src: &str| {
+        let doc = load(src).unwrap();
+        doc.program
+            .instrs
+            .iter()
+            .map(|i| match i.op {
+                Op::Min(..) => "Min".to_string(),
+                Op::Clamp(_, lo, hi) => format!("Clamp {lo} {hi}"),
+                other => format!("{other:?}"),
+            })
+            .collect::<Vec<_>>()
+    };
+    let a = r#"<numberInput name="a" value="2"/><numberInput name="b" value="1"/>"#;
+    assert_eq!(
+        ops(&format!(
+            "{a}<number name='c'>clamp(min($a, $b), -9, 9)</number>"
+        )),
+        ops(&format!(
+            r#"{a}<op name="m" kind="min" args="$a $b"/><op name="c" kind="clamp" lo="-9" hi="9" args="$m"/>"#
+        )),
+    );
+}
+
+#[test]
+fn function_call_errors_are_reported() {
+    for text in [
+        "round($a, 1)",
+        "min($a)",
+        "clamp($a, 0)",
+        "clamp($a, $a, 1)",
+        "clamp($a, 2, 1)",
+        "max($a, 1",
+        "round(x)",
+    ] {
+        let err = load(&format!(
+            r#"<numberInput name="a" value="2"/><math name="m">{text}</math>"#
+        ))
+        .unwrap_err();
+        assert!(
+            matches!(err, cells_core::Error::BadMath { .. }),
+            "{text}: {err}"
+        );
+    }
+}
