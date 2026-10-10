@@ -15,7 +15,7 @@ impl Compiler<'_> {
             node: el,
             name_scope: scope,
             ..
-        } = self.c.templates[t].elems[e];
+        } = self.compiled.templates[t].elems[e];
         let kind = ComponentKind::Polygon;
         let mut ch = ElemPlan::new(kind.prop_defs().len());
         let vertices = match self.attr_or_inherited(el, base, "vertices") {

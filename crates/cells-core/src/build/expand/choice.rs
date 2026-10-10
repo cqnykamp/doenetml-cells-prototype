@@ -13,7 +13,7 @@ impl<'c, 'a> Builder<'c, 'a> {
         scope: ScopeId,
         comp: CompIdx,
     ) -> Result<Vec<u32>> {
-        let c: &'c Compiled<'a> = self.c;
+        let c: &'c Compiled<'a> = self.compiled;
         let def = &c.choices[cid];
         let mut inst = ChoiceInst {
             def: cid,
@@ -44,7 +44,7 @@ impl<'c, 'a> Builder<'c, 'a> {
                 self.set_children(case, &these);
                 for &x in &these {
                     if x & TEXT_BIT == 0 {
-                        self.comps.parent[x as usize] = case;
+                        self.components.parent[x as usize] = case;
                     }
                 }
                 kids.push(case);
@@ -118,7 +118,7 @@ impl<'c, 'a> Builder<'c, 'a> {
     /// Runs before instance sources, so a symbolic interface math is known
     /// to be one when its copies are planned.
     pub(in crate::build) fn choice_sources(&mut self) {
-        let c: &'c Compiled<'a> = self.c;
+        let c: &'c Compiled<'a> = self.compiled;
         for i in 0..self.choice_insts.len() {
             if self.choice_insts[i].iface_comps.is_empty() {
                 continue;
@@ -135,7 +135,8 @@ impl<'c, 'a> Builder<'c, 'a> {
                     .map(|(&s, &b)| self.scope_comps[s as usize][elems[b]])
                     .collect();
                 let symbolic = members.iter().any(|&m| self.is_symbolic(m));
-                self.math_mode.resize(self.comps.len(), MathMode::Unknown);
+                self.math_mode
+                    .resize(self.components.len(), MathMode::Unknown);
                 self.math_mode[ic as usize] = if symbolic {
                     MathMode::Symbolic
                 } else {
@@ -165,7 +166,7 @@ impl<'c, 'a> Builder<'c, 'a> {
         u: u32,
         cur: Resolved,
     ) -> (Resolved, ScopeId) {
-        let def = &self.c.choices[cid];
+        let def = &self.compiled.choices[cid];
         let elems = &def.iface[&def.used[u as usize]].1;
         let in_branch = |inst: &ChoiceInst, j: usize| {
             let s = inst.scopes[j];
@@ -188,7 +189,7 @@ impl<'c, 'a> Builder<'c, 'a> {
                 let inst = &self.choice_insts[self.comp_choice[&c]];
                 (
                     Resolved::Comp(inst.iface_comps[u as usize]),
-                    self.comps.scope[c as usize],
+                    self.components.scope[c as usize],
                 )
             }
             Resolved::Missing => (Resolved::Missing, 0),

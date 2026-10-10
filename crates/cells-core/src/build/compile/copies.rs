@@ -12,8 +12,8 @@ impl<'a> Compiler<'a> {
         e: ElemId,
         p: RefId,
     ) -> Result<()> {
-        let kind = self.c.templates[t].elems[e].kind;
-        let display = self.c.refs[p].display.clone();
+        let kind = self.compiled.templates[t].elems[e].kind;
+        let display = self.compiled.refs[p].display.clone();
         let props = match kind {
             ComponentKind::Point => {
                 let hide =
@@ -28,20 +28,20 @@ impl<'a> Compiler<'a> {
                 vec![SourcePlan::reference(p)]
             }
             ComponentKind::Math => {
-                let id = self.c.arena.push(Expr::Cell(p as CellIdx));
-                self.c.sym_text.insert(id, format!("#{p}"));
+                let id = self.compiled.arena.push(Expr::Cell(p as CellIdx));
+                self.compiled.sym_text.insert(id, format!("#{p}"));
                 vec![
                     SourcePlan::MathHandle(id, Post::None),
                     SourcePlan::MathValue(id),
                 ]
             }
             ComponentKind::PointList => {
-                self.c.templates[t].elems[e].body = Body::PointList { from: p };
+                self.compiled.templates[t].elems[e].body = Body::PointList { from: p };
                 Vec::new()
             }
             _ => return Err(Error::PathTooDeep(display)),
         };
-        self.c.templates[t].elems[e].props = props;
+        self.compiled.templates[t].elems[e].props = props;
         Ok(())
     }
 
@@ -59,7 +59,7 @@ impl<'a> Compiler<'a> {
         self.plan_attrs(t, e, Some(p))?;
         let scope = self.child_scope(t, e);
         let kids = self.clone_children(t, r, scope, e)?;
-        self.c.templates[t].elems[e].children = kids;
+        self.compiled.templates[t].elems[e].children = kids;
         Ok(())
     }
 
@@ -70,17 +70,17 @@ impl<'a> Compiler<'a> {
         scope: ElemId,
         root: ElemId,
     ) -> Result<Vec<Child>> {
-        let kids = self.c.templates[t].elems[from].children.clone();
+        let kids = self.compiled.templates[t].elems[from].children.clone();
         let mut out = Vec::with_capacity(kids.len());
         for ch in kids {
             match ch {
                 Child::Elem(c) => {
                     let (kind, name) = {
-                        let el = &self.c.templates[t].elems[c];
+                        let el = &self.compiled.templates[t].elems[c];
                         (el.kind, el.name)
                     };
                     if matches!(
-                        self.c.templates[t].elems[c].body,
+                        self.compiled.templates[t].elems[c].body,
                         Body::Repeat { .. } | Body::Collect { .. }
                     ) {
                         return Err(Error::UncopyableKind(format!(
@@ -90,21 +90,21 @@ impl<'a> Compiler<'a> {
                     }
                     let ne = self.push_elem_visible_to(t, NONE, kind, name, scope, root)?;
                     let label = format!("(copy of {})", self.elem_label(t, c));
-                    self.c.refs.push(RefPlan {
+                    self.compiled.refs.push(RefPlan {
                         hops: 0,
                         steps: vec![Step::Elem(c)],
                         prop: None,
                         display: label,
                     });
-                    let ep = self.c.refs.len() - 1;
+                    let ep = self.compiled.refs.len() - 1;
                     {
-                        let el = &mut self.c.templates[t].elems[ne];
+                        let el = &mut self.compiled.templates[t].elems[ne];
                         el.extend = Some(ep);
                         el.cloned = true;
                     }
                     let child_scope = if name != NONE { ne } else { scope };
                     let sub = self.clone_children(t, c, child_scope, root)?;
-                    self.c.templates[t].elems[ne].children = sub;
+                    self.compiled.templates[t].elems[ne].children = sub;
                     self.pending_elems.push((t, ne));
                     out.push(Child::Elem(ne));
                 }

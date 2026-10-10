@@ -39,7 +39,7 @@ impl Document {
     pub(crate) fn sticky_tables(&self) -> Vec<StickyTable> {
         let mut seen: HashSet<Vec<CellIdx>> = HashSet::new();
         let mut out = Vec::new();
-        for g in 0..self.comps.len() as CompIdx {
+        for g in 0..self.components.len() as CompIdx {
             if self.kind(g) != ComponentKind::StickyGroup {
                 continue;
             }
@@ -64,7 +64,7 @@ impl Document {
                     c[prop::graph::YMAX],
                 ]);
             }
-            for (m, gates) in self.comps.sticky_members(g) {
+            for (m, gates) in self.components.sticky_members(g) {
                 let kind = self.kind(m);
                 let (shape, first, max) = kind.sticky_layout().unwrap();
                 let cells = self.comp_cells(m);

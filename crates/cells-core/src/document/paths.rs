@@ -24,7 +24,7 @@ impl Document {
                         .children(repeat)
                         .filter_map(|ch| match ch {
                             Child::Component(c)
-                                if self.comps.scope[c as usize] == scope
+                                if self.components.scope[c as usize] == scope
                                     && self.name(c) == Some(name) =>
                             {
                                 Some(c)
@@ -61,9 +61,9 @@ impl Document {
                         let mut picks: Vec<ScopeId> = Vec::new();
                         for ch in self.children(c) {
                             if let Child::Component(x) = ch
-                                && !picks.contains(&self.comps.scope[x as usize])
+                                && !picks.contains(&self.components.scope[x as usize])
                             {
-                                picks.push(self.comps.scope[x as usize]);
+                                picks.push(self.components.scope[x as usize]);
                             }
                         }
                         iteration = Some(*picks.get(k.checked_sub(1)?)?);
@@ -95,7 +95,7 @@ impl Document {
     fn iteration(&self, repeat: CompIdx, scope: ScopeId) -> Vec<CompIdx> {
         self.children(repeat)
             .filter_map(|ch| match ch {
-                Child::Component(c) if self.comps.scope[c as usize] == scope => Some(c),
+                Child::Component(c) if self.components.scope[c as usize] == scope => Some(c),
                 _ => None,
             })
             .collect()
@@ -112,12 +112,12 @@ impl Document {
         {
             return Some(sc);
         }
-        let matches: Vec<CompIdx> = (0..self.comps.len() as CompIdx)
+        let matches: Vec<CompIdx> = (0..self.components.len() as CompIdx)
             .filter(|&c| self.name(c) == Some(name) && self.visible_from(scope, c))
             .collect();
         match matches.as_slice() {
             [c] => Some(*c),
-            [] => (0..self.comps.len() as CompIdx)
+            [] => (0..self.components.len() as CompIdx)
                 .find(|&c| self.name(c) == Some(name) && self.is_descendant(scope, c)),
             many => {
                 // Children of a container copy are reached through the copy's
@@ -164,7 +164,9 @@ impl Document {
             if Some(x) == scope {
                 return false;
             }
-            if self.comps.node[x as usize] == NONE && self.kind(x) != ComponentKind::Document {
+            if self.components.dast_node[x as usize] == NONE
+                && self.kind(x) != ComponentKind::Document
+            {
                 return true;
             }
             cur = self.parent(x);

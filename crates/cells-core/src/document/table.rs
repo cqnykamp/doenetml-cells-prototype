@@ -21,7 +21,7 @@ pub struct ComponentTable {
     /// DAST element each component came from (NONE if synthesized) and the
     /// scope it was created in. Together they identify a component across
     /// rebuilds, which lets a renderer keep its tree keyed by identity.
-    pub node: Vec<u32>,
+    pub dast_node: Vec<u32>,
     pub scope: Vec<ScopeId>,
 }
 
@@ -76,7 +76,7 @@ impl ComponentTable {
                 + self.child_start.capacity()
                 + self.child_count.capacity()
                 + self.child_list.capacity()
-                + self.node.capacity()
+                + self.dast_node.capacity()
                 + self.scope.capacity())
     }
 }
@@ -89,29 +89,29 @@ pub enum Child<'a> {
 
 impl Document {
     pub fn n_components(&self) -> usize {
-        self.comps.len()
+        self.components.len()
     }
 
     pub fn kind(&self, c: CompIdx) -> ComponentKind {
-        self.comps.kind[c as usize]
+        self.components.kind[c as usize]
     }
 
     pub fn name(&self, c: CompIdx) -> Option<&str> {
-        let s = self.comps.name[c as usize];
+        let s = self.components.name[c as usize];
         (s != NONE).then(|| self.strings.get(s).trim())
     }
 
     pub fn parent(&self, c: CompIdx) -> Option<CompIdx> {
-        let p = self.comps.parent[c as usize];
+        let p = self.components.parent[c as usize];
         (p != NONE).then_some(p)
     }
 
     pub fn children(&self, c: CompIdx) -> impl Iterator<Item = Child<'_>> + '_ {
         let (s, n) = (
-            self.comps.child_start[c as usize] as usize,
-            self.comps.child_count[c as usize] as usize,
+            self.components.child_start[c as usize] as usize,
+            self.components.child_count[c as usize] as usize,
         );
-        self.comps.child_list[s..s + n].iter().map(move |&e| {
+        self.components.child_list[s..s + n].iter().map(move |&e| {
             if e & TEXT_BIT != 0 {
                 Child::Text(self.strings.get(e & !TEXT_BIT))
             } else {
@@ -122,8 +122,8 @@ impl Document {
 
     /// Cells of the single-cell props of `c`, in `kind.prop_defs()` order.
     pub fn comp_cells(&self, c: CompIdx) -> &[CellIdx] {
-        let base = self.comps.prop_base[c as usize] as usize;
-        &self.comps.prop_cells[base..base + self.kind(c).prop_defs().len()]
+        let base = self.components.prop_base[c as usize] as usize;
+        &self.components.prop_cells[base..base + self.kind(c).prop_defs().len()]
     }
 
     /// The text a component shows, as the current core's `text` state
@@ -229,13 +229,13 @@ impl Document {
             program: self.program.instrs.capacity() * std::mem::size_of::<crate::program::Instr>()
                 + self.program.producer.capacity() * 4
                 + self.program.sym.engine.borrow().heap_bytes(),
-            components: self.comps.heap_bytes(),
+            components: self.components.heap_bytes(),
             strings: self.strings.heap_bytes(),
             structure: self.structure.scopes.heap_bytes()
                 + self.structure.essential_slots.capacity() * 8
                 + self
                     .structure
-                    .values
+                    .essential_values
                     .iter()
                     .map(|r| r.capacity() * 16 + 24)
                     .sum::<usize>(),

@@ -13,12 +13,12 @@ impl Compiler<'_> {
         e: ElemId,
         base: Option<NodeId>,
     ) -> Result<ElemPlan> {
-        let d = self.c.dast;
+        let d = self.compiled.dast;
         let Elem {
             node: el,
             name_scope: scope,
             ..
-        } = self.c.templates[t].elems[e];
+        } = self.compiled.templates[t].elems[e];
         let mut ch = ElemPlan::new(ComponentKind::Point.prop_defs().len());
         let own_children = self.math_children(el);
         let base_children = base.map(|b| self.math_children(b)).unwrap_or_default();
@@ -120,7 +120,7 @@ impl Compiler<'_> {
         ch: &mut ElemPlan,
         c: NodeId,
     ) -> Result<()> {
-        let d = self.c.dast;
+        let d = self.compiled.dast;
         let (px, py) = (
             ch.props[point::X].take().expect("x planned"),
             ch.props[point::Y].take().expect("y planned"),
@@ -195,7 +195,7 @@ impl Compiler<'_> {
                         .map(|pr| ch.hidden(SourcePlan::reference(me.plan_with_prop(p, pr))))
                         .collect()
                 };
-                match self.c.templates[t].elems[target].kind {
+                match self.compiled.templates[t].elems[target].kind {
                     ComponentKind::Circle => {
                         let c = refs(self, ch, &["cx", "cy", "radius"]);
                         ch.set_vec(

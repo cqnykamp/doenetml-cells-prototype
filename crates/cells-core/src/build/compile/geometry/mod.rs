@@ -22,8 +22,8 @@ impl<'a> Compiler<'a> {
         e: ElemId,
         extend: Option<RefId>,
     ) -> Result<()> {
-        let d = self.c.dast;
-        let Elem { node: el, kind, .. } = self.c.templates[t].elems[e];
+        let d = self.compiled.dast;
+        let Elem { node: el, kind, .. } = self.compiled.templates[t].elems[e];
         // Own attributes other than name and extend, or children, override
         // the referent's; with none, the copy aliases every public prop.
         let own_attrs: Vec<String> = d
@@ -34,14 +34,14 @@ impl<'a> Compiler<'a> {
         let has_children = !d.children(el).iter().all(|&n| self.is_blank(n));
         if extend.is_some() && own_attrs.is_empty() && !has_children {
             let n = kind.prop_defs().len();
-            self.c.templates[t].elems[e].props = vec![SourcePlan::Inherit; n];
+            self.compiled.templates[t].elems[e].props = vec![SourcePlan::Inherit; n];
             return Ok(());
         }
         // Merged attributes: the referent's node supplies what the copy omits.
         let base_elem = extend
             .and_then(|p| self.plan_elem_target(t, p))
-            .filter(|&r| self.c.templates[t].elems[r].node != NONE);
-        let base = base_elem.map(|r| self.c.templates[t].elems[r].node);
+            .filter(|&r| self.compiled.templates[t].elems[r].node != NONE);
+        let base = base_elem.map(|r| self.compiled.templates[t].elems[r].node);
         let mut ch = match kind {
             ComponentKind::Point => self.plan_point(t, e, base)?,
             ComponentKind::Circle => self.plan_circle(t, e, base)?,
@@ -53,7 +53,7 @@ impl<'a> Compiler<'a> {
         // Essential state the copy did not override is the original's: the
         // current core's copies share their essential state variables.
         if let Some(r) = base_elem {
-            let base_roles = self.c.templates[t].elems[r].roles.clone();
+            let base_roles = self.compiled.templates[t].elems[r].roles.clone();
             for (role, &slot) in &ch.roles {
                 // A role the copy's own attribute supplied is its own state.
                 if ch
@@ -70,11 +70,11 @@ impl<'a> Compiler<'a> {
                 }
             }
         }
-        let scope = self.c.templates[t].elems[e].name_scope;
+        let scope = self.compiled.templates[t].elems[e].name_scope;
         self.plan_fix(t, scope, el, &["fixed"])?
             .apply(&mut ch.props);
-        self.c.templates[t].elems[e].roles = ch.roles.clone();
-        self.c.templates[t].elems[e].props = ch.finish();
+        self.compiled.templates[t].elems[e].roles = ch.roles.clone();
+        self.compiled.templates[t].elems[e].props = ch.finish();
         Ok(())
     }
 
@@ -83,7 +83,7 @@ impl<'a> Compiler<'a> {
     /// The children that make up math text: text and `$ref`s, not blanks
     /// or elements (constraints).
     fn math_children(&self, node: NodeId) -> Vec<NodeId> {
-        let d = self.c.dast;
+        let d = self.compiled.dast;
         d.children(node)
             .iter()
             .copied()
@@ -97,7 +97,7 @@ impl<'a> Compiler<'a> {
         base: Option<NodeId>,
         name: &str,
     ) -> Option<u32> {
-        let d = self.c.dast;
+        let d = self.compiled.dast;
         d.attr(el, name)
             .or_else(|| base.and_then(|b| d.attr(b, name)))
     }
@@ -176,7 +176,7 @@ impl<'a> Compiler<'a> {
         scope: ElemId,
         a: u32,
     ) -> Result<Vec<PointPlan>> {
-        let d = self.c.dast;
+        let d = self.compiled.dast;
         let (toks, text) = self.math_tokens(t, scope, d.attr_children(a))?;
         let mut out = Vec::new();
         let mut i = 0;
@@ -243,14 +243,14 @@ impl<'a> Compiler<'a> {
         t: TemplateId,
         p: RefId,
     ) -> Result<Option<usize>> {
-        let plan = &self.c.refs[p];
+        let plan = &self.compiled.refs[p];
         let Some(prop) = &plan.prop else {
             return Ok(None);
         };
         // Find the element the path ends at, if it is in this template chain.
         let mut cur_t = t;
         for _ in 0..plan.hops {
-            cur_t = self.c.templates[cur_t].parent.unwrap().0;
+            cur_t = self.compiled.templates[cur_t].parent.unwrap().0;
         }
         let mut e = None;
         for step in &plan.steps {
@@ -260,7 +260,7 @@ impl<'a> Compiler<'a> {
             }
         }
         let Some(e) = e else { return Ok(None) };
-        let el = &self.c.templates[cur_t].elems[e];
+        let el = &self.compiled.templates[cur_t].elems[e];
         let Some(items) = el.kind.array_prop(prop) else {
             return Ok(None);
         };
@@ -274,7 +274,7 @@ impl<'a> Compiler<'a> {
 
     /// Points in a point-list attribute, counted from its text alone.
     pub(in crate::build) fn count_points_in_attr(&self, el: NodeId, name: &str) -> Result<usize> {
-        let d = self.c.dast;
+        let d = self.compiled.dast;
         let Some(a) = (el != NONE).then(|| d.attr(el, name)).flatten() else {
             return Ok(0);
         };
@@ -306,10 +306,10 @@ impl<'a> Compiler<'a> {
     /// Replace cell leaves that name a `<math>` element of this template
     /// with that math's own expression when it has free symbols.
     pub(in crate::build) fn inline_symbolic_maths(&mut self, t: TemplateId, id: ExprId) -> ExprId {
-        let e = self.c.arena.get(id).clone();
+        let e = self.compiled.arena.get(id).clone();
         match e {
             Expr::Cell(p) => {
-                let plan = &self.c.refs[p as usize];
+                let plan = &self.compiled.refs[p as usize];
                 let is_value = plan.prop.as_deref().is_none_or(|pr| pr == "value");
                 let Some(target) = (is_value)
                     .then(|| self.plan_elem_target(t, p as RefId))
@@ -318,17 +318,17 @@ impl<'a> Compiler<'a> {
                     return id;
                 };
                 // The math may come later in the document and not be planned yet.
-                if self.c.templates[t].elems[target].kind == ComponentKind::Math
-                    && self.c.templates[t].elems[target].props.is_empty()
+                if self.compiled.templates[t].elems[target].kind == ComponentKind::Math
+                    && self.compiled.templates[t].elems[target].props.is_empty()
                     && self.plan_elem(t, target).is_err()
                 {
                     return id;
                 }
-                match self.c.templates[t].elems[target].props.first() {
+                match self.compiled.templates[t].elems[target].props.first() {
                     Some(SourcePlan::MathHandle(inner, _)) => {
                         let inner = *inner;
                         let mut syms = Vec::new();
-                        self.c.arena.symbols(inner, &mut syms);
+                        self.compiled.arena.symbols(inner, &mut syms);
                         if syms.is_empty() {
                             return id;
                         }
@@ -340,7 +340,7 @@ impl<'a> Compiler<'a> {
             Expr::Num(_) | Expr::Sym(_) => id,
             Expr::Neg(a) => {
                 let a = self.inline_symbolic_maths(t, a);
-                self.c.arena.push(Expr::Neg(a))
+                self.compiled.arena.push(Expr::Neg(a))
             }
             Expr::Add(a, b)
             | Expr::Sub(a, b)
@@ -351,7 +351,7 @@ impl<'a> Compiler<'a> {
                     self.inline_symbolic_maths(t, a),
                     self.inline_symbolic_maths(t, b),
                 );
-                self.c.arena.push(e.with_operands(na, nb))
+                self.compiled.arena.push(e.with_operands(na, nb))
             }
         }
     }

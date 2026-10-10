@@ -23,7 +23,7 @@ pub struct Repeat {
     /// One scope per iteration, in order.
     pub iter_scopes: Vec<ScopeId>,
     /// Iterations the build used; a differing `count` cell triggers a rebuild.
-    pub n: u32,
+    pub iterations: u32,
 }
 
 /// Every scope a build has made: (parent scope, repeat or choice element,
@@ -86,10 +86,10 @@ pub struct Structure {
     /// template slot). The template slot identifies the element and prop
     /// within the scope's template. See `CONTEXT.md`, essential key.
     pub essential_slots: Vec<(ScopeId, u32)>,
-    /// `values[scope][template slot]`: the last value of every essential
+    /// `essential_values[scope][template slot]`: the last value of every essential
     /// cell that has ever existed, so an iteration that disappears and
     /// reappears returns as it was left. Rows fill lazily.
-    pub values: Vec<Vec<Option<f64>>>,
+    pub essential_values: Vec<Vec<Option<f64>>>,
     pub repeats: Vec<Repeat>,
     pub counts_used: Vec<u32>,
     /// Per repeat (same order as `repeats`): how many repeats must be

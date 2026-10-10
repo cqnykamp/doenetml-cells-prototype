@@ -43,7 +43,7 @@ impl DirtyClosure {
     pub fn new(program: &Program, n_cells: usize) -> Self {
         let mut dep_start = vec![0u32; n_cells + 1];
         for ins in &program.instrs {
-            for input in ins.op.inputs(&program.extra) {
+            for input in ins.op.inputs(&program.operands) {
                 dep_start[input as usize + 1] += 1;
             }
         }
@@ -53,7 +53,7 @@ impl DirtyClosure {
         let mut fill = dep_start.clone();
         let mut dependents = vec![0u32; dep_start[n_cells] as usize];
         for (i, ins) in program.instrs.iter().enumerate() {
-            for input in ins.op.inputs(&program.extra) {
+            for input in ins.op.inputs(&program.operands) {
                 dependents[fill[input as usize] as usize] = i as u32;
                 fill[input as usize] += 1;
             }

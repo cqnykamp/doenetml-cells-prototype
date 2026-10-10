@@ -37,12 +37,12 @@ impl Compiler<'_> {
         e: ElemId,
         base: Option<NodeId>,
     ) -> Result<ElemPlan> {
-        let d = self.c.dast;
+        let d = self.compiled.dast;
         let Elem {
             node: el,
             name_scope: scope,
             ..
-        } = self.c.templates[t].elems[e];
+        } = self.compiled.templates[t].elems[e];
         let kind = ComponentKind::Line;
         let mut ch = ElemPlan::new(kind.prop_defs().len());
         let through = match self.attr_or_inherited(el, base, "through") {
@@ -90,12 +90,13 @@ impl Compiler<'_> {
                 self.parse_tokens(&sides[0], &text)?,
                 self.parse_tokens(&sides[1], &text)?,
             );
-            let diff = self.c.arena.push(Expr::Sub(lhs, rhs));
+            let diff = self.compiled.arena.push(Expr::Sub(lhs, rhs));
             // A referenced <math> whose expression carries the variables
             // (`$m` standing for `2x`) is inlined, so it takes part in the
             // linear extraction instead of being an opaque cell.
             let diff = self.inline_symbolic_maths(t, diff);
-            let coeffs = match super::expr::linear_coeffs(&mut self.c.arena, diff, &vx, &vy) {
+            let coeffs = match super::expr::linear_coeffs(&mut self.compiled.arena, diff, &vx, &vy)
+            {
                 // A symbolic or nonlinear equation is not a line here.
                 None => [
                     SourcePlan::Fixed(f64::NAN),
@@ -259,7 +260,7 @@ impl Compiler<'_> {
             PointPlan::Ref(p) => {
                 let target_kind = self
                     .plan_elem_target(t, p)
-                    .map(|e| self.c.templates[t].elems[e].kind);
+                    .map(|e| self.compiled.templates[t].elems[e].kind);
                 match target_kind {
                     Some(ComponentKind::Line | ComponentKind::LineSegment) => {
                         let x1 = self.plan_with_prop(p, "x1");
@@ -293,7 +294,7 @@ impl Compiler<'_> {
             node: el,
             name_scope: scope,
             ..
-        } = self.c.templates[t].elems[e];
+        } = self.compiled.templates[t].elems[e];
         let mut ch = ElemPlan::new(ComponentKind::LineSegment.prop_defs().len());
         let ends = match self.attr_or_inherited(el, base, "endpoints") {
             Some(a) => self.plan_point_list(t, scope, a)?,

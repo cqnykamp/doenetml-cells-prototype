@@ -44,7 +44,7 @@ pub struct Document {
     /// (iteration indices, collect counts, the missing-referent NaN).
     pub n_fixed: usize,
     pub program: Program,
-    pub comps: ComponentTable,
+    pub components: ComponentTable,
     /// Names and text, shared with the DAST they came from.
     pub strings: StringTable,
     /// Index of the root `<document>` component.
@@ -63,7 +63,7 @@ impl Document {
         n_essential: usize,
         n_fixed: usize,
         program: Program,
-        comps: ComponentTable,
+        components: ComponentTable,
         strings: StringTable,
         root: CompIdx,
         structure: Structure,
@@ -74,7 +74,7 @@ impl Document {
             n_essential,
             n_fixed,
             program,
-            comps,
+            components,
             strings,
             root,
             structure,
@@ -113,7 +113,7 @@ impl Document {
     /// A `<mathInput>` holds any math value, infinity included; every other
     /// request site rejects an infinite ask as the current core does.
     fn accepts_infinity(&self, cell: CellIdx) -> bool {
-        (0..self.comps.len() as CompIdx).any(|c| {
+        (0..self.components.len() as CompIdx).any(|c| {
             self.kind(c) == ComponentKind::MathInput
                 && self.comp_cells(c)[prop::math_input::VALUE] == cell
         })

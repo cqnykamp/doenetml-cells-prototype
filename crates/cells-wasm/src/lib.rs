@@ -129,7 +129,7 @@ impl Core {
     /// `u8` per component: the `ComponentKind` discriminant, in the order of
     /// `kind_tags()`.
     pub fn comp_kind_ptr(&self) -> *const u8 {
-        self.doc.comps.kind.as_ptr() as *const u8
+        self.doc.components.kind.as_ptr() as *const u8
     }
 
     /// Tag names indexed by kind discriminant, JSON array.
@@ -155,38 +155,38 @@ impl Core {
     }
 
     pub fn comp_name_ptr(&self) -> *const u32 {
-        self.doc.comps.name.as_ptr()
+        self.doc.components.name.as_ptr()
     }
     pub fn comp_parent_ptr(&self) -> *const u32 {
-        self.doc.comps.parent.as_ptr()
+        self.doc.components.parent.as_ptr()
     }
     pub fn comp_prop_base_ptr(&self) -> *const u32 {
-        self.doc.comps.prop_base.as_ptr()
+        self.doc.components.prop_base.as_ptr()
     }
     pub fn prop_cells_ptr(&self) -> *const u32 {
-        self.doc.comps.prop_cells.as_ptr()
+        self.doc.components.prop_cells.as_ptr()
     }
     pub fn prop_cells_len(&self) -> usize {
-        self.doc.comps.prop_cells.len()
+        self.doc.components.prop_cells.len()
     }
     pub fn comp_child_start_ptr(&self) -> *const u32 {
-        self.doc.comps.child_start.as_ptr()
+        self.doc.components.child_start.as_ptr()
     }
     pub fn comp_child_count_ptr(&self) -> *const u32 {
-        self.doc.comps.child_count.as_ptr()
+        self.doc.components.child_count.as_ptr()
     }
     pub fn child_list_ptr(&self) -> *const u32 {
-        self.doc.comps.child_list.as_ptr()
+        self.doc.components.child_list.as_ptr()
     }
     pub fn child_list_len(&self) -> usize {
-        self.doc.comps.child_list.len()
+        self.doc.components.child_list.len()
     }
     /// Stable identity across rebuilds: DAST node (NONE if synthesized) and scope.
     pub fn comp_node_ptr(&self) -> *const u32 {
-        self.doc.comps.node.as_ptr()
+        self.doc.components.dast_node.as_ptr()
     }
     pub fn comp_scope_ptr(&self) -> *const u32 {
-        self.doc.comps.scope.as_ptr()
+        self.doc.components.scope.as_ptr()
     }
     /// String table: `n_strings + 1` offsets into the UTF-8 byte blob.
     pub fn string_offsets_ptr(&self) -> *const u32 {

@@ -24,7 +24,7 @@ pub use vector::{MAX_VEC_IN, Pivot, Produced, RigidOpts, VecOp};
 #[derive(Debug, Clone)]
 pub struct Sym {
     pub engine: RefCell<Box<dyn SymEngine>>,
-    /// Parallel to `Program::extra`: for a symbolic instruction, the input
+    /// Parallel to `Program::operands`: for a symbolic instruction, the input
     /// values it last ran on, then its outputs from that run.
     memo: RefCell<Vec<f64>>,
     pub stats: Cell<SymStats>,
@@ -78,9 +78,9 @@ pub struct Program {
     pub sym: Sym,
     /// Every input of a vector or symbolic instruction (and, after a
     /// symbolic instruction's inputs, placeholders for its memo).
-    pub extra: Vec<CellIdx>,
+    pub operands: Vec<CellIdx>,
     /// Whether each cell holds an expression handle (a math cell).
-    pub math: Vec<bool>,
+    pub is_math: Vec<bool>,
     /// Compiled curves that `SampleTape` instructions run.
     pub tapes: Vec<cells_sym::tape::Tape>,
     /// Whether creation order was already a valid evaluation order, so no
@@ -107,10 +107,10 @@ impl Program {
         instrs: Vec<Instr>,
         n_cells: usize,
         sym: Sym,
-        extra: Vec<CellIdx>,
-        math: Vec<bool>,
+        operands: Vec<CellIdx>,
+        is_math: Vec<bool>,
     ) -> std::result::Result<Program, (CellIdx, Sym)> {
-        sym.memo.replace(vec![NEVER; extra.len()]);
+        sym.memo.replace(vec![NEVER; operands.len()]);
         let mut producer = vec![u32::MAX; n_cells];
         for (i, ins) in instrs.iter().enumerate() {
             for k in 0..ins.op.n_out() {
@@ -120,7 +120,7 @@ impl Program {
             }
         }
         let in_order = instrs.iter().enumerate().all(|(i, ins)| {
-            ins.op.inputs(&extra).all(|input| {
+            ins.op.inputs(&operands).all(|input| {
                 let p = producer[input as usize];
                 p == u32::MAX || (p as usize) < i
             })
@@ -130,8 +130,8 @@ impl Program {
                 instrs,
                 producer,
                 sym,
-                extra,
-                math,
+                operands,
+                is_math,
                 tapes: Vec::new(),
                 in_creation_order: true,
             });
@@ -144,7 +144,7 @@ impl Program {
         let mut indegree = vec![0u32; n];
         let mut dep_count = vec![0u32; n + 1];
         for ins in instrs.iter() {
-            for input in ins.op.inputs(&extra) {
+            for input in ins.op.inputs(&operands) {
                 let p = producer[input as usize];
                 if p != u32::MAX {
                     dep_count[p as usize + 1] += 1;
@@ -157,7 +157,7 @@ impl Program {
         let mut fill = dep_count.clone();
         let mut dependents = vec![0u32; dep_count[n] as usize];
         for (i, ins) in instrs.iter().enumerate() {
-            for input in ins.op.inputs(&extra) {
+            for input in ins.op.inputs(&operands) {
                 let p = producer[input as usize];
                 if p != u32::MAX {
                     indegree[i] += 1;
@@ -196,8 +196,8 @@ impl Program {
             instrs: order,
             producer,
             sym,
-            extra,
-            math,
+            operands,
+            is_math,
             tapes: Vec::new(),
             in_creation_order: false,
         })
@@ -213,7 +213,7 @@ impl Program {
         } else if let Op::Vec(..) = ins.op {
             let mut buf = [0.0f64; 16];
             let n = ins.op.n_out();
-            ins.op.eval_vec(cells, &self.extra, &mut buf[..n]);
+            ins.op.eval_vec(cells, &self.operands, &mut buf[..n]);
             match changed {
                 Some(changed) => {
                     for k in 0..n {
@@ -254,7 +254,7 @@ impl Program {
         changed: Option<&mut Vec<CellIdx>>,
     ) {
         let n_out = kind.n_out();
-        let inputs = &self.extra[start..start + n];
+        let inputs = &self.operands[start..start + n];
         let mut memo = self.sym.memo.borrow_mut();
         let (last, outs) = memo[start..start + n + n_out].split_at_mut(n);
         let mut stats = self.sym.stats.get();
@@ -341,7 +341,7 @@ impl Program {
     #[inline]
     pub fn any_input_differs(&self, ins: &Instr, a: &[f64], b: &[f64]) -> bool {
         ins.op
-            .inputs(&self.extra)
+            .inputs(&self.operands)
             .any(|c| differs(a[c as usize], b[c as usize]))
     }
 

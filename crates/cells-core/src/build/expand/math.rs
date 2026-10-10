@@ -14,10 +14,14 @@ impl<'c, 'a> Builder<'c, 'a> {
         post: Post,
         scope: ScopeId,
     ) -> Result<Source> {
-        let text = self.c.sym_text.get(&expr).ok_or_else(|| Error::BadMath {
-            text: format!("{:?}", self.c.arena.get(expr)),
-            reason: "no math text recorded".into(),
-        })?;
+        let text = self
+            .compiled
+            .sym_text
+            .get(&expr)
+            .ok_or_else(|| Error::BadMath {
+                text: format!("{:?}", self.compiled.arena.get(expr)),
+                reason: "no math text recorded".into(),
+            })?;
         let tree = cells_sym::parse::parse(text).map_err(|reason| Error::BadMath {
             text: text.clone(),
             reason,
@@ -90,7 +94,7 @@ impl<'c, 'a> Builder<'c, 'a> {
     /// The slot a `$ref` inside math names, and whether it holds an
     /// expression (then the slot is the referent's math cell).
     fn leaf_slot(&mut self, plan: RefId, scope: ScopeId) -> Result<(SlotId, bool)> {
-        let display = &self.c.refs[plan].display;
+        let display = &self.compiled.refs[plan].display;
         let slot = self.resolve_one(plan, scope).map_err(|e| match e {
             Error::ArityMismatch { .. } => Error::BadMath {
                 text: display.clone(),
@@ -112,7 +116,7 @@ impl<'c, 'a> Builder<'c, 'a> {
         if comp == NONE {
             return None;
         }
-        let kind = self.comps.kind[comp as usize];
+        let kind = self.components.kind[comp as usize];
         let pi = (slot - self.slot_base[comp as usize]) as usize;
         let name = kind.prop_defs().get(pi)?.name;
         match (kind, name) {
@@ -135,8 +139,9 @@ impl<'c, 'a> Builder<'c, 'a> {
     /// expression. A copy is symbolic when its referent is. A reference
     /// cycle counts as numeric (the cycle is reported later).
     pub(in crate::build) fn is_symbolic(&mut self, comp: CompIdx) -> bool {
-        if self.math_mode.len() < self.comps.len() {
-            self.math_mode.resize(self.comps.len(), MathMode::Unknown);
+        if self.math_mode.len() < self.components.len() {
+            self.math_mode
+                .resize(self.components.len(), MathMode::Unknown);
         }
         match self.math_mode[comp as usize] {
             MathMode::Numeric | MathMode::Deciding => return false,
@@ -144,7 +149,7 @@ impl<'c, 'a> Builder<'c, 'a> {
             MathMode::Unknown => {}
         }
         self.math_mode[comp as usize] = MathMode::Deciding;
-        let kind = self.comps.kind[comp as usize];
+        let kind = self.components.kind[comp as usize];
         let inst = self.comp_instance[comp as usize];
         let yes = match kind {
             ComponentKind::Function | ComponentKind::Derivative => true,
@@ -169,19 +174,24 @@ impl<'c, 'a> Builder<'c, 'a> {
             ComponentKind::MathInput => {
                 let i = self.instances[inst as usize];
                 matches!(
-                    self.c.templates[i.template].elems[i.elem].props.get(1),
+                    self.compiled.templates[i.template].elems[i.elem]
+                        .props
+                        .get(1),
                     Some(SourcePlan::MathEssential(_))
                 )
             }
             ComponentKind::Math => {
                 let i = self.instances[inst as usize];
-                match self.c.templates[i.template].elems[i.elem].props.first() {
+                match self.compiled.templates[i.template].elems[i.elem]
+                    .props
+                    .first()
+                {
                     Some(SourcePlan::MathHandle(id, _)) => {
                         let id = *id;
                         let mut syms = Vec::new();
-                        self.c.arena.symbols(id, &mut syms);
+                        self.compiled.arena.symbols(id, &mut syms);
                         let mut leaves = Vec::new();
-                        self.c.arena.cell_leaves(id, &mut leaves);
+                        self.compiled.arena.cell_leaves(id, &mut leaves);
                         !syms.is_empty()
                             || leaves.into_iter().any(|p| {
                                 self.resolve_one(p as RefId, i.scope)
@@ -208,12 +218,12 @@ impl<'c, 'a> Builder<'c, 'a> {
         id: ExprId,
         scope: ScopeId,
     ) -> Result<ExprId> {
-        let e = self.c.arena.get(id).clone();
+        let e = self.compiled.arena.get(id).clone();
         let out = match e {
             Expr::Num(v) => Expr::Num(v),
             Expr::Sym(s) => Expr::Sym(s),
             Expr::Cell(plan) => {
-                let display = &self.c.refs[plan as usize].display;
+                let display = &self.compiled.refs[plan as usize].display;
                 let slot = self
                     .resolve_one(plan as RefId, scope)
                     .map_err(|e| match e {

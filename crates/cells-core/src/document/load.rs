@@ -122,7 +122,7 @@ impl Document {
         self.structure
             .repeats
             .iter()
-            .all(|r| self.repeat_count(r) == r.n)
+            .all(|r| self.repeat_count(r) == r.iterations)
     }
 
     /// The iteration count a repeat's `count` cell currently asks for.

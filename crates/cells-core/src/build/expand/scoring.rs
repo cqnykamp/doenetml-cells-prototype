@@ -39,8 +39,8 @@ impl<'c, 'a> Builder<'c, 'a> {
     pub(in crate::build) fn scoring_sources(&mut self) {
         let root = self.root;
         self.set_credit(root);
-        for c in 0..self.comps.len() as CompIdx {
-            if self.comps.kind[c as usize] == ComponentKind::Section {
+        for c in 0..self.components.len() as CompIdx {
+            if self.components.kind[c as usize] == ComponentKind::Section {
                 if self.aggregates(c) {
                     self.set_credit(c);
                 } else {
@@ -77,10 +77,10 @@ impl<'c, 'a> Builder<'c, 'a> {
 
     fn component_children(&self, c: CompIdx) -> Vec<CompIdx> {
         let (s, n) = (
-            self.comps.child_start[c as usize] as usize,
-            self.comps.child_count[c as usize] as usize,
+            self.components.child_start[c as usize] as usize,
+            self.components.child_count[c as usize] as usize,
         );
-        self.comps.child_list[s..s + n]
+        self.components.child_list[s..s + n]
             .iter()
             .copied()
             .filter(|&e| e & TEXT_BIT == 0)
@@ -133,7 +133,7 @@ impl<'c, 'a> Builder<'c, 'a> {
     /// containers are looked through, `<setup>` is not.
     fn scored_items(&mut self, c: CompIdx, gate: Option<SlotId>, out: &mut Vec<(SlotId, SlotId)>) {
         for k in self.component_children(c) {
-            let (weight, credit) = match self.comps.kind[k as usize] {
+            let (weight, credit) = match self.components.kind[k as usize] {
                 ComponentKind::Setup => continue,
                 ComponentKind::Case => {
                     let g = self.gate_through(gate, k);
@@ -165,7 +165,7 @@ impl<'c, 'a> Builder<'c, 'a> {
     /// counted.
     fn number_sections(&mut self, c: CompIdx, gate: Option<SlotId>, counter: &mut Counter) {
         for k in self.component_children(c) {
-            match self.comps.kind[k as usize] {
+            match self.components.kind[k as usize] {
                 ComponentKind::Case => {
                     let g = self.gate_through(gate, k);
                     self.number_sections(k, g, counter);

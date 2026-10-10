@@ -10,12 +10,12 @@ impl Compiler<'_> {
         e: ElemId,
         base: Option<NodeId>,
     ) -> Result<ElemPlan> {
-        let d = self.c.dast;
+        let d = self.compiled.dast;
         let Elem {
             node: el,
             name_scope: scope,
             ..
-        } = self.c.templates[t].elems[e];
+        } = self.compiled.templates[t].elems[e];
         let kind = ComponentKind::Circle;
         let center = match self.attr_or_inherited(el, base, "center") {
             Some(a) => Some(match self.plan_point_attr(t, scope, a) {

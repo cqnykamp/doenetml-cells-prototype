@@ -166,8 +166,9 @@ impl CondParser<'_> {
             [Token::Ident(w)] if w == "true" => SourcePlan::Fixed(1.0),
             [Token::Ident(w)] if w == "false" => SourcePlan::Fixed(0.0),
             _ => {
-                let id = Parser::parse(toks, &mut cp.c.arena).map_err(|reason| self.err(reason))?;
-                match cp.c.arena.get(id) {
+                let id = Parser::parse(toks, &mut cp.compiled.arena)
+                    .map_err(|reason| self.err(reason))?;
+                match cp.compiled.arena.get(id) {
                     // A constant in a condition is not state.
                     Expr::Num(v) => SourcePlan::Fixed(*v),
                     Expr::Cell(p) => SourcePlan::reference(*p as RefId),

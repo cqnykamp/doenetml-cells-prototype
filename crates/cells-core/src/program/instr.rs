@@ -11,7 +11,7 @@ pub const SAMPLES: usize = 200;
 
 /// A symbolic instruction (ADR 0008): it calls the document's symbolic
 /// engine. Inputs are cells holding numbers or expression handles; every
-/// input is in `Program::extra`. Each one keeps the input values it last ran
+/// input is in `Program::operands`. Each one keeps the input values it last ran
 /// on and its outputs, and reruns only when an input changed.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SymKind {
@@ -150,9 +150,9 @@ impl OpSpec {
     }
 
     /// Bind to input cells. Vector and symbolic operators park their inputs
-    /// in `extra`; a symbolic one also reserves `n_out` entries after them
+    /// in `operands`; a symbolic one also reserves `n_out` entries after them
     /// for its memo.
-    pub fn bind(&self, inputs: &[CellIdx], extra: &mut Vec<CellIdx>) -> Op {
+    pub fn bind(&self, inputs: &[CellIdx], operands: &mut Vec<CellIdx>) -> Op {
         debug_assert!(
             inputs.len() == self.arity()
                 || matches!(
@@ -160,9 +160,9 @@ impl OpSpec {
                     OpSpec::Sym(SymKind::Instantiate { .. } | SymKind::SampleTape { .. })
                 )
         );
-        let park = |extra: &mut Vec<CellIdx>, leaves: &[CellIdx]| {
-            let start = extra.len() as u32;
-            extra.extend_from_slice(leaves);
+        let park = |operands: &mut Vec<CellIdx>, leaves: &[CellIdx]| {
+            let start = operands.len() as u32;
+            operands.extend_from_slice(leaves);
             (start, leaves.len() as u8)
         };
         match *self {
@@ -189,12 +189,12 @@ impl OpSpec {
             OpSpec::Truthy => Op::Truthy(inputs[0]),
             OpSpec::Not => Op::Not(inputs[0]),
             OpSpec::Sym(k) => {
-                let (start, n) = park(extra, inputs);
-                extra.extend(std::iter::repeat_n(crate::document::NONE, k.n_out()));
+                let (start, n) = park(operands, inputs);
+                operands.extend(std::iter::repeat_n(crate::document::NONE, k.n_out()));
                 Op::Sym(k, start, n)
             }
             OpSpec::Vec(v) => {
-                let (start, n) = park(extra, inputs);
+                let (start, n) = park(operands, inputs);
                 Op::Vec(v, start, n, v.n_out() as u8)
             }
         }

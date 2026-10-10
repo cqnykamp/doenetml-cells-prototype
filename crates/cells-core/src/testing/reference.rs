@@ -31,7 +31,7 @@ impl<'a> ReferenceEvaluator<'a> {
         let ins = &self.doc.program.instrs[p];
         // Build a scratch view where only this instruction's inputs are filled.
         let mut scratch = vec![f64::NAN; self.doc.cells.len()];
-        for input in ins.op.inputs(&self.doc.program.extra) {
+        for input in ins.op.inputs(&self.doc.program.operands) {
             scratch[input as usize] = self.value(input);
         }
         let mut out = vec![0.0; ins.op.n_out()];

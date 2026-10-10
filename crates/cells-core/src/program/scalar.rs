@@ -54,10 +54,10 @@ pub enum Op {
     Truthy(CellIdx),
     /// 1 when `a` does not hold.
     Not(CellIdx),
-    /// A symbolic instruction: inputs are `extra[start..start + n]`; the
+    /// A symbolic instruction: inputs are `operands[start..start + n]`; the
     /// `n_out` entries after them hold its memo (see `Program::step`).
     Sym(SymKind, u32, u8),
-    /// A vector operator (`vector.rs`): inputs are `extra[start..start + n_in]`,
+    /// A vector operator (`vector.rs`): inputs are `operands[start..start + n_in]`,
     /// outputs are the `n_out` cells from the instruction's `out`.
     Vec(VecOp, u32, u8, u8),
 }
@@ -258,7 +258,7 @@ impl Op {
             | Op::Truthy(a)
             | Op::Not(a) => (a, None),
             Op::Vec(..) | Op::Sym(..) => {
-                unreachable!("vector and symbolic operators keep every input in extra")
+                unreachable!("vector and symbolic operators keep every input in operands")
             }
         }
     }
@@ -275,13 +275,13 @@ impl Op {
 
     /// Evaluate a vector operator into `out` (`n_out` values).
     #[inline]
-    pub fn eval_vec(&self, cells: &[f64], extra: &[CellIdx], out: &mut [f64]) {
+    pub fn eval_vec(&self, cells: &[f64], operands: &[CellIdx], out: &mut [f64]) {
         let Op::Vec(v, start, n_in, _) = *self else {
             unreachable!()
         };
         let mut inp = [0.0f64; crate::program::MAX_VEC_IN];
         let n_in = n_in as usize;
-        for (k, &c) in extra[start as usize..start as usize + n_in]
+        for (k, &c) in operands[start as usize..start as usize + n_in]
             .iter()
             .enumerate()
         {
@@ -290,10 +290,10 @@ impl Op {
         v.eval(&inp[..n_in], out);
     }
 
-    /// Range into `Program::extra` of inputs kept there (vector and
+    /// Range into `Program::operands` of inputs kept there (vector and
     /// symbolic operators).
     #[inline(always)]
-    pub fn extra_range(&self) -> std::ops::Range<usize> {
+    pub fn operand_range(&self) -> std::ops::Range<usize> {
         match *self {
             Op::Vec(_, start, n, _) | Op::Sym(_, start, n) => {
                 start as usize..start as usize + n as usize
@@ -302,8 +302,8 @@ impl Op {
         }
     }
 
-    /// All input cells, direct and extra.
-    pub fn inputs<'a>(&self, extra: &'a [CellIdx]) -> impl Iterator<Item = CellIdx> + 'a {
+    /// All input cells, direct and in `operands`.
+    pub fn inputs<'a>(&self, operands: &'a [CellIdx]) -> impl Iterator<Item = CellIdx> + 'a {
         let (a, b) = match self {
             Op::Vec(..) | Op::Sym(..) => (None, None),
             _ => {
@@ -313,6 +313,6 @@ impl Op {
         };
         a.into_iter()
             .chain(b)
-            .chain(extra[self.extra_range()].iter().copied())
+            .chain(operands[self.operand_range()].iter().copied())
     }
 }

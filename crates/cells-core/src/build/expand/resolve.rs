@@ -55,7 +55,7 @@ impl<'c, 'a> Builder<'c, 'a> {
         plan: RefId,
         scope: ScopeId,
     ) -> Result<(Resolved, Option<&'c str>)> {
-        let p = &self.c.refs[plan];
+        let p = &self.compiled.refs[plan];
         let mut sc = scope;
         for _ in 0..p.hops {
             sc = self.scopes[sc].0;
@@ -84,10 +84,10 @@ impl<'c, 'a> Builder<'c, 'a> {
                     cur = match cur {
                         Resolved::Missing => Resolved::Missing,
                         Resolved::Iter(..) => return Err(Error::NotIndexable(p.display.clone())),
-                        Resolved::Comp(c) => match self.comps.kind[c as usize] {
+                        Resolved::Comp(c) => match self.components.kind[c as usize] {
                             ComponentKind::RepeatForSequence => {
                                 let r = &self.repeats[self.comp_repeat[c as usize] as usize];
-                                if k < 1 || k > r.n as i64 {
+                                if k < 1 || k > r.iterations as i64 {
                                     Resolved::Missing
                                 } else {
                                     Resolved::Iter(c, r.iter_scopes[(k - 1) as usize])
@@ -102,11 +102,11 @@ impl<'c, 'a> Builder<'c, 'a> {
                             },
                             ComponentKind::PointList => {
                                 let (s, n) = (
-                                    self.comps.child_start[c as usize] as usize,
-                                    self.comps.child_count[c as usize] as usize,
+                                    self.components.child_start[c as usize] as usize,
+                                    self.components.child_count[c as usize] as usize,
                                 );
                                 if k >= 1 && (k as usize) <= n {
-                                    Resolved::Comp(self.comps.child_list[s + k as usize - 1])
+                                    Resolved::Comp(self.components.child_list[s + k as usize - 1])
                                 } else {
                                     Resolved::Missing
                                 }
@@ -159,12 +159,12 @@ impl<'c, 'a> Builder<'c, 'a> {
                     Ok(comps[0])
                 } else {
                     Err(Error::AmbiguousIteration(
-                        self.c.refs[plan].display.clone(),
+                        self.compiled.refs[plan].display.clone(),
                         comps.len(),
                     ))
                 }
             }
-            Resolved::Missing => Err(Error::UnknownName(self.c.refs[plan].display.clone())),
+            Resolved::Missing => Err(Error::UnknownName(self.compiled.refs[plan].display.clone())),
         }
     }
 
@@ -183,7 +183,7 @@ impl<'c, 'a> Builder<'c, 'a> {
             }
             other => self.single_component(other, plan)?,
         };
-        let kind = self.comps.kind[comp as usize];
+        let kind = self.components.kind[comp as usize];
         let prop = match prop {
             Some(p) => p,
             None => kind
@@ -222,7 +222,7 @@ impl<'c, 'a> Builder<'c, 'a> {
             Resolved::Missing => return Ok(self.missing_slot()),
             other => self.single_component(other, plan)?,
         };
-        let kind = self.comps.kind[comp as usize];
+        let kind = self.components.kind[comp as usize];
         let prop = match prop {
             Some(p) => p,
             None => kind

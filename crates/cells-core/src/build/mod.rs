@@ -106,12 +106,12 @@ pub struct BuildOutput {
     n_essential: usize,
     n_fixed: usize,
     instrs: Vec<Instr>,
-    comps: ComponentTable,
+    components: ComponentTable,
     strings: StringTable,
     root: CompIdx,
     structure: Structure,
-    extra: Vec<CellIdx>,
-    math: Vec<bool>,
+    operands: Vec<CellIdx>,
+    is_math: Vec<bool>,
     tapes: Vec<cells_sym::tape::Tape>,
     /// Human-readable owner of a cell, e.g. "p1.x". Computed lazily because
     /// a cycle error is the only consumer.
@@ -131,7 +131,7 @@ impl BuildOutput {
             engine,
             Box::new(cells_sym::flat::Flat::new()),
         ));
-        let program = match Program::schedule(self.instrs, n, sym, self.extra, self.math) {
+        let program = match Program::schedule(self.instrs, n, sym, self.operands, self.is_math) {
             Ok(mut p) => {
                 p.tapes = self.tapes;
                 p
@@ -146,7 +146,7 @@ impl BuildOutput {
             self.n_essential,
             self.n_fixed,
             program,
-            self.comps,
+            self.components,
             self.strings,
             self.root,
             self.structure,
@@ -166,7 +166,7 @@ impl BuildOutput {
 #[derive(Debug, Clone, Default)]
 pub struct Carryover {
     /// The last build's structure: its scope table, seed and options, and in
-    /// `values` every essential value it held.
+    /// `essential_values` every essential value it held.
     structure: Structure,
     counts: HashMap<(ScopeId, NodeId), u32>,
 }
@@ -194,13 +194,15 @@ impl Carryover {
             .map(|r| ((r.scope, r.node), doc.repeat_count(r)))
             .collect();
         let mut structure = std::mem::take(&mut doc.structure);
-        structure.values.resize(structure.scopes.len(), Vec::new());
+        structure
+            .essential_values
+            .resize(structure.scopes.len(), Vec::new());
         for (&(scope, slot), &v) in structure
             .essential_slots
             .iter()
             .zip(&doc.cells[..doc.n_essential])
         {
-            let row = &mut structure.values[scope as usize];
+            let row = &mut structure.essential_values[scope as usize];
             if row.len() <= slot as usize {
                 row.resize(slot as usize + 1, None);
             }

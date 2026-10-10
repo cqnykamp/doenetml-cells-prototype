@@ -62,7 +62,7 @@ impl<'c, 'a> Builder<'c, 'a> {
                     let value = self
                         .carryover
                         .structure
-                        .values
+                        .essential_values
                         .get(scope as usize)
                         .and_then(|row| row.get(tslot as usize).copied().flatten())
                         .unwrap_or(*v);
@@ -114,9 +114,9 @@ impl<'c, 'a> Builder<'c, 'a> {
         lap("number cells");
 
         let mut instrs = Vec::with_capacity(derived_defs.len());
-        let mut extra = Vec::new();
+        let mut operands = Vec::new();
         let mut bound: Vec<CellIdx> = Vec::with_capacity(8);
-        let mut math = vec![false; cells.len()];
+        let mut is_math = vec![false; cells.len()];
         let mut tapes = Vec::new();
         // Compile curves whose expression has a fixed shape (plan 5, change
         // 1), unless the load asked for engine sampling.
@@ -135,7 +135,7 @@ impl<'c, 'a> Builder<'c, 'a> {
             );
             if let OpSpec::Sym(kind) = spec {
                 if kind.makes_math() {
-                    math[slot_to_cell[s] as usize] = true;
+                    is_math[slot_to_cell[s] as usize] = true;
                 }
                 // The template's leaves were slots; they are cells now.
                 if let SymKind::Instantiate { template, post } = kind {
@@ -181,25 +181,25 @@ impl<'c, 'a> Builder<'c, 'a> {
             }
             instrs.push(Instr {
                 out: slot_to_cell[s],
-                op: spec.bind(&bound, &mut extra),
+                op: spec.bind(&bound, &mut operands),
             });
         }
         for &s in &self.math_slots {
-            math[slot_to_cell[s as usize] as usize] = true;
+            is_math[slot_to_cell[s as usize] as usize] = true;
         }
         lap("bind instructions");
 
         // Prop cells: contiguous per component, in slot order.
-        let n_comps = self.comps.len();
-        self.comps.prop_base = Vec::with_capacity(n_comps);
-        self.comps.prop_cells = Vec::with_capacity(n);
+        let n_comps = self.components.len();
+        self.components.prop_base = Vec::with_capacity(n_comps);
+        self.components.prop_cells = Vec::with_capacity(n);
         for c in 0..n_comps {
-            let np = self.comps.kind[c].prop_defs().len();
-            self.comps
+            let np = self.components.kind[c].prop_defs().len();
+            self.components
                 .prop_base
-                .push(self.comps.prop_cells.len() as u32);
+                .push(self.components.prop_cells.len() as u32);
             let base = self.slot_base[c] as usize;
-            self.comps
+            self.components
                 .prop_cells
                 .extend_from_slice(&slot_to_cell[base..base + np]);
         }
@@ -209,13 +209,13 @@ impl<'c, 'a> Builder<'c, 'a> {
         lap("structural depth");
 
         // The value store grows with the scope table; rows fill lazily.
-        let mut values = self.carryover.structure.values.clone();
+        let mut values = self.carryover.structure.essential_values.clone();
         values.resize(self.scopes.len(), Vec::new());
 
         let structure = Structure {
             scopes: self.scopes,
             essential_slots,
-            values,
+            essential_values: values,
             structural_depth: depths.iter().copied().max().unwrap_or(0),
             repeat_depths: depths,
             repeat_cross_reads: cross_reads,
@@ -228,12 +228,12 @@ impl<'c, 'a> Builder<'c, 'a> {
         // Lazy labels for cycle errors.
         let slot_comp = self.slot_comp;
         let slot_base = self.slot_base;
-        let kinds = self.comps.kind.clone();
+        let kinds = self.components.kind.clone();
         let names: Vec<Option<String>> = self
-            .comps
+            .components
             .name
             .iter()
-            .map(|&s| (s != NONE).then(|| self.c.dast.strings.get(s).trim().to_string()))
+            .map(|&s| (s != NONE).then(|| self.compiled.dast.strings.get(s).trim().to_string()))
             .collect();
         let cell_label = Box::new(move |cell: CellIdx| {
             let slot = cell_def_slot[cell as usize];
@@ -251,27 +251,27 @@ impl<'c, 'a> Builder<'c, 'a> {
             }
         });
 
-        let mut comps = self.comps;
-        comps.kind.shrink_to_fit();
-        comps.name.shrink_to_fit();
-        comps.parent.shrink_to_fit();
-        comps.child_start.shrink_to_fit();
-        comps.child_count.shrink_to_fit();
-        comps.child_list.shrink_to_fit();
-        comps.prop_cells.shrink_to_fit();
-        comps.node.shrink_to_fit();
-        comps.scope.shrink_to_fit();
+        let mut components = self.components;
+        components.kind.shrink_to_fit();
+        components.name.shrink_to_fit();
+        components.parent.shrink_to_fit();
+        components.child_start.shrink_to_fit();
+        components.child_count.shrink_to_fit();
+        components.child_list.shrink_to_fit();
+        components.prop_cells.shrink_to_fit();
+        components.dast_node.shrink_to_fit();
+        components.scope.shrink_to_fit();
         Ok(BuildOutput {
             cells,
             n_essential,
             n_fixed,
             instrs,
-            comps,
-            strings: self.c.dast.strings.clone(),
+            components,
+            strings: self.compiled.dast.strings.clone(),
             root: self.root,
             structure,
-            extra,
-            math,
+            operands,
+            is_math,
             tapes,
             cell_label,
         })
@@ -323,7 +323,7 @@ impl<'c, 'a> Builder<'c, 'a> {
         let pi = slot - self.slot_base[comp as usize];
         (
             inst.scope,
-            self.c.templates[inst.template].elems[inst.elem].slot_off + pi,
+            self.compiled.templates[inst.template].elems[inst.elem].slot_off + pi,
         )
     }
 
@@ -373,7 +373,7 @@ impl<'c, 'a> Builder<'c, 'a> {
                 touched.push(sl);
                 let comp = self.slot_comp[sl as usize];
                 if comp != NONE {
-                    let scope = self.comps.scope[comp as usize];
+                    let scope = self.components.scope[comp as usize];
                     if scope != 0
                         && !is_ancestor_or_self(scope, r.scope)
                         && let Some(&o) = owner.get(&scope)

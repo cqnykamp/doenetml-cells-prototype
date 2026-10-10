@@ -7,17 +7,17 @@ use super::*;
 impl<'a> Compiler<'a> {
     /// A copy of plan `p` naming `prop` instead of its own (`$l` -> `$l.x2`).
     pub(in crate::build) fn plan_with_prop(&mut self, p: RefId, prop: &str) -> RefId {
-        let mut plan = self.c.refs[p].clone();
+        let mut plan = self.compiled.refs[p].clone();
         plan.prop = Some(prop.to_string());
         plan.display = format!("{}.{prop}", plan.display);
-        self.c.refs.push(plan);
-        self.c.refs.len() - 1
+        self.compiled.refs.push(plan);
+        self.compiled.refs.len() - 1
     }
 
     /// The element a plan names, if it is in template `t` itself (a path of
     /// names without indices, no prop).
     pub(in crate::build) fn plan_elem_target(&self, _t: TemplateId, p: RefId) -> Option<ElemId> {
-        let plan = &self.c.refs[p];
+        let plan = &self.compiled.refs[p];
         if plan.hops != 0 || plan.prop.is_some() {
             return None;
         }
@@ -45,12 +45,12 @@ impl<'a> Compiler<'a> {
         let name = name.trim();
         let mut hops = 0;
         loop {
-            let tpl = &self.c.templates[t];
+            let tpl = &self.compiled.templates[t];
             let mut a = from;
             loop {
                 if a != ROOT_SCOPE
                     && tpl.elems[a].name != NONE
-                    && self.c.dast.strings.get(tpl.elems[a].name).trim() == name
+                    && self.compiled.dast.strings.get(tpl.elems[a].name).trim() == name
                 {
                     return Ok(Some((hops, a)));
                 }
@@ -80,7 +80,7 @@ impl<'a> Compiler<'a> {
         e: ElemId,
         name: &str,
     ) -> Result<Option<ElemId>> {
-        match self.c.templates[t]
+        match self.compiled.templates[t]
             .names
             .get(&(e, name.trim().to_string()))
             .map(Vec::as_slice)
@@ -97,7 +97,7 @@ impl<'a> Compiler<'a> {
         scope: ElemId,
         m: NodeId,
     ) -> Result<RefId> {
-        let d = self.c.dast;
+        let d = self.compiled.dast;
         let display = d.macro_display(m);
         let names = d.macro_path(m);
         let parts: Vec<_> = d.macro_parts(m).collect();
@@ -107,7 +107,7 @@ impl<'a> Compiler<'a> {
             .ok_or_else(|| Error::UnknownName(first.into()))?;
         let mut cur_t = t;
         for _ in 0..hops {
-            cur_t = self.c.templates[cur_t].parent.unwrap().0;
+            cur_t = self.compiled.templates[cur_t].parent.unwrap().0;
         }
         let mut steps = vec![Step::Elem(e0)];
         let mut at = At::Elem(e0);
@@ -118,27 +118,29 @@ impl<'a> Compiler<'a> {
             if i > 0 {
                 let name = d.strings.get(names[i]);
                 let choice_here = match at {
-                    At::Elem(e) if !after_iface => match self.c.templates[cur_t].elems[e].body {
-                        Body::Choice(cid)
-                            if self.c.templates[cur_t].elems[e]
-                                .kind
-                                .prop_index(name)
-                                .is_none() =>
-                        {
-                            Some(cid)
+                    At::Elem(e) if !after_iface => {
+                        match self.compiled.templates[cur_t].elems[e].body {
+                            Body::Choice(cid)
+                                if self.compiled.templates[cur_t].elems[e]
+                                    .kind
+                                    .prop_index(name)
+                                    .is_none() =>
+                            {
+                                Some(cid)
+                            }
+                            _ => None,
                         }
-                        _ => None,
-                    },
+                    }
                     At::SelectPick(cid) => Some(cid),
                     _ => None,
                 };
                 if let Some(cid) = choice_here {
-                    if matches!(at, At::Elem(_)) && !self.c.choices[cid].reactive {
+                    if matches!(at, At::Elem(_)) && !self.compiled.choices[cid].reactive {
                         // `$s.x` is `$s[1].x` when the select picks one option.
-                        if self.c.choices[cid].num_to_select != 1 {
+                        if self.compiled.choices[cid].num_to_select != 1 {
                             return Err(Error::Banned(format!(
                                 "'${display}' needs an index: the select picks {} options",
-                                self.c.choices[cid].num_to_select
+                                self.compiled.choices[cid].num_to_select
                             )));
                         }
                         steps.push(Step::Index(IndexPlan {
@@ -173,8 +175,8 @@ impl<'a> Compiler<'a> {
                         at = At::Elem(child);
                     }
                     At::Elem(e) => {
-                        let kind = self.c.templates[cur_t].elems[e].kind;
-                        let kind = match self.c.templates[cur_t].elems[e].body {
+                        let kind = self.compiled.templates[cur_t].elems[e].kind;
+                        let kind = match self.compiled.templates[cur_t].elems[e].body {
                             // After `$c[k]` the component is a collected copy.
                             Body::Collect { kind: ck, .. } if steps.len() > 1 => ck,
                             _ => kind,
@@ -279,7 +281,7 @@ impl<'a> Compiler<'a> {
                     return Err(Error::NotIndexable(display));
                 };
                 // `$p[2]`: a coordinate of a point.
-                let ek = self.c.templates[cur_t].elems[e].kind;
+                let ek = self.compiled.templates[cur_t].elems[e].kind;
                 if let Some(parts_of) = ek.default_prop().and_then(|dp| ek.virtual_prop(dp)) {
                     if prop.is_some() || i + 1 != parts.len() {
                         return Err(Error::PathTooDeep(display));
@@ -291,7 +293,7 @@ impl<'a> Compiler<'a> {
                     prop = Some(parts_of[k as usize - 1].to_string());
                     continue;
                 }
-                match self.c.templates[cur_t].elems[e].body {
+                match self.compiled.templates[cur_t].elems[e].body {
                     Body::Repeat { template } => {
                         let ip = self.plan_index(t, expr, &display)?;
                         steps.push(Step::Index(ip));
@@ -303,12 +305,14 @@ impl<'a> Compiler<'a> {
                         let ip = self.plan_index(t, expr, &display)?;
                         steps.push(Step::Index(ip));
                     }
-                    Body::Choice(cid) if !self.c.choices[cid].reactive && !after_iface => {
+                    Body::Choice(cid) if !self.compiled.choices[cid].reactive && !after_iface => {
                         let ip = self.plan_index(t, expr, &display)?;
                         steps.push(Step::Index(ip));
                         at = At::SelectPick(cid);
                     }
-                    _ if self.c.templates[cur_t].elems[e].kind == ComponentKind::PointList => {
+                    _ if self.compiled.templates[cur_t].elems[e].kind
+                        == ComponentKind::PointList =>
+                    {
                         let ip = self.plan_index(t, expr, &display)?;
                         steps.push(Step::Index(ip));
                     }
@@ -318,32 +322,32 @@ impl<'a> Compiler<'a> {
         }
         // A bare `$s` names the one option a select picks.
         if let (At::Elem(e), None, false) = (at, &prop, after_iface)
-            && let Body::Choice(cid) = self.c.templates[cur_t].elems[e].body
-            && !self.c.choices[cid].reactive
+            && let Body::Choice(cid) = self.compiled.templates[cur_t].elems[e].body
+            && !self.compiled.choices[cid].reactive
         {
-            if self.c.choices[cid].num_to_select != 1 {
+            if self.compiled.choices[cid].num_to_select != 1 {
                 return Err(Error::Banned(format!(
                     "'${display}' needs an index: the select picks {} options",
-                    self.c.choices[cid].num_to_select
+                    self.compiled.choices[cid].num_to_select
                 )));
             }
             steps.push(Step::Index(IndexPlan {
                 terms: vec![IndexTerm::Const(1)],
             }));
         }
-        self.c.refs.push(RefPlan {
+        self.compiled.refs.push(RefPlan {
             hops,
             steps,
             prop,
             display,
         });
-        Ok(self.c.refs.len() - 1)
+        Ok(self.compiled.refs.len() - 1)
     }
 
     /// A literal integer index (array props are static, so `[$n]` is not
     /// supported on them).
     pub(in crate::build) fn literal_index(&self, expr: &[NodeId], display: &str) -> Result<i64> {
-        let d = self.c.dast;
+        let d = self.compiled.dast;
         let mut text = String::new();
         for &n in expr {
             match d.kind(n) {
@@ -364,7 +368,7 @@ impl<'a> Compiler<'a> {
         expr: &[NodeId],
         display: &str,
     ) -> Result<IndexPlan> {
-        let d = self.c.dast;
+        let d = self.compiled.dast;
         let mut terms = Vec::new();
         for &n in expr {
             match d.kind(n) {
@@ -390,9 +394,9 @@ impl<'a> Compiler<'a> {
                         .ok_or_else(|| Error::UnknownName(name.into()))?;
                     let mut tt = t;
                     for _ in 0..hops {
-                        tt = self.c.templates[tt].parent.unwrap().0;
+                        tt = self.compiled.templates[tt].parent.unwrap().0;
                     }
-                    let el = &self.c.templates[tt].elems[e];
+                    let el = &self.compiled.templates[tt].elems[e];
                     match (el.kind, el.props.first()) {
                         (ComponentKind::Number, Some(SourcePlan::IterIndex)) => {
                             terms.push(IndexTerm::Iter(hops))

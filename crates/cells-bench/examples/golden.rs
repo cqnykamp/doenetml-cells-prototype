@@ -47,7 +47,7 @@ fn dump(doc: &Document, out: &mut String) {
             let v = doc.cells[cell as usize];
             if doc
                 .program
-                .math
+                .is_math
                 .get(cell as usize)
                 .copied()
                 .unwrap_or(false)
@@ -172,7 +172,7 @@ fn fingerprint(doc: &Document) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
     format!("{:?}", doc.program.instrs).hash(&mut h);
-    doc.program.extra.hash(&mut h);
+    doc.program.operands.hash(&mut h);
     doc.cells.iter().for_each(|c| c.to_bits().hash(&mut h));
     h.finish()
 }

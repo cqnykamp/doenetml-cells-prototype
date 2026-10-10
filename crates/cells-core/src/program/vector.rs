@@ -2,7 +2,7 @@
 //! outputs, used by the geometric components (ADR 0006), by choices (plan
 //! 6) and by scoring. Each is a pure
 //! function of its inputs with a hand-written inverse rule; none knows which
-//! component it serves. Inputs are consecutive entries of `Program::extra`,
+//! component it serves. Inputs are consecutive entries of `Program::operands`,
 //! outputs are consecutive cells.
 //!
 //! Inverse rules, in one place so they can be judged together:
