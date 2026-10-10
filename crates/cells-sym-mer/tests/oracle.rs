@@ -1,5 +1,5 @@
 //! Engine A against engine R (math-expressions-rs) on one corpus, by the
-//! bar in `docs/plan-5.md`: `equals` must give identical booleans; the
+//! bar in `docs/history/plan-5.md`: `equals` must give identical booleans; the
 //! results of simplify, expand and derivative must be equal under R's
 //! `equals`; `evaluate` must agree to 1e-12. Printed forms are not compared.
 //! Run with `--nocapture` to see the table.

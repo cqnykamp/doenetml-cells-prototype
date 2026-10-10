@@ -1,7 +1,7 @@
 # Plan 6: conditional content in the cell architecture
 
 This file records the decisions reached before implementation
-(`instructions6.md` is the request). Vocabulary is in `CONTEXT.md` (**Branch**,
+(`docs/history/instructions6.md` is the request). Vocabulary is in `CONTEXT.md` (**Branch**,
 **Load-time choice**, **Reactive choice**, **Branch interface**, **Choice
 cell**, **Document seed**). The language decision is ADR 0009. The verdict
 goes in the "Plan 6" section of `results/NOTES.md`.

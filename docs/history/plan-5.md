@@ -1,7 +1,7 @@
 # Plan 5: symbolic math in the cell architecture
 
 This file records the decisions reached before implementation
-(`instructions5.md` is the request). Vocabulary is in `CONTEXT.md` (**Math
+(`docs/history/instructions5.md` is the request). Vocabulary is in `CONTEXT.md` (**Math
 cell**, **Symbolic instruction**, **Expression arena**). The decision that
 symbolic work runs inside a tick is ADR 0008, which revises ADR 0005. The
 verdict goes in the "Plan 5" section of `results/NOTES.md`.

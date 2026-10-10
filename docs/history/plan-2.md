@@ -1,6 +1,6 @@
 # Plan 2: real functionality on the cell architecture
 
-The brief is `instructions2.md`. This file records the decisions reached
+The brief is `docs/history/instructions2.md`. This file records the decisions reached
 before implementation. Vocabulary is in `CONTEXT.md`; the one hard-to-reverse
 decision is ADR 0003.
 

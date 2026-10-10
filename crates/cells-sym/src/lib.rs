@@ -4,7 +4,7 @@
 //! inside an expression, it only calls the operations of [`SymEngine`]. Two
 //! engines implement it: [`flat::Flat`] (engine A, a flat hash-consed arena
 //! written for this prototype) and, in `cells-sym-mer`, math-expressions-rs
-//! (engine R), which is also the behavior oracle. See `docs/plan-5.md`.
+//! (engine R), which is also the behavior oracle. See `docs/history/plan-5.md`.
 
 pub mod flat;
 pub mod parse;

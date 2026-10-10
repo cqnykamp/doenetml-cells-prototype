@@ -1,7 +1,7 @@
 # Cells prototype
 
 A prototype DoenetML core organized around a flat list of `f64` cells instead
-of components. See `instructions.md` for the goal, `CONTEXT.md` for the
+of components. See `docs/history/instructions.md` for the goal, `CONTEXT.md` for the
 vocabulary, and `docs/adr/` for recorded decisions.
 
 ## Layout
@@ -48,7 +48,7 @@ plan 3 to 5 added `line`, `lineSegment`, `circle`, `polygon`, `pointList`,
 (`option`), `group` and literal `text` (see ADR 0009); sections
 (`section`, `subsection`, `subsubsection`, `problem`, `exercise`,
 `example`) with credit and numbering through choices (`build/scoring.rs`).
-See `docs/plan-2.md` for the second round's scope and decisions.
+See `docs/history/plan-2.md` for the second round's scope and decisions.
 - `scripts/parse-dast.mjs` — runs the existing TypeScript DoenetML parser from
   a sibling DoenetML checkout (`DOENETML_DIR`, default `../../ml`) and prints
   normalized DAST JSON, or the binary wire format with `--binary`.

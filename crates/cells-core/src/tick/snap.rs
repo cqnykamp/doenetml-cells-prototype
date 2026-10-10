@@ -8,7 +8,7 @@
 //! The rule is the current core's (`StickyGroup.js`, `constraints.js`,
 //! `constraintUtils.js`), ported line for line, including its quirks, so the
 //! oracle's numbers come out the same. What is left out is Tier 3 of
-//! `docs/plan-4.md`: a rigid or similarity shape dragged by one vertex
+//! `docs/history/plan-4.md`: a rigid or similarity shape dragged by one vertex
 //! (rotation snapping, which the current core does through a pre-snap
 //! reference cache). Such a drag is not snapped.
 

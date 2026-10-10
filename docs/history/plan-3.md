@@ -1,6 +1,6 @@
 # Plan 3: line, circle and polygon as operator chains
 
-The brief is `instructions3.md`. This file records the decisions reached
+The brief is `docs/history/instructions3.md`. This file records the decisions reached
 before implementation. Vocabulary is in `CONTEXT.md`; the hard-to-reverse
 decision is ADR 0006. Results, the inverse-branch table and the recorded
 deviations are the "Plan 3" section of `results/NOTES.md`; the per-test
@@ -104,7 +104,7 @@ declines to act.
 
 ## Deliverables
 
-`docs/plan-3.md` (this file), ADR 0006, glossary terms, the adapter on the
+`docs/history/plan-3.md` (this file), ADR 0006, glossary terms, the adapter on the
 fork branch, minimal SVG renderers with drag for line, circle and polygon, a
 verdict section in `results/NOTES.md` answering both sub-questions with a
 table classifying every current-core inverse branch as dissolved at build
