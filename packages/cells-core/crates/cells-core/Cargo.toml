@@ -6,7 +6,12 @@ license.workspace = true
 description = "Prototype DoenetML core organized around a flat list of f64 cells"
 
 [dependencies]
-cells-sym = { path = "../cells-sym" }
+# The symbolic engine (ADR 0011): the library the current DoenetML core calls
+# through wasm, pinned by revision. Note: it enables serde_json's
+# `arbitrary_precision`, which feature unification spreads to any binary that
+# links this crate (DAST loading in those binaries only).
+math-expressions = { git = "https://github.com/Doenet/math-expressions.git", rev = "13543bf1ce6c986f8b554b6a2cc20644a34319d9" }
+num-complex = "0.4"
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

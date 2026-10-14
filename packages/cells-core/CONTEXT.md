@@ -167,10 +167,10 @@ from other math cells (simplify, expand, substitute, derivative), or whose
 output is a number computed from math cells (evaluate, equals). Symbolic
 instructions run inside a tick, like any other instruction.
 
-**Symbolic engine** — The store of symbolic expressions, behind one trait
-(`SymEngine`, ADR 0008). Math cells hold handles into it; the core treats
-expressions as opaque and reaches them only through the operations the engine
-offers.
+**Symbolic engine** — The store of symbolic expressions: math-expressions-rs,
+called directly (`sym::Engine`, ADR 0008, ADR 0011). Math cells hold handles
+into it; the core treats expressions as opaque and reaches them only through
+the operations the engine offers.
 
 **Parse arena** — The build's arena of math text parsed into expressions
 whose leaves are references. It decides lowering and gives a line equation

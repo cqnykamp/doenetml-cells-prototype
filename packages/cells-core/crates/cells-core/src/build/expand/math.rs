@@ -28,10 +28,13 @@ impl<'c, 'a> Builder<'c, 'a> {
                 reason: "round, floor, min, max and clamp are for numeric math only".into(),
             });
         }
-        let tree = cells_sym::parse::parse(text).map_err(|reason| Error::BadMath {
-            text: text.clone(),
-            reason,
-        })?;
+        let tree = self
+            .engine
+            .parse_tree(text)
+            .map_err(|reason| Error::BadMath {
+                text: text.clone(),
+                reason,
+            })?;
         let mut leaves = Vec::new();
         let tree = self.bind_leaves(&tree, scope, &mut leaves)?;
         if leaves.is_empty() {
@@ -58,7 +61,7 @@ impl<'c, 'a> Builder<'c, 'a> {
         ))
     }
 
-    /// Rebind a parsed template's `#plan` leaves to slots: a math leaf where
+    /// Rebind a parsed template's `cellN<plan>` leaves to slots: a math leaf where
     /// the reference names an expression, else a numeric leaf. Distinct leaf
     /// slots are appended to `leaves`.
     fn bind_leaves(&mut self, t: &Tree, scope: ScopeId, leaves: &mut Vec<SlotId>) -> Result<Tree> {

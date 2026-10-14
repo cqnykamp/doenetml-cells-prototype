@@ -27,4 +27,6 @@ and the instruction reruns, matching the current core's behavior. Plan 5
 - The arena grows during a session. Plan 5 measures that growth before any
   reclamation is built.
 - Math cells need a change test for gating. A hash-consed arena gets one for
-  free (equal handles), which is one of the things Plan 5 compares.
+  free (equal handles), which is one of the things Plan 5 compares. (The
+  hash-consed arena was later dropped for math-expressions-rs alone, which
+  gives every recomputed expression a new handle; see ADR 0011.)

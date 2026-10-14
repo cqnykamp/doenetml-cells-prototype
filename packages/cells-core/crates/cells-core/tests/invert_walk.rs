@@ -35,8 +35,27 @@ fn the_walk_matches_the_queue() {
                     &[r, r],
                     &[],
                 );
+                // A write into a math cell is a handle; the engine makes a
+                // new one each time, so compare what the handles say.
+                let shown = |writes: &[(u32, f64)]| {
+                    writes
+                        .iter()
+                        .map(|&(c, v)| {
+                            let engine = doc.program.sym.engine.borrow();
+                            if doc.program.is_math[c as usize]
+                                && v.fract() == 0.0
+                                && (0.0..engine.len() as f64).contains(&v)
+                            {
+                                (c, engine.text(v as u32))
+                            } else {
+                                (c, v.to_string())
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                };
                 assert_eq!(
-                    alone.writes, twice.writes,
+                    shown(&alone.writes),
+                    shown(&twice.writes),
                     "cell {cell} <- {value} in {src}"
                 );
                 assert_eq!(

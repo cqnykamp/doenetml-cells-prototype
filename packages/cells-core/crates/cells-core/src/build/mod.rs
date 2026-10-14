@@ -46,7 +46,7 @@
 
 use std::collections::HashMap;
 
-use cells_sym::{SymEngine, Tree};
+use crate::sym::{Engine, Handle, Tree};
 
 use crate::components::{ComponentType, PropFrom, prop};
 use crate::dast::{Dast, NodeId, NodeKind, StrId, StringTable};
@@ -76,11 +76,7 @@ use expand::*;
 
 /// Build with `engine` holding the document's expressions (the same engine
 /// across rebuilds, so essential math cells keep valid handles).
-pub fn build(
-    dast: &Dast,
-    carryover: &Carryover,
-    engine: &mut dyn SymEngine,
-) -> Result<BuildOutput> {
+pub fn build(dast: &Dast, carryover: &Carryover, engine: &mut Engine) -> Result<BuildOutput> {
     let profile = profile_enabled();
     let clock = web_time::Instant::now();
     let lap = |what: &str| {
@@ -112,7 +108,7 @@ pub struct BuildOutput {
     structure: Structure,
     operands: Vec<CellIdx>,
     is_math: Vec<bool>,
-    tapes: Vec<cells_sym::tape::Tape>,
+    tapes: Vec<crate::sym::tape::Tape>,
     /// Human-readable owner of a cell, e.g. "p1.x". Computed lazily because
     /// a cycle error is the only consumer.
     cell_label: Box<dyn Fn(CellIdx) -> String>,
@@ -121,22 +117,16 @@ pub struct BuildOutput {
 impl BuildOutput {
     /// Schedule the program, moving the symbolic engine the build used into
     /// it. On error the engine stays with the caller.
-    pub fn schedule(
-        self,
-        dast: std::sync::Arc<Dast>,
-        engine: &mut Box<dyn SymEngine>,
-    ) -> Result<Document> {
+    pub fn schedule(self, dast: std::sync::Arc<Dast>, engine: &mut Engine) -> Result<Document> {
         let n = self.cells.len();
-        let sym = Sym::new(std::mem::replace(
-            engine,
-            Box::new(cells_sym::flat::Flat::new()),
-        ));
+        let sym = Sym::new(std::mem::take(engine));
         let program = match Program::schedule(self.instrs, n, sym, self.operands, self.is_math) {
             Ok(mut p) => {
                 p.tapes = self.tapes;
                 p
             }
-            Err((cell, sym)) => {
+            Err(e) => {
+                let (cell, sym) = *e;
                 *engine = sym.into_engine();
                 return Err(Error::Cycle((self.cell_label)(cell)));
             }

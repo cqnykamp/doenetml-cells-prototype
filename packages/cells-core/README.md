@@ -5,8 +5,8 @@ props name cells, and the dependency graph is a list of operators with
 inverses. `ARCHITECTURE.md` is the map, `CONTEXT.md` the vocabulary,
 `docs/adr/` the decisions.
 
-- `crates/cells-core`: the core.
-- `crates/cells-sym`, `crates/cells-sym-mer`: the symbolic engines (ADR 0011).
+- `crates/cells-core`: the core, with math-expressions-rs as its symbolic
+  engine (`src/sym/`, ADR 0011).
 - `crates/cells-wasm`: the browser binding; `npm run build:rust` puts it in `pkg/`.
 - `crates/cells-docgen`: synthetic DoenetML for the fixtures and benches.
 - `crates/cells-bench`: benches, `stats`, and the `golden`, `regress` and

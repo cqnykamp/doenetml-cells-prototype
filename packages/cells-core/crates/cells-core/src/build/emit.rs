@@ -122,7 +122,7 @@ impl<'c, 'a> Builder<'c, 'a> {
         // Compile curves whose expression has a fixed shape into tapes, unless
         // the load asked for engine sampling.
         let compile = !self.carryover.structure.sample_with_engine;
-        let mut fixed_shape: HashMap<SlotId, Option<cells_sym::Handle>> = HashMap::new();
+        let mut fixed_shape: HashMap<SlotId, Option<Handle>> = HashMap::new();
         for &s in &derived_defs {
             let (mut spec, start, count) = match &self.sources[s] {
                 Source::Op(spec, start, count) => (*spec, *start, *count),
@@ -168,7 +168,7 @@ impl<'c, 'a> Builder<'c, 'a> {
                     && let Some(tape) = self
                         .engine
                         .export(h)
-                        .and_then(|t| cells_sym::tape::Tape::compile(&t, "x"))
+                        .and_then(|t| crate::sym::tape::Tape::compile(&t, "x"))
                 {
                     let (lo, hi) = (bound[1], bound[2]);
                     bound.clear();
@@ -285,8 +285,8 @@ impl<'c, 'a> Builder<'c, 'a> {
         &mut self,
         slot: SlotId,
         slot_to_cell: &[CellIdx],
-        memo: &mut HashMap<SlotId, Option<cells_sym::Handle>>,
-    ) -> Option<cells_sym::Handle> {
+        memo: &mut HashMap<SlotId, Option<Handle>>,
+    ) -> Option<Handle> {
         let mut root = slot;
         while let Source::Alias(t) = self.sources[root as usize] {
             root = t;
@@ -295,7 +295,7 @@ impl<'c, 'a> Builder<'c, 'a> {
             return h;
         }
         let h = match self.sources[root as usize] {
-            Source::Fixed(h) if !h.is_nan() => Some(h as cells_sym::Handle),
+            Source::Fixed(h) if !h.is_nan() => Some(h as Handle),
             Source::Op(OpSpec::Sym(SymKind::Instantiate { template, .. }), _, _) => {
                 let tree = rebind(&self.sym_templates[template as usize], slot_to_cell);
                 if has_math_leaf(&tree) {

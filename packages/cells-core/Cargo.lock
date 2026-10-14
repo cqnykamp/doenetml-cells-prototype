@@ -46,7 +46,6 @@ name = "cells-bench"
 version = "0.1.0"
 dependencies = [
  "cells-core",
- "cells-sym",
  "criterion",
  "serde_json",
 ]
@@ -56,7 +55,8 @@ name = "cells-core"
 version = "0.1.0"
 dependencies = [
  "cells-core",
- "cells-sym",
+ "math-expressions",
+ "num-complex",
  "serde",
  "serde_json",
  "thiserror",
@@ -68,27 +68,10 @@ name = "cells-docgen"
 version = "0.1.0"
 
 [[package]]
-name = "cells-sym"
-version = "0.1.0"
-
-[[package]]
-name = "cells-sym-mer"
-version = "0.1.0"
-dependencies = [
- "cells-core",
- "cells-docgen",
- "cells-sym",
- "math-expressions",
- "num-complex",
-]
-
-[[package]]
 name = "cells-wasm"
 version = "0.1.0"
 dependencies = [
  "cells-core",
- "cells-sym",
- "cells-sym-mer",
  "console_error_panic_hook",
  "serde_json",
  "wasm-bindgen",
@@ -296,6 +279,7 @@ checksum = "ce5d3ddc6d3fa000eb1536d85e147bfe31aacaba692ed6a876f95cb7c855be78"
 [[package]]
 name = "math-expressions"
 version = "0.1.0"
+source = "git+https://github.com/Doenet/math-expressions.git?rev=13543bf1ce6c986f8b554b6a2cc20644a34319d9#13543bf1ce6c986f8b554b6a2cc20644a34319d9"
 dependencies = [
  "num-bigint",
  "num-complex",

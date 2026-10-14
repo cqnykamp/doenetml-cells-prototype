@@ -3,11 +3,9 @@
 
 use super::*;
 
-/// How to load a document. The default: engine A, seed 0, curves compiled.
-#[derive(Default)]
+/// How to load a document. The default: seed 0, curves compiled.
+#[derive(Debug, Clone, Copy, Default)]
 pub struct LoadOptions {
-    /// The symbolic engine; engine A when None.
-    pub engine: Option<Box<dyn SymEngine>>,
     /// The document seed load-time choices draw from (ADR 0009): one seed
     /// gives one variant of the document.
     pub seed: u64,
@@ -53,13 +51,11 @@ impl Document {
         options: LoadOptions,
         t: &mut LoadTimings,
     ) -> crate::Result<Document> {
-        let mut engine = options
-            .engine
-            .unwrap_or_else(|| Box::new(cells_sym::flat::Flat::new()));
+        let mut engine = Engine::new();
         let mut carryover = crate::build::Carryover::new(options.seed, options.sample_with_engine);
         for _ in 0..MAX_PASSES {
             let clock = web_time::Instant::now();
-            let built = crate::build::build(&dast, &carryover, &mut *engine)?;
+            let built = crate::build::build(&dast, &carryover, &mut engine)?;
             t.build += clock.elapsed();
 
             let clock = web_time::Instant::now();
@@ -82,11 +78,11 @@ impl Document {
 
     /// Move the symbolic engine out, leaving an empty one (the document is
     /// about to be replaced by a rebuild).
-    fn take_engine(&mut self) -> Box<dyn SymEngine> {
+    fn take_engine(&mut self) -> Engine {
         std::mem::take(&mut self.program.sym).into_engine()
     }
 
-    fn put_engine(&mut self, engine: Box<dyn SymEngine>) {
+    fn put_engine(&mut self, engine: Engine) {
         self.program.sym = crate::program::Sym::new(engine);
         // The memo was dropped with the old `Sym`: recompute so it refills.
         self.program.run_all(&mut self.cells);
@@ -155,7 +151,7 @@ impl Document {
         let result = (|| {
             for _ in 0..MAX_PASSES {
                 let clock = web_time::Instant::now();
-                let built = crate::build::build(&dast, &carryover, &mut *engine)?;
+                let built = crate::build::build(&dast, &carryover, &mut engine)?;
                 if profile {
                     eprintln!("rebuild/build: {:.2?}", clock.elapsed());
                 }

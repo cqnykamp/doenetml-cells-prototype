@@ -29,7 +29,9 @@ impl<'a> Compiler<'a> {
             }
             ComponentType::Math => {
                 let id = self.compiled.arena.push(Expr::Cell(p as CellIdx));
-                self.compiled.sym_text.insert(id, format!("#{p}"));
+                self.compiled
+                    .sym_text
+                    .insert(id, crate::sym::engine::leaf_name(p as u32, false));
                 vec![
                     SourcePlan::MathHandle(id, Post::None),
                     SourcePlan::MathValue(id),

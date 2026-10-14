@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use cells_sym::SymEngine;
+use crate::sym::{Engine, Handle};
 
 use crate::build::{Repeat, ScopeId, Structure};
 
@@ -85,11 +85,6 @@ impl Document {
         doc
     }
 
-    /// Name of the symbolic engine ("A" or "R").
-    pub fn engine_name(&self) -> &'static str {
-        self.program.sym.engine.borrow().name()
-    }
-
     /// Parse math text (what a student typed) into the engine: the value to
     /// request on a mathInput's `expr` cell.
     pub fn parse_math(&self, text: &str) -> std::result::Result<f64, String> {
@@ -102,11 +97,7 @@ impl Document {
         if h.is_nan() {
             String::new()
         } else {
-            self.program
-                .sym
-                .engine
-                .borrow()
-                .text(h as cells_sym::Handle)
+            self.program.sym.engine.borrow().text(h as Handle)
         }
     }
 

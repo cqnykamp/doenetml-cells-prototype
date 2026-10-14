@@ -15,6 +15,8 @@
 //!   (once per document), `expand` (once per scope), `emit`.
 //! - [`program`]: the instruction set the build emits and a tick runs
 //!   (operators, their inverses, the scheduled instruction list).
+//! - [`sym`]: the symbolic engine behind math cells (math-expressions-rs,
+//!   ADR 0011), the builder's expression tree, and compiled curve tapes.
 //! - `document`: the loaded [`Document`], with load and rebuild, the
 //!   request entry points, and the read API a renderer or test uses.
 //! - [`tick`]: run time. A request is snapped, inverted to essential cells,
@@ -27,6 +29,7 @@ pub mod dast;
 mod document;
 mod error;
 pub mod program;
+pub mod sym;
 pub mod testing;
 pub mod tick;
 

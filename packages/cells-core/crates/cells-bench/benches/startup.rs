@@ -1,4 +1,5 @@
 use cells_core::Document;
+use cells_core::sym::Engine;
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 
 fn startup(c: &mut Criterion) {
@@ -23,21 +24,15 @@ fn startup(c: &mut Criterion) {
         // settled total is in `total_from_*`.
         g.bench_with_input(BenchmarkId::new("build", &spec), &dast, |b, dast| {
             b.iter(|| {
-                cells_core::build::build(
-                    dast,
-                    &Default::default(),
-                    &mut cells_sym::flat::Flat::new(),
-                )
-                .unwrap()
+                cells_core::build::build(dast, &Default::default(), &mut Engine::new()).unwrap()
             })
         });
         g.bench_with_input(BenchmarkId::new("schedule", &spec), &dast, |b, dast| {
             b.iter_batched(
                 || {
-                    let mut e: Box<dyn cells_sym::SymEngine> =
-                        Box::new(cells_sym::flat::Flat::new());
+                    let mut e = Engine::new();
                     (
-                        cells_core::build::build(dast, &Default::default(), &mut *e).unwrap(),
+                        cells_core::build::build(dast, &Default::default(), &mut e).unwrap(),
                         e,
                     )
                 },

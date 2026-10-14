@@ -69,7 +69,7 @@ component table (`document/sticky.rs`).
 | `ComponentTable` | `document/table.rs` | Components in columns: component type, name, parent, children, and each one's prop cells. What references and the renderer read. |
 | `Request`, `PointRequest`, `TickOutcome` | `tick/` | A tick's input (set a cell; move points together) and its result. |
 | `Evaluator` | `tick/eval.rs` | A recompute strategy: `FullRecompute` runs every instruction; `DirtyClosure` only those downstream of a changed cell. |
-| `SymEngine` | `crates/cells-sym` | The symbolic math engine behind math cells (ADR 0008). A math cell holds a handle into it. |
+| `Engine`, `Tree`, `Tape` | `sym/` | The symbolic engine behind math cells, math-expressions-rs called directly (ADR 0008, ADR 0011): a math cell holds a `Handle` into it. `Tree` is the builder's expression; `Tape` (`sym/tape.rs`) is a curve of fixed shape compiled to numeric steps. |
 
 ## What happens when…
 
@@ -170,10 +170,6 @@ copied into `jsxgraph/doenet.ts`.
 
 ## The other crates
 
-- `crates/cells-sym`: symbolic math engine A (a flat hash-consed arena) and
-  compiled curve tapes, behind the `SymEngine` trait.
-- `crates/cells-sym-mer`: engine R, wrapping math-expressions-rs, today
-  engine A's behavior oracle and, per ADR 0011, the engine to keep.
 - `crates/cells-wasm`: the browser binding.
 - `crates/cells-docgen`: the synthetic DoenetML generator behind the
   fixtures and benchmarks.

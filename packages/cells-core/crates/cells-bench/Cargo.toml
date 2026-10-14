@@ -7,7 +7,6 @@ description = "Criterion benches and stats for the cells core"
 
 [dependencies]
 cells-core = { path = "../cells-core", features = ["testing"] }
-cells-sym = { path = "../cells-sym" }
 serde_json.workspace = true
 
 [dev-dependencies]

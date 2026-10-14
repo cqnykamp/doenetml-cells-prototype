@@ -7,7 +7,7 @@
 
 use std::cell::{Cell, RefCell};
 
-use cells_sym::{Handle, SymEngine};
+use crate::sym::{Engine, Handle};
 
 use crate::document::CellIdx;
 mod instr;
@@ -20,10 +20,10 @@ pub use vector::{MAX_VEC_IN, Pivot, Produced, RigidOpts, VecOp};
 
 /// The document's symbolic engine and the memo of every symbolic
 /// instruction. Interior mutability because instructions run through
-/// `&Program`; the engine only grows (see `SymEngine`).
+/// `&Program`; the engine only grows (see `sym::Engine`).
 #[derive(Debug, Clone)]
 pub struct Sym {
-    pub engine: RefCell<Box<dyn SymEngine>>,
+    pub engine: RefCell<Engine>,
     /// Parallel to `Program::operands`: for a symbolic instruction, the input
     /// values it last ran on, then its outputs from that run.
     memo: RefCell<Vec<f64>>,
@@ -46,12 +46,12 @@ const NEVER: f64 = f64::from_bits(0x7ff8_dead_beef_0001);
 
 impl Default for Sym {
     fn default() -> Self {
-        Sym::new(Box::new(cells_sym::flat::Flat::new()))
+        Sym::new(Engine::new())
     }
 }
 
 impl Sym {
-    pub fn new(engine: Box<dyn SymEngine>) -> Self {
+    pub fn new(engine: Engine) -> Self {
         Sym {
             engine: RefCell::new(engine),
             memo: RefCell::new(Vec::new()),
@@ -60,7 +60,7 @@ impl Sym {
         }
     }
 
-    pub fn into_engine(self) -> Box<dyn SymEngine> {
+    pub fn into_engine(self) -> Engine {
         self.engine.into_inner()
     }
 }
@@ -82,7 +82,7 @@ pub struct Program {
     /// Whether each cell holds an expression handle (a math cell).
     pub is_math: Vec<bool>,
     /// Compiled curves that `SampleTape` instructions run.
-    pub tapes: Vec<cells_sym::tape::Tape>,
+    pub tapes: Vec<crate::sym::tape::Tape>,
     /// Whether creation order was already a valid evaluation order, so no
     /// sort ran. Diagnostic.
     pub in_creation_order: bool,
@@ -95,7 +95,8 @@ fn differs(new: f64, old: f64) -> bool {
 
 impl Program {
     /// Orders `instrs` topologically. Returns the cell index of an output
-    /// involved in a cycle on failure, with the engine handed back.
+    /// involved in a cycle on failure, with the engine handed back (boxed:
+    /// the engine's parser makes `Sym` large).
     ///
     /// Fast path: the builder emits instructions in creation order, which
     /// for a template stamped per iteration is almost always already a valid
@@ -109,7 +110,7 @@ impl Program {
         sym: Sym,
         operands: Vec<CellIdx>,
         is_math: Vec<bool>,
-    ) -> std::result::Result<Program, (CellIdx, Sym)> {
+    ) -> std::result::Result<Program, Box<(CellIdx, Sym)>> {
         sym.memo.replace(vec![NEVER; operands.len()]);
         let mut producer = vec![u32::MAX; n_cells];
         for (i, ins) in instrs.iter().enumerate() {
@@ -184,7 +185,7 @@ impl Program {
         }
         if order.len() != n {
             let stuck = (0..n).find(|&i| indegree[i] > 0).unwrap();
-            return Err((instrs[stuck].out, sym));
+            return Err(Box::new((instrs[stuck].out, sym)));
         }
         let mut producer = vec![u32::MAX; n_cells];
         for (i, ins) in order.iter().enumerate() {
@@ -272,7 +273,7 @@ impl Program {
                 self.run_tape(&self.tapes[tape as usize], cells, inputs, outs);
             } else {
                 let mut engine = self.sym.engine.borrow_mut();
-                run_sym(&mut **engine, kind, cells, inputs, outs);
+                run_sym(&mut engine, kind, cells, inputs, outs);
             }
         }
         self.sym.stats.set(stats);
@@ -292,7 +293,7 @@ impl Program {
     /// A compiled curve: inputs are `xmin`, `xmax`, then the parameters.
     fn run_tape(
         &self,
-        tape: &cells_sym::tape::Tape,
+        tape: &crate::sym::tape::Tape,
         cells: &[f64],
         inputs: &[CellIdx],
         out: &mut [f64],
@@ -360,13 +361,7 @@ fn handle(v: f64) -> Option<Handle> {
 
 /// One symbolic operation. A NaN handle is a blank expression: evaluating it
 /// gives NaN, comparing it gives 0.
-fn run_sym(
-    engine: &mut dyn SymEngine,
-    kind: SymKind,
-    cells: &[f64],
-    inputs: &[CellIdx],
-    out: &mut [f64],
-) {
+fn run_sym(engine: &mut Engine, kind: SymKind, cells: &[f64], inputs: &[CellIdx], out: &mut [f64]) {
     let v = |k: usize| cells[inputs[k] as usize];
     match kind {
         SymKind::Instantiate { template, post } => {

@@ -221,10 +221,13 @@ impl<'a> Compiler<'a> {
             None
         } else {
             Some(
-                cells_sym::parse::parse(text).map_err(|reason| Error::BadMath {
-                    text: text.into(),
-                    reason,
-                })?,
+                // Build-time only, so a throwaway engine parses it.
+                crate::sym::Engine::new()
+                    .parse_tree(text)
+                    .map_err(|reason| Error::BadMath {
+                        text: text.into(),
+                        reason,
+                    })?,
             )
         };
         props[math_input::EXPR] = Some(SourcePlan::MathEssential(tree));
@@ -540,7 +543,8 @@ impl<'a> Compiler<'a> {
         Ok((toks, text))
     }
 
-    /// `math_tokens`, plus the text with each `$ref` written `#plan`.
+    /// `math_tokens`, plus the text with each `$ref` written `cellN<plan>`,
+    /// the engine's own spelling of a numeric cell leaf.
     fn math_tokens_sym(
         &mut self,
         t: TemplateId,
@@ -574,7 +578,10 @@ impl<'a> Compiler<'a> {
                     text.push_str(&d.macro_display(n));
                     let p = self.plan_ref(t, scope, n)?;
                     // Spaces keep `2$a` from reading as one token.
-                    sym.push_str(&format!(" #{p} "));
+                    sym.push_str(&format!(
+                        " {} ",
+                        crate::sym::engine::leaf_name(p as u32, false)
+                    ));
                     toks.push(Token::Cell(p as CellIdx));
                 }
                 _ => {}

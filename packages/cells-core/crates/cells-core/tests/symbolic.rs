@@ -129,17 +129,16 @@ fn symbolic_instructions_are_gated_on_their_inputs() {
 }
 
 #[test]
-fn equal_handles_stop_downstream_reruns() {
-    // `0 $n` vanishes under simplify, so m's expression does not change.
+fn no_cutoff_without_hash_consing() {
+    // `0 $n` vanishes under simplify, so m's expression does not change,
+    // but the engine gives the recomputed expression a new handle (ADR
+    // 0011), so m2 and both evaluates rerun.
     let mut doc = load(r#"<numberInput name="n" value="2"/><math name="m" simplify>0 $n + x</math><math name="m2" simplify>$m + 1</math>"#).unwrap();
     let before = runs(&doc);
-    let tick = doc.request(&[req(&doc, "n", "value", 3.0)]);
-    assert_eq!(
-        runs(&doc) - before,
-        1,
-        "only m reruns; its handle is unchanged"
-    );
-    assert_eq!(tick.changed, vec![doc.cell("n", "value").unwrap()]);
+    doc.request(&[req(&doc, "n", "value", 3.0)]);
+    assert_eq!(runs(&doc) - before, 4);
+    assert_eq!(text(&doc, "m"), "x");
+    assert_eq!(text(&doc, "m2"), "x + 1");
 }
 
 #[test]

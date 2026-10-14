@@ -350,7 +350,7 @@ pub(in crate::build) struct Compiled<'a> {
     /// Expression templates: cell leaves hold plan ids.
     pub(in crate::build) arena: Arena,
     /// The math text of templates that may be symbolic, with each `$ref`
-    /// written `#plan` (see `cells_sym::parse`).
+    /// written `cellN<plan>` (see `sym::engine::leaf_name`).
     pub(in crate::build) sym_text: HashMap<ExprId, String>,
     pub(in crate::build) choices: Vec<ChoiceDef>,
 }

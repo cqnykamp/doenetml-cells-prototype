@@ -76,7 +76,7 @@ pub(in crate::build) struct Instance {
 pub(in crate::build) struct Builder<'c, 'a> {
     pub(in crate::build) compiled: &'c Compiled<'a>,
     pub(in crate::build) carryover: &'c Carryover,
-    pub(in crate::build) engine: &'c mut dyn SymEngine,
+    pub(in crate::build) engine: &'c mut Engine,
     /// Templates of `Instantiate` instructions, cell leaves holding slots
     /// until emit rebinds them to cells and imports them.
     pub(in crate::build) sym_templates: Vec<Tree>,
@@ -123,7 +123,7 @@ impl<'c, 'a> Builder<'c, 'a> {
     pub(in crate::build) fn new(
         c: &'c Compiled<'a>,
         carryover: &'c Carryover,
-        engine: &'c mut dyn SymEngine,
+        engine: &'c mut Engine,
     ) -> Self {
         // Size the columns from the previous build when there was one.
         let guess = carryover

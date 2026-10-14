@@ -8,7 +8,7 @@
 //! whole columns of `n` samples, so the inner loops are plain slice loops the
 //! compiler vectorizes.
 
-use crate::Tree;
+use super::Tree;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Func {
@@ -69,7 +69,7 @@ impl Tape {
             Tree::Num(v) => self.push(TapeOp::Const(*v), depth, 0),
             Tree::Sym(s) if s == var => self.push(TapeOp::X, depth, 0),
             Tree::Sym(s) => {
-                // Any other free symbol makes the value undefined, as in the engines.
+                // Any other free symbol makes the value undefined, as in the engine.
                 let v = match s.as_str() {
                     "pi" => std::f64::consts::PI,
                     "e" => std::f64::consts::E,
@@ -202,7 +202,7 @@ impl Tape {
 
 /// `b^e`, with integer exponents by repeated multiplication (as fast as a
 /// multiply for squares and cubes) and the real odd root of a negative base,
-/// as engine A evaluates `x^(1/3)`.
+/// as `x^(1/3)` is evaluated numerically.
 #[inline]
 fn pow(b: f64, e: f64) -> f64 {
     if e == 2.0 {
@@ -227,10 +227,11 @@ fn odd_denominator(e: f64) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parse::parse;
+    use crate::sym::Engine;
 
     fn sample(text: &str, params: &[f64], xs: &[f64]) -> Vec<f64> {
-        let tape = Tape::compile(&parse(text).unwrap(), "x").unwrap();
+        let tree = Engine::new().parse_tree(text).unwrap();
+        let tape = Tape::compile(&tree, "x").unwrap();
         let mut out = vec![0.0; xs.len()];
         tape.eval_many(params, xs, &mut out, &mut Vec::new());
         out
@@ -243,7 +244,7 @@ mod tests {
             vec![1.0, 2.0, 9.0]
         );
         assert_eq!(
-            sample("#7 x + #9", &[2.0, 5.0], &[0.0, 1.0, 3.0]),
+            sample("cellN7 x + cellN9", &[2.0, 5.0], &[0.0, 1.0, 3.0]),
             vec![5.0, 7.0, 11.0]
         );
         let s = sample("sin(x)^2 + cos(x)^2", &[], &[0.3, 1.7]);
