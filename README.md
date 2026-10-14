@@ -1,9 +1,16 @@
 # Cells prototype
 
+**Moved.** On 2026-10-14 the code moved to the DoenetML repository as
+`packages/cells-core` and `packages/cells-viewer` (branch
+`cells-prototype-adapter` of the fork at github.com/cqnykamp/DoenetML),
+next to the test adapter that measures its parity with the current core.
+Development continues there; this repository is the record of the
+prototype rounds that produced it and is not updated.
+
 A DoenetML core organized around a flat list of `f64` cells instead of
 components: components and props name cells, and the dependency graph is a
 list of operators with inverses. The code is laid out as the two packages
-it will become in the DoenetML repository.
+it became in the DoenetML repository.
 
 - `packages/cells-core`: the core (Rust, compiled to wasm), its
   `ARCHITECTURE.md` (start there), `CONTEXT.md` (the vocabulary) and
