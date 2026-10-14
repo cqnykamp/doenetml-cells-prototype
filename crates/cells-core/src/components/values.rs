@@ -27,8 +27,13 @@ pub mod text {
     pub const VALUE: usize = at(TEXT_PROPS, "value");
 }
 
-/// Prototype-only tag that applies a numeric operator to referenced cells.
-pub(super) const OP: ComponentTypeInfo = info(&["op"], OP_PROPS).copyable().default_prop("value");
+/// Prototype-only tag that applies a numeric operator to referenced cells;
+/// its tag is registered only with the `testing` feature (tests and the
+/// golden documents use it to exercise single operators).
+pub(super) const OP: ComponentTypeInfo = info(&["op"], OP_PROPS)
+    .copyable()
+    .test_only()
+    .default_prop("value");
 
 const OP_PROPS: &[PropDef] = &props([derived("value")]);
 

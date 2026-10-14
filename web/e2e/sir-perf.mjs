@@ -1,13 +1,12 @@
 // Browser timings for the SIR simulation (fixtures/sir.doenet): load, a
 // drag of the initial-infectives point, typing a parameter, changing the
-// number of iterates (a rebuild) and the reset button, per backend.
+// number of iterates (a rebuild) and the reset button.
 //
 // Run from web/ with the prototype served (pnpm build && pnpm preview):
 //   node e2e/sir-perf.mjs
 // CELLS_URL overrides the address (default http://localhost:4173);
 // CELLS_CHROMIUM the browser (default /opt/pw-browsers/chromium, else
-// Playwright's own); CELLS_E2E_BACKENDS the backends (default main,worker-sab).
-// Writes results/raw/e2e-sir-<date>.json.
+// Playwright's own). Writes results/raw/e2e-sir-<date>.json.
 import { chromium } from "@playwright/test";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
@@ -16,7 +15,6 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const base = process.env.CELLS_URL ?? "http://localhost:4173";
 const exe = process.env.CELLS_CHROMIUM ?? "/opt/pw-browsers/chromium";
-const BACKENDS = (process.env.CELLS_E2E_BACKENDS ?? "main,worker-sab").split(",");
 const LOADS = 5, DRAG_STEPS = 120, TYPES = 10;
 
 function stats(xs) {
@@ -53,16 +51,16 @@ async function type(name, text) {
 }
 
 const results = [];
-for (const backend of BACKENDS) {
-  const url = `${base}/?doc=sir&renderer=jsxgraph&backend=${backend}`;
+{
+  const url = `${base}/?doc=sir`;
   const loads = [];
   for (let i = 0; i < LOADS; i++) {
     await page.goto(url);
     await ready();
     loads.push(await page.evaluate(() => window.__cells.timings));
   }
-  const r = { backend, load: {} };
-  for (const k of ["fetch", "wasmInit", "coreTotal", "manifest", "firstRender"]) r.load[k] = stats(loads.map((t) => t[k]));
+  const r = { load: {} };
+  for (const k of ["fetch", "wasmInit", "coreTotal", "componentTable", "firstRender"]) r.load[k] = stats(loads.map((t) => t[k]));
   r.load.coreBuild = stats(loads.map((t) => t.core.build));
   r.load.passes = loads[0].core.passes;
   await page.evaluate(() => document.querySelectorAll("details").forEach((d) => (d.open = true)));

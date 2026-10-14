@@ -121,7 +121,7 @@ impl<'a> Compiler<'a> {
         for j in 0..2 {
             match p.coord(j) {
                 SourcePlan::Literal(v) => {
-                    ch.from_attr(roles[j], attr);
+                    ch.role_from_attr(roles[j], attr);
                     ch.set_essential(slots[j], roles[j], v)
                 }
                 other => ch.set(slots[j], other),
@@ -158,7 +158,7 @@ impl<'a> Compiler<'a> {
         for j in 0..2 {
             out[j] = match p.coord(j) {
                 SourcePlan::Literal(v) => {
-                    ch.from_attr(roles[j], attr);
+                    ch.role_from_attr(roles[j], attr);
                     ch.essential(roles[j], v)
                 }
                 other => ch.hidden(other),

@@ -9,9 +9,22 @@ mkdir -p fixtures
 specs=("$@")
 # Hand-written fixtures: parsed, not generated.
 HANDWRITTEN=(sir)
-if [ ${#specs[@]} -eq 0 ]; then mapfile -t specs < <($DOCGEN --sweep); specs+=("${HANDWRITTEN[@]}"); fi
+if [ ${#specs[@]} -eq 0 ]; then
+  # The whole set: drop fixtures of shapes no longer in the sweep.
+  for f in fixtures/*.doenet fixtures/*.json fixtures/*.cdast; do
+    [ -e "$f" ] || continue
+    stem=$(basename "${f%.*}")
+    if [[ "$f" == *.doenet && " ${HANDWRITTEN[*]} " =~ " $stem " ]]; then continue; fi
+    rm -f "$f"
+  done
+  mapfile -t specs < <($DOCGEN --sweep); specs+=("${HANDWRITTEN[@]}")
+fi
 for spec in "${specs[@]}"; do
-  if [[ ! " ${HANDWRITTEN[*]} " =~ " $spec " ]]; then $DOCGEN "$spec" > "fixtures/$spec.doenet"; fi
+  if [[ " ${HANDWRITTEN[*]} " =~ " $spec " ]]; then
+    [ -f "fixtures/$spec.doenet" ] || { echo "missing hand-written fixtures/$spec.doenet" >&2; exit 1; }
+  else
+    $DOCGEN "$spec" > "fixtures/$spec.doenet"
+  fi
   start=$(date +%s%N)
   node --max-old-space-size=8192 --stack-size=65500 scripts/parse-dast.mjs -i "fixtures/$spec.doenet" > "fixtures/$spec.json"
   ms=$(( ($(date +%s%N) - start) / 1000000 ))

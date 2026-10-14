@@ -18,6 +18,8 @@ rm -rf "$out/base" "$out/head" "$out/base.programs" "$out/head.programs"
 git -C "$repo" worktree remove --force "$wt" 2>/dev/null || true
 git -C "$repo" worktree add --detach --quiet "$wt" "$base"
 trap 'git -C "$repo" worktree remove --force "$wt"' EXIT
+# The fixtures are generated, not committed; the base reads this tree's.
+rm -rf "$wt/fixtures" && ln -s "$repo/fixtures" "$wt/fixtures"
 if [[ "${GOLDEN_OWN:-0}" != 1 ]]; then
   cp "$repo/crates/cells-bench/examples/golden.rs" "$wt/crates/cells-bench/examples/"
   rm -rf "$wt/crates/cells-bench/golden"

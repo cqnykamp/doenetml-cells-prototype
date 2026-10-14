@@ -14,6 +14,5 @@ math-expressions = { path = "../../../../math-expressions/packages/math-expressi
 num-complex = "0.4"
 
 [dev-dependencies]
-cells-core = { path = "../cells-core" }
+cells-core = { path = "../cells-core", features = ["testing"] }
 cells-docgen = { path = "../cells-docgen" }
-serde_json.workspace = true

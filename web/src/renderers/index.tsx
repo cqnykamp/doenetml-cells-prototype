@@ -1,23 +1,17 @@
 import { useLayoutEffect, useMemo, useSyncExternalStore } from "react";
 import { useStore } from "../hooks";
 import type { Child } from "../components";
-import { Graph } from "./Graph";
-import { Point } from "./Point";
-import { NumberView } from "./Number";
+import { NumberView, PointText } from "./Number";
 import { NumberInput } from "./NumberInput";
 import { Slider } from "./Slider";
 import { BooleanInput } from "./BooleanInput";
 import { MathView } from "./Math";
-import { Circle, Line, Polygon } from "./Shapes";
 import { CaseView, ChoiceView, SectionView, TextView } from "./Choice";
-import { RENDERER } from "./kind";
 import { JsxGraph } from "./jsxgraph/Board";
 import { JxCircle, JxLine, JxPoint, JxPolygon, JxPolyline } from "./jsxgraph/elements";
 import {
   Aside, Cell, DisplayMath, InlineMath, List, ListItem, NumberText, Ref, Row, SideBySide, Stack, Table, Title, TriggerSet, TupleView,
 } from "./Text";
-
-const JSX = RENDERER !== "svg";
 
 export function Component({ idx, inGraph }: { idx: number; inGraph: boolean }) {
   const store = useStore();
@@ -25,16 +19,16 @@ export function Component({ idx, inGraph }: { idx: number; inGraph: boolean }) {
     case "document":
       return <div className="doc"><Children idx={idx} inGraph={false} /></div>;
     case "graph":
-      return JSX ? <JsxGraph idx={idx} /> : <Graph idx={idx} />;
+      return <JsxGraph idx={idx} />;
     case "point":
-      return JSX && inGraph ? <JxPoint idx={idx} /> : <Point idx={idx} inGraph={inGraph} />;
+      return inGraph ? <JxPoint idx={idx} /> : <PointText idx={idx} />;
     case "number":
     case "clampNumber":
       return store.comps.attr(idx, "displayDecimals") !== null ? <NumberText idx={idx} /> : <NumberView idx={idx} />;
     case "tuple":
       return <TupleView idx={idx} />;
     case "polyline":
-      return !inGraph ? null : JSX ? <JxPolyline idx={idx} /> : null;
+      return inGraph ? <JxPolyline idx={idx} /> : null;
     case "title":
       return <Title idx={idx} />;
     case "ref":
@@ -80,13 +74,13 @@ export function Component({ idx, inGraph }: { idx: number; inGraph: boolean }) {
     case "updateValue":
       return null;
     case "line":
-      return !inGraph ? null : JSX ? <JxLine idx={idx} segment={false} /> : <Line idx={idx} segment={false} />;
+      return inGraph ? <JxLine idx={idx} segment={false} /> : null;
     case "lineSegment":
-      return !inGraph ? null : JSX ? <JxLine idx={idx} segment={true} /> : <Line idx={idx} segment={true} />;
+      return inGraph ? <JxLine idx={idx} segment={true} /> : null;
     case "circle":
-      return !inGraph ? null : JSX ? <JxCircle idx={idx} /> : <Circle idx={idx} />;
+      return inGraph ? <JxCircle idx={idx} /> : null;
     case "polygon":
-      return !inGraph ? null : JSX ? <JxPolygon idx={idx} /> : <Polygon idx={idx} />;
+      return inGraph ? <JxPolygon idx={idx} /> : null;
     // A point list's children are points aliasing a shape's own points.
     case "pointList":
     case "p":

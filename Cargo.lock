@@ -55,6 +55,7 @@ dependencies = [
 name = "cells-core"
 version = "0.1.0"
 dependencies = [
+ "cells-core",
  "cells-sym",
  "serde",
  "serde_json",
@@ -79,7 +80,6 @@ dependencies = [
  "cells-sym",
  "math-expressions",
  "num-complex",
- "serde_json",
 ]
 
 [[package]]

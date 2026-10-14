@@ -120,7 +120,7 @@ function pointElement(h: BoardHandle, style: Style, layer: number): BoardElement
       dragging = false;
       shadow.visProp.highlightfillopacity = 0;
       shadow.visProp.highlightstrokeopacity = 0;
-      shadow.needsRegularUpdate = h.perElement;
+      shadow.needsRegularUpdate = false;
       h.resync(e);
     },
   });
@@ -221,10 +221,9 @@ function circleElement(h: BoardHandle): BoardElement {
   const board = h.board;
   const circle = board.create("circle", [[0, 0], 1], { ...unfilledShapeAttributes(LINE_LAYER_OFFSET), ...h.attrs });
   const center = circle.center;
-  // `setRadius` runs a full board update; Doenet calls it on every change,
-  // so element mode does too. Tick mode reads the radius from a variable.
+  // `setRadius` runs a full board update; read the radius from a variable instead.
   let radius = 1;
-  if (!h.perElement) circle.updateRadius = () => radius;
+  circle.updateRadius = () => radius;
   let shown = true;
   const e: BoardElement = {
     cells: [],
@@ -232,7 +231,6 @@ function circleElement(h: BoardHandle): BoardElement {
       const ok = finite(cx, cy, r);
       center.coords.setCoordinates(USER, ok ? [cx, cy] : [0, 0]);
       radius = ok ? r : 1;
-      if (h.perElement) circle.setRadius(radius);
       if (ok !== shown) {
         shown = ok;
         h.setVisible(circle, ok);

@@ -1,26 +1,27 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { CellStore, loadDocument, type BackendKind, type LoadTimings } from "./core";
+import { CellStore, loadDocument, type LoadTimings } from "./core";
 import { StoreContext } from "./hooks";
 import { CommitReporter, Component } from "./renderers";
 import { parseDoenetML } from "./parse";
-import { RENDERER } from "./renderers/kind";
 import { lastBoardFlushAt, locate } from "./renderers/jsxgraph/Board";
 
 const FIXTURES = [
-  "points-10", "points-100", "points-1000", "points-10000", "points-50000",
-  "chain-10", "chain-100", "chain-1000", "chain-10000", "chain-100000",
-  "fanout-10", "fanout-100", "fanout-1000", "fanout-10000",
-  "aliases-1000", "grid-100x10", "grid-1000x10", "grid-1000x100",
-  "sliderchain-10", "sliderchain-1000", "sliderchain-100000", "sliderstack-10", "sliderstack-1000",
-  "repeat-100", "repeat-1000", "repeat-10000", "repeat-50000", "recur-100", "recur-1000", "recur-10000",
-  "intchain-1000", "intchain-100000", "mathchain-1000", "mathchain-100000", "hidden-1000",
   "sir",
+  "points-100", "points-1000", "points-10000",
+  "chain-100", "chain-1000", "chain-100000",
+  "fanout-100", "fanout-1000", "fanout-10000",
+  "aliases-1000", "grid-100x10", "grid-1000x10",
+  "sliderchain-10", "sliderchain-1000", "sliderstack-10", "sliderstack-1000",
+  "repeat-100", "repeat-1000", "repeat-10000", "recur-100", "recur-1000",
+  "intchain-1000", "hidden-1000", "circles3-1000", "sticky-100", "sticky-1000",
+  "answers-10", "answers-100", "curves-10", "curves-100", "symchain-10", "symchain-1000",
+  "wording-100", "wording-1000", "adventure-1", "adventure-3", "select-100", "select-1000",
 ];
 
 const SAMPLE = `<graph name="g">
   <point name="p1" x="1" y="2"/>
   <point name="p2" x="$n" y="$p1.y"/>
-  <op name="neg" kind="negate" args="$p1.x"/>
+  <math name="neg">-$p1.x</math>
   <point name="p3" x="$neg" y="-3"/>
 </graph>
 <p>n = <numberInput name="n" value="4"/>, p1 = $p1, p2.x = $p2.x, p3 = $p3</p>
@@ -61,13 +62,12 @@ export function App() {
   const [source, setSource] = useState(SAMPLE);
   const [error, setError] = useState<string | null>(null);
   const [evaluator, setEvaluator] = useState(params.get("eval") ?? "dirty-closure");
-  const [backend, setBackend] = useState<BackendKind>((params.get("backend") as BackendKind) ?? "main");
 
   async function loadBytes(bytes: Uint8Array, t: Partial<LoadTimings>) {
     setError(null);
     window.__cells!.ready = false;
     try {
-      const s = await loadDocument(bytes, backend, evaluator, t);
+      const s = await loadDocument(bytes, evaluator, t);
       const t0 = performance.now();
       t.firstRender = NaN;
       setStore(s);
@@ -140,30 +140,6 @@ export function App() {
             <option>full</option>
           </select>
         </label>
-        <label>
-          Renderer:{" "}
-          <select
-            value={RENDERER}
-            onChange={(e) => {
-              // The renderer is fixed per page load; reload with the new choice.
-              const p = new URLSearchParams(location.search);
-              p.set("renderer", e.target.value);
-              location.search = p.toString();
-            }}
-          >
-            <option value="jsxgraph">JSXGraph (Doenet's look)</option>
-            <option value="jsxgraph-canvas">JSXGraph canvas</option>
-            <option value="svg">plain SVG</option>
-          </select>
-        </label>
-        <label>
-          Backend:{" "}
-          <select value={backend} onChange={(e) => setBackend(e.target.value as BackendKind)}>
-            <option value="main">main thread</option>
-            <option value="worker-sab">worker + SharedArrayBuffer</option>
-            <option value="worker-msg">worker + postMessage</option>
-          </select>
-        </label>
       </div>
       {timings && <Timings t={timings} store={store} />}
       <div className="split">
@@ -198,18 +174,17 @@ export function App() {
 
 /** Re-renders the whole tree when a tick rebuilt the document. Children
  * are keyed by stable identity, so this is an update pass over surviving
- * components, not a remount (set `?remount=1` to compare with remounting). */
+ * components, not a remount (ADR 0004). */
 function DocumentRoot({ store }: { store: CellStore }) {
   const version = useSyncExternalStore(
     (fn) => store.subscribeStructure(fn),
     () => store.structureVersion,
   );
-  const remount = new URLSearchParams(location.search).get("remount") === "1";
   const value = useMemo(() => ({ store, version }), [store, version]);
   return (
     <StoreContext.Provider value={value}>
       <CommitReporter />
-      <Component key={remount ? version : 0} idx={store.comps.root} inGraph={false} />
+      <Component idx={store.comps.root} inGraph={false} />
     </StoreContext.Provider>
   );
 }
@@ -220,7 +195,7 @@ function Timings({ t, store }: { t: Partial<LoadTimings>; store: CellStore | nul
   return (
     <div className="timings">
       {`cells ${store?.comps.nCells ?? "?"}  essential ${store?.comps.nEssential ?? "?"}  components ${store?.comps.length ?? "?"}\n`}
-      {`backend ${t.backend}  fetch/parse ${f(t.fetch)}  worker ${f(t.workerSpawn)}  wasm init ${f(t.wasmInit)}  core total ${f(t.coreTotal)}  tables ${f(t.manifest)} + ${f(t.manifestTransfer)}  first render ${f(t.firstRender)}  (ms)\n`}
+      {`fetch/parse ${f(t.fetch)}  wasm init ${f(t.wasmInit)}  core total ${f(t.coreTotal)}  component table ${f(t.componentTable)}  first render ${f(t.firstRender)}  (ms)\n`}
       {c && `  core: deserialize ${f(c.deserialize)}  build ${f(c.build)}  schedule ${f(c.schedule)}  initial compute ${f(c.initial_compute)}  passes ${c.passes}  structural depth ${c.structural_depth}`}
     </div>
   );

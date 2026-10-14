@@ -65,7 +65,7 @@ impl Compiler<'_> {
         let radius_plan = |ch: &mut ElemPlan| -> SourcePlan {
             let pres = match &radius {
                 Some(SourcePlan::Literal(v)) => {
-                    ch.from_attr("r", "radius");
+                    ch.role_from_attr("r", "radius");
                     ch.essential("r", *v)
                 }
                 Some(other) => ch.hidden(other.clone()),

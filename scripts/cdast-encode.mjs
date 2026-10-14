@@ -14,6 +14,13 @@
 // Node 0 is a synthetic root element whose children are the top-level nodes.
 // Macros use attrStart/attrCount to index the path array. Version 2 added
 // the per-part index expressions (`$r[3].p`, `$r[$i-2]`).
+//
+// Each node is numbered after its contents (the root first) and strings are
+// interned in document order (an element's name, then each attribute's name
+// and children, then its children), exactly as `Dast::from_json` does, so
+// the two encoders produce identical bytes for one source
+// (`crates/cells-core/tests/wire.rs`). Node ids feed `<select>`'s choice, so
+// the numbering is part of a document's behaviour.
 
 export function encodeDast(dast) {
   const strings = [];
@@ -38,23 +45,26 @@ export function encodeDast(dast) {
   function node(n) {
     switch (n.type) {
       case "element": {
-        const id = pushNode(0, str(n.name ?? ""));
-        const attrs = Object.entries(n.attributes ?? {});
-        // Deserialize children first so their ids exist, then record ranges.
-        const attrKids = attrs.map(([, a]) => (a.children ?? []).map(node));
+        // The element's name, then each attribute's name and children, then
+        // its children, and the element itself last (its id after theirs);
+        // the attribute ranges are recorded after the recursion so each
+        // element's attributes stay contiguous.
+        const name = str(n.name ?? "");
+        const attrs = Object.entries(n.attributes ?? {}).map(([name, a]) => [str(name), (a.children ?? []).map(node)]);
         const kids = (n.children ?? []).map(node);
+        const id = pushNode(0, name);
         aStart[id] = attrName.length; aCount[id] = attrs.length;
-        attrs.forEach(([name], i) => {
-          attrName.push(str(name));
-          attrCStart.push(children.length); attrCCount.push(attrKids[i].length);
-          for (const k of attrKids[i]) children.push(k);
-        });
+        for (const [name, attrKids] of attrs) {
+          attrName.push(name);
+          attrCStart.push(children.length); attrCCount.push(attrKids.length);
+          for (const k of attrKids) children.push(k);
+        }
         setChildren(id, kids);
         return id;
       }
       case "text": return pushNode(1, str(n.value ?? ""));
       case "macro": {
-        // Index value nodes are deserialized first so their ids exist.
+        // Index value nodes first, the macro itself last.
         const parts = n.path.map((p) => ({ name: str(p.name), indices: (p.index ?? []).map((ix) => (ix.value ?? []).map(node)) }));
         const id = pushNode(2, 0);
         aStart[id] = path.length; aCount[id] = parts.length;
@@ -68,7 +78,13 @@ export function encodeDast(dast) {
         }
         return id;
       }
-      default: return pushNode(3, 0);
+      default: {
+        // Other nodes carry no string, but `Dast::from_json` interns any
+        // `name` or `value` it meets, so the tables stay identical.
+        if (typeof n.name === "string") str(n.name);
+        if (typeof n.value === "string") str(n.value);
+        return pushNode(3, 0);
+      }
     }
   }
   const root = pushNode(0, str(""));

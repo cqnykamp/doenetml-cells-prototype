@@ -290,7 +290,7 @@ impl ElemPlan {
         self.roles.insert(role, own_slot(i));
     }
     /// Record that `role` came from attribute `attr`.
-    pub(in crate::build) fn from_attr(&mut self, role: &'static str, attr: &'static str) {
+    pub(in crate::build) fn role_from_attr(&mut self, role: &'static str, attr: &'static str) {
         self.role_attr.insert(role, attr);
     }
     pub(in crate::build) fn finish(self) -> Vec<SourcePlan> {

@@ -10,7 +10,7 @@ fn main() {
     for spec in args {
         let bytes = cells_bench::fixture_bytes(&spec);
         let mut loads = Vec::with_capacity(reps);
-        for _ in 0..reps.min(10).max(3) {
+        for _ in 0..reps.clamp(3, 10) {
             let t = Instant::now();
             std::hint::black_box(Document::from_bytes(&bytes).unwrap());
             loads.push(t.elapsed().as_secs_f64() * 1e3);

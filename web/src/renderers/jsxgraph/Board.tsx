@@ -3,16 +3,11 @@
 // its cells directly and never re-renders through React. A tick marks the
 // elements whose cells changed, and the board redraws once at the end of
 // the tick (`CellStore.subscribeTickEnd`).
-//
-// `?jsxupdate=element` reproduces Doenet's own update pattern instead: every
-// element keeps JSXGraph's regular updates, a changed element redraws the
-// whole board on its own, and visibility goes through `setAttribute`.
 import { createContext, useContext, useLayoutEffect, useRef, useState } from "react";
 import JXG from "jsxgraph";
 import type { CellStore } from "../../core";
 import { useStore } from "../../hooks";
 import { Children } from "../index";
-import { JSX_UPDATE, RENDERER } from "../kind";
 import { addNavigationButtons, createAxes, GRAPH_SIZE, initBoardOptions, styleFor } from "./doenet";
 
 export interface BoardElement {
@@ -41,19 +36,15 @@ export class BoardHandle {
   readonly elements = new Set<BoardElement>();
   /** Component index to element, for `locate`. Re-registered on rebuild. */
   readonly byComp = new Map<number, BoardElement>();
-  /** Doenet's per-element pattern (`?jsxupdate=element`). */
-  readonly perElement = JSX_UPDATE === "element";
   private pending = new Set<BoardElement>();
   private scheduled = false;
 
   constructor(readonly board: any, readonly store: CellStore) {}
 
-  /** Attributes every element is created with. In tick mode JSXGraph's own
-   * board updates (one per pointer move) skip our elements: they are
-   * redrawn only when their cells change. */
-  get attrs(): Record<string, any> {
-    return this.perElement ? {} : { needsRegularUpdate: false };
-  }
+  /** Attributes every element is created with: JSXGraph's own board
+   * updates (one per pointer move) skip our elements, which are redrawn
+   * only when their cells change. */
+  readonly attrs: Record<string, any> = { needsRegularUpdate: false };
 
   /** Queue an element to re-read its cells. A tick flushes at its end;
    * anything marked outside a tick (a mount, a rebuild) is flushed in a
@@ -68,24 +59,19 @@ export class BoardHandle {
 
   flush() {
     this.scheduled = false;
-    if (this.pending.size === 0 && !this.redrawAll) return;
+    if (this.pending.size === 0) return;
     const cells = this.store.cells();
     const b = this.board;
-    // SVG redraws only the changed elements' objects; the canvas renderer
-    // repaints everything, and only clears inside suspendRedraw.
-    const whole = this.perElement || b.renderer.type === "canvas" || this.redrawAll;
-    this.redrawAll = false;
+    // Only the changed elements' objects are redrawn.
     b.renderer.suspendRedraw(b);
     for (const e of this.pending) {
       const values = e.cells.map((c) => cells[c]);
       if (e.last && values.every((v, i) => Object.is(v, e.last![i]))) continue;
       e.last = values;
       e.sync(values);
-      if (this.perElement) b.updateRenderer();
-      else if (!whole) for (const o of e.objects()) o.updateRenderer();
+      for (const o of e.objects()) o.updateRenderer();
     }
     this.pending.clear();
-    if (whole && !this.perElement) b.updateRenderer();
     b.renderer.unsuspendRedraw();
     lastBoardFlushAt = performance.now();
   }
@@ -101,12 +87,7 @@ export class BoardHandle {
 
   /** Visibility without `setAttribute`, which runs a full board update. */
   setVisible(el: any, visible: boolean) {
-    if (this.perElement) {
-      const changed = el.visProp.visible !== visible;
-      el.visProp.visible = visible;
-      el.visPropCalc.visible = visible;
-      if (changed) el.setAttribute({ visible });
-    } else if (el.visPropCalc.visible !== visible || el.visProp.visible !== visible) {
+    if (el.visPropCalc.visible !== visible || el.visProp.visible !== visible) {
       el.visProp.visible = visible;
       el.visPropCalc.visible = visible;
       el.setDisplayRendNode(visible);
@@ -116,36 +97,19 @@ export class BoardHandle {
   /** A point's marker shape changed (an off-graph indicator came or went). */
   setFace(el: any, face: string) {
     if (el.visProp.face === face) return;
-    if (this.perElement) el.setAttribute({ face });
-    else {
-      el.visProp.face = face;
-      this.board.renderer.changePointStyle(el);
-    }
+    el.visProp.face = face;
+    this.board.renderer.changePointStyle(el);
   }
 
   /** Remove objects from the board. `removeObject` runs a full board
-   * update per call; in tick mode that is skipped (the objects' own DOM
-   * nodes go with them) and the canvas renderer gets a redraw instead. */
+   * update per call; that is skipped (the objects' own DOM nodes go with
+   * them). */
   removeObjects(objs: any[]) {
     const b = this.board;
-    if (this.perElement) {
-      for (const o of objs) b.removeObject(o);
-      return;
-    }
     const suspended = b.isSuspendedUpdate;
     b.isSuspendedUpdate = true;
     for (const o of objs) b.removeObject(o);
     b.isSuspendedUpdate = suspended;
-    if (b.renderer.type === "canvas") this.redrawSoon();
-  }
-
-  private redrawAll = false;
-  private redrawSoon() {
-    this.redrawAll = true;
-    if (!this.scheduled) {
-      this.scheduled = true;
-      queueMicrotask(() => this.flush());
-    }
   }
 
   /** Client coordinates of a screen-coordinate pair on this board. */
@@ -175,7 +139,7 @@ export function JsxGraph({ idx }: { idx: number }) {
     JXG.Options.layer.numlayers = 100;
     (JXG.Options as any).navbar.highlightFillColor = "var(--canvasText)";
     (JXG.Options as any).navbar.strokeColor = "var(--canvasText)";
-    const board = (JXG.JSXGraph as any).initBoard(id, initBoardOptions(bbox, false, RENDERER === "jsxgraph-canvas" ? "canvas" : "svg"));
+    const board = (JXG.JSXGraph as any).initBoard(id, initBoardOptions(bbox, false, "svg"));
     // JSXGraph clips its SVG root with `overflow: hidden`; with that, Chrome
     // re-layerizes every object on the board whenever a node is removed
     // (about 20 ms per frame at 8,000 objects). `clip-path` clips the same
@@ -228,7 +192,7 @@ export function JsxGraph({ idx }: { idx: number }) {
       const tol = 1e-9 * Math.max(Math.abs(v[cells[2]] - v[cells[0]]), Math.abs(v[cells[1]] - v[cells[3]]));
       if (cells.every((c, i) => Math.abs(bbox[i] - v[c]) <= tol)) return;
       store.request(cells.map((c, i) => [c, bbox[i]]));
-      if (store.kind === "main") apply();
+      apply();
     };
     board.on("boundingbox", onBBox);
     const unsubs = cells.map((c) => store.subscribe(c, apply));

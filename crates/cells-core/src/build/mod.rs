@@ -81,7 +81,7 @@ pub fn build(
     carryover: &Carryover,
     engine: &mut dyn SymEngine,
 ) -> Result<BuildOutput> {
-    let profile = std::env::var_os("CELLS_BUILD_PROFILE").is_some();
+    let profile = profile_enabled();
     let clock = web_time::Instant::now();
     let lap = |what: &str| {
         if profile {
@@ -214,4 +214,11 @@ impl Carryover {
     pub fn restore(self, doc: &mut Document) {
         doc.structure = self.structure;
     }
+}
+
+/// Whether `CELLS_BUILD_PROFILE` is set: per-phase build timings go to
+/// stderr. Read once, on first use.
+pub(crate) fn profile_enabled() -> bool {
+    static PROFILE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *PROFILE.get_or_init(|| std::env::var_os("CELLS_BUILD_PROFILE").is_some())
 }

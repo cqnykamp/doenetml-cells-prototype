@@ -4,7 +4,7 @@
 
 use super::{
     Args, ArrayProp, CONTAINER, COPYABLE, ComponentTypeInfo, INTERNAL, MAX_ARGS, PropDef, PropFrom,
-    SYMBOLIC,
+    SYMBOLIC, TEST_ONLY,
 };
 pub(super) use crate::program::OpSpec;
 
@@ -198,6 +198,10 @@ impl ComponentTypeInfo {
     /// Made by the builder, never by a tag in the source.
     pub(super) const fn internal(self) -> Self {
         self.flag(INTERNAL)
+    }
+    /// A prototype-only tag, registered only with the `testing` feature.
+    pub(super) const fn test_only(self) -> Self {
+        self.flag(TEST_ONLY)
     }
     pub(super) const fn default_prop(mut self, prop: &'static str) -> Self {
         self.default_prop = Some(prop);

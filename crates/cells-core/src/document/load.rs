@@ -142,7 +142,7 @@ impl Document {
     /// Rebuild from the retained DAST, carrying iteration counts and
     /// essential values over. On error the document is left unchanged.
     pub fn rebuild(&mut self) -> crate::Result<()> {
-        let profile = std::env::var_os("CELLS_BUILD_PROFILE").is_some();
+        let profile = crate::build::profile_enabled();
         let dast = self.dast.clone();
         let clock = web_time::Instant::now();
         // The value store and the engine move into the new build; on

@@ -6,7 +6,7 @@ use super::*;
 
 impl<'c, 'a> Builder<'c, 'a> {
     pub(in crate::build) fn finish(mut self) -> Result<BuildOutput> {
-        let profile = std::env::var_os("CELLS_BUILD_PROFILE").is_some();
+        let profile = profile_enabled();
         let clock = web_time::Instant::now();
         let lap = |what: &str| {
             if profile {
@@ -51,8 +51,8 @@ impl<'c, 'a> Builder<'c, 'a> {
         let mut fixed_defs = Vec::new();
         let mut derived_defs = Vec::new();
         let mut outputs = Vec::new();
-        for s in 0..n {
-            let root = roots[s] as usize;
+        for (s, &root) in roots.iter().enumerate() {
+            let root = root as usize;
             if class_def[root] as usize != s {
                 continue; // not the defining slot of its class
             }

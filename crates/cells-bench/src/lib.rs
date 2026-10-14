@@ -2,8 +2,13 @@
 
 use std::path::PathBuf;
 
+/// The repository root (this crate sits at `crates/cells-bench`).
+pub fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+}
+
 pub fn fixtures_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures")
+    repo_root().join("fixtures")
 }
 
 /// The binary wire-format bytes of a fixture, if `scripts/gen-fixtures.sh`
@@ -79,13 +84,13 @@ pub fn spec_key(spec: &str) -> (String, u64, u64) {
 pub fn drag_target(doc: &cells_core::Document, spec: &str) -> Option<cells_core::CellIdx> {
     let shape = spec.split('-').next().unwrap();
     Some(match shape {
-        "chain" | "intchain" | "mathchain" => doc.cell("p", "x").unwrap(),
+        "chain" | "intchain" => doc.cell("p", "x").unwrap(),
         "hidden" => doc.cell("b", "value").unwrap(),
         "sliderchain" => doc.cell("s", "value").unwrap(),
         "sliderstack" => doc.cell("p", "x").unwrap(),
         // First iteration's free point, through the collect's copy.
         "repeat" => doc.cell("q", "x").unwrap(),
-        // The last iteration's point, so the drag inverts the whole lag chain.
+        // The last iterate's point, so the drag inverts the whole lag chain.
         "recur" => {
             let n = doc.value("n", "value").unwrap() as usize;
             let c = doc.resolve_path(&format!("r[{n}].p")).unwrap();

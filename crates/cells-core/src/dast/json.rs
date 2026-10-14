@@ -28,6 +28,9 @@ impl Dast {
 // node before dispatching on `type`, which doubled deserialization time.
 // Children are deserialized recursively into a scratch list and then
 // appended to the flat `children` array so each node's range is contiguous.
+// Node numbering (each node after its contents, the root first) and string
+// interning (document order) are what `scripts/cdast-encode.mjs` does too,
+// so `to_binary` reproduces its bytes (`tests/wire.rs`).
 
 struct JsonBuilder {
     dast: Dast,
@@ -211,6 +214,8 @@ impl Item for Node {
                     NodeKind::Text => value.unwrap_or_else(|| b.intern("")),
                     _ => 0,
                 };
+                // Numbered after its contents (post-order); node ids feed
+                // `<select>`'s choice, so the order is part of behaviour.
                 let id = b.dast.push_node(kind, s);
                 match kind {
                     NodeKind::Element => {

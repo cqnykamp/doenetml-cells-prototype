@@ -15,9 +15,21 @@ pub fn repo_root() -> PathBuf {
 
 /// Parse DoenetML source to DAST JSON via `scripts/parse-dast.mjs`.
 pub fn dast_json(source: &str) -> String {
+    String::from_utf8(parse_dast(source, &[])).unwrap()
+}
+
+/// Parse DoenetML source to the binary wire format via
+/// `scripts/parse-dast.mjs --binary` (the JavaScript encoder,
+/// `scripts/cdast-encode.mjs`), to check against `Dast::to_binary`.
+pub fn dast_binary(source: &str) -> Vec<u8> {
+    parse_dast(source, &["--binary"])
+}
+
+fn parse_dast(source: &str, args: &[&str]) -> Vec<u8> {
     let script = repo_root().join("scripts/parse-dast.mjs");
     let mut child = Command::new("node")
         .arg(&script)
+        .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
@@ -31,7 +43,7 @@ pub fn dast_json(source: &str) -> String {
         .unwrap();
     let out = child.wait_with_output().unwrap();
     assert!(out.status.success(), "parse-dast.mjs failed");
-    String::from_utf8(out.stdout).unwrap()
+    out.stdout
 }
 
 /// Parse and load a document from DoenetML source.

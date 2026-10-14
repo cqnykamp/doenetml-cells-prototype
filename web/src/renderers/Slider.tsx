@@ -1,5 +1,5 @@
 import { useCell, useStore } from "../hooks";
-import { fmt } from "./Point";
+import { fmt } from "./Number";
 
 /** `<slider>` in numeric mode. Reads from/to/step/value cells and writes
  * requests on the value cell; the core snaps and clamps (ADR 0003), so the

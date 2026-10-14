@@ -11,3 +11,12 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 web-time = "1"
+
+[features]
+# Registers the prototype-only `<op>` tag, which the tests and golden
+# documents use to exercise single operators. Enabled for this crate's own
+# tests by the self-dependency below.
+testing = []
+
+[dev-dependencies]
+cells-core = { path = ".", features = ["testing"] }

@@ -454,7 +454,10 @@ fn invert_rigid(
                 let dot = mx * ox + my * oy;
                 let factor = if om == 0.0 {
                     1.0
-                } else if !(dot >= min_shrink * om) {
+                } else if matches!(
+                    dot.partial_cmp(&(min_shrink * om)),
+                    None | Some(std::cmp::Ordering::Less)
+                ) {
                     min_shrink / om
                 } else {
                     dot / om2

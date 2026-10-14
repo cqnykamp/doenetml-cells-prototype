@@ -247,12 +247,15 @@ impl RequestEngine<'_> {
                     }
                 }
             }
-            if let Some((sx, sy)) = shift {
-                if consistent && n_held < pts.len() && sx.is_finite() && sy.is_finite() {
-                    for p in &mut pts {
-                        p.values[0] += sx;
-                        p.values[1] += sy;
-                    }
+            if let Some((sx, sy)) = shift
+                && consistent
+                && n_held < pts.len()
+                && sx.is_finite()
+                && sy.is_finite()
+            {
+                for p in &mut pts {
+                    p.values[0] += sx;
+                    p.values[1] += sy;
                 }
             }
         }

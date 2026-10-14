@@ -34,7 +34,7 @@ impl Compiler<'_> {
                     Some(a) => {
                         let plan = self.plan_scalar(t, scope, name, d.attr_children(a))?;
                         if let SourcePlan::Literal(v) = plan {
-                            ch.from_attr(name, name);
+                            ch.role_from_attr(name, name);
                             ch.set_essential(i, name, v);
                         } else {
                             ch.set(i, plan);

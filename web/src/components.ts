@@ -1,7 +1,6 @@
 // Columnar component table, read straight from the core's arrays (ADR 0001
 // extended: the renderer reads components the same way it reads cells).
-// For the main-thread backend the typed arrays are views over wasm memory;
-// for worker backends they are copies posted once at load.
+// The typed arrays are views over wasm memory.
 
 export interface ComponentColumns {
   root: number;
@@ -124,8 +123,8 @@ export class ComponentTable {
   }
 }
 
-/** Build the columns from a loaded wasm core; `copy` detaches them from wasm memory. */
-export function columnsFromCore(core: any, memory: WebAssembly.Memory, copy: boolean): ComponentColumns {
+/** Build the columns from a loaded wasm core, as views over its memory. */
+export function columnsFromCore(core: any, memory: WebAssembly.Memory): ComponentColumns {
   const n = core.n_components();
   const u32 = (ptr: number, len: number) => new Uint32Array(memory.buffer, ptr, len);
   const u8 = (ptr: number, len: number) => new Uint8Array(memory.buffer, ptr, len);
@@ -150,15 +149,5 @@ export function columnsFromCore(core: any, memory: WebAssembly.Memory, copy: boo
     stringBytes: u8(core.string_bytes_ptr(), core.string_bytes_len()),
     nodeAttrs: JSON.parse(core.node_attrs_json()),
   };
-  if (copy) {
-    for (const k of ["componentType", "name", "parent", "propBase", "propCells", "childStart", "childCount", "childList", "node", "scope", "stringOffsets", "stringBytes"] as const) {
-      (cols as any)[k] = (cols as any)[k].slice();
-    }
-  }
   return cols;
-}
-
-/** Buffers to transfer when posting copied columns across threads. */
-export function columnBuffers(cols: ComponentColumns): ArrayBuffer[] {
-  return [cols.componentType, cols.name, cols.parent, cols.propBase, cols.propCells, cols.childStart, cols.childCount, cols.childList, cols.node, cols.scope, cols.stringOffsets, cols.stringBytes].map((a) => a.buffer as ArrayBuffer);
 }

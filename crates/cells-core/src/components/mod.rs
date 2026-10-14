@@ -64,7 +64,8 @@ component_types! {
     Number => values::NUMBER,
     /// `<numberInput>`.
     NumberInput => inputs::NUMBER_INPUT,
-    /// `<op>`: a numeric operator over referenced cells (prototype only).
+    /// `<op>`: a numeric operator over referenced cells (prototype only;
+    /// its tag is registered only with the `testing` feature).
     Op => values::OP,
     /// `<slider>`.
     Slider => inputs::SLIDER,
@@ -203,6 +204,8 @@ const CONTAINER: u8 = 2;
 const SYMBOLIC: u8 = 8;
 /// Made by the builder, never by a tag in the source.
 const INTERNAL: u8 = 16;
+/// A prototype-only tag, registered only with the `testing` feature.
+const TEST_ONLY: u8 = 32;
 
 impl ComponentType {
     pub fn info(self) -> &'static ComponentTypeInfo {
@@ -216,6 +219,8 @@ impl ComponentType {
             ComponentType::ALL
                 .iter()
                 .filter(|k| k.info().flags & INTERNAL == 0)
+                // Test-only tags are unknown to documents outside tests.
+                .filter(|k| cfg!(feature = "testing") || k.info().flags & TEST_ONLY == 0)
                 .flat_map(|&k| k.info().tags.iter().map(move |&t| (t, k)))
                 .collect()
         });
@@ -237,7 +242,7 @@ impl ComponentType {
     }
 
     /// A prop name with the current core's spellings mapped to ours.
-    pub fn canonical_prop<'a>(self, name: &'a str) -> &'a str {
+    pub fn canonical_prop(self, name: &str) -> &str {
         self.info()
             .aliases
             .iter()

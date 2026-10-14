@@ -4,10 +4,9 @@ The current DoenetML core talks to renderers in component vocabulary: it sends
 changed `for_render` props per component and receives named actions such as
 `point.move {x, y}`. This prototype instead addresses the renderer boundary by
 cell in both directions. The renderer reads values through a `Float64Array`
-view over the core's cell array (zero copy when the core runs on the main
-thread, `SharedArrayBuffer` when in a worker), receives a one-time render
-manifest mapping each rendered prop to cell indices, and is told after each
-tick which cell indices changed. Writes are requests of the form
+view over the core's cell array, reads the component table (the columnar
+map from each component and prop to its cells) through views of the same
+kind, and is told after each tick which cell indices changed. Writes are requests of the form
 `(cell_index, value)`; the core inverts from whatever cell is named, derived or
 essential, to the essential cells beneath it.
 
@@ -25,8 +24,13 @@ and write paths, which is the symmetry break the prototype is exploring.
 
 ## Consequences
 
-- The renderer must know cell indices; it gets them from the render manifest
-  rather than from prop names at update time.
-- Any future worker deployment needs COOP/COEP headers for `SharedArrayBuffer`.
+- The renderer must know cell indices; it gets them from the component
+  table rather than from prop names at update time.
+- The core runs on the main thread. A worker deployment was built and
+  measured (plan 2, `results/NOTES.md`): 1 to 10 ms of latency per tick and
+  one vsync, with `SharedArrayBuffer` and `postMessage` transports within
+  noise of each other. The core's own share of a tick is under 3 ms at
+  100,000 cells, so the worker bought nothing, and both transports were
+  removed in the October 2026 cleanup.
 - Named actions, if reintroduced, become a thin table in the web layer, not a
   core concept.

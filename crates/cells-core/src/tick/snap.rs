@@ -352,7 +352,7 @@ fn constrain_vertices(
                 min = *t;
             }
         }
-        if !(min2 > 0.0) {
+        if min2.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
             return verts.to_vec();
         }
         min
@@ -414,7 +414,7 @@ fn vertex_sub(
                 continue;
             };
             let d2 = dist2(cp, a);
-            if !(d2 < closest) {
+            if d2.partial_cmp(&closest) != Some(std::cmp::Ordering::Less) {
                 continue;
             }
             match only {
@@ -616,11 +616,11 @@ fn onto_line(
     not_one_sided: bool,
 ) -> Option<(Pt, Pt)> {
     let n1 = nearest_on_line(p1, target, s)?;
-    if !(dist2(n1, p1) < t2) {
+    if dist2(n1, p1).partial_cmp(&t2) != Some(std::cmp::Ordering::Less) {
         return None;
     }
     let n2 = nearest_on_line(p2, target, s)?;
-    if !(dist2(n2, p2) < t2) {
+    if dist2(n2, p2).partial_cmp(&t2) != Some(std::cmp::Ordering::Less) {
         return None;
     }
     if not_one_sided {
