@@ -4,19 +4,23 @@
 # new/base ratios of the per-side minimum. Noise is about ±5% on loads.
 # The base gets this tree's cells-bench src/lib.rs and regress.rs.
 set -e
-repo=$(cd "$(dirname "$0")/.." && pwd); S="$repo/results/raw/perf"; mkdir -p "$S"
-base=${1:-HEAD}; wt=$repo/../.cells-prototype-perf
+# This package lives inside a larger repository; the worktree checks out the
+# whole repository and the base is this package's path within it. Bases
+# older than the October 2026 package layout cannot be compared.
+repo=$(cd "$(dirname "$0")/.." && pwd); root=$(git -C "$repo" rev-parse --show-toplevel); rel=${repo#$root/}
+S="$root/results/raw/perf"; mkdir -p "$S"
+base=${1:-HEAD}; wt=$root/../.cells-prototype-perf; bp=$wt/$rel
 cd $repo
 git worktree remove --force $wt 2>/dev/null || true
 git worktree add --detach --quiet $wt $base
 trap 'git -C $repo worktree remove --force $wt' EXIT
 # The base binary reads fixtures from its own tree; the generated ones are gitignored.
-rm -rf $wt/fixtures && ln -s $repo/fixtures $wt/fixtures
-cp crates/cells-bench/src/lib.rs $wt/crates/cells-bench/src/lib.rs
+rm -rf $bp/fixtures && ln -s $repo/fixtures $bp/fixtures
+cp crates/cells-bench/src/lib.rs $bp/crates/cells-bench/src/lib.rs
 # Build both sides with the same flags.
-if [ -d .cargo ]; then rm -rf $wt/.cargo && cp -r .cargo $wt/.cargo; fi
-cp crates/cells-bench/examples/regress.rs $wt/crates/cells-bench/examples/regress.rs
-(cd $wt && CARGO_TARGET_DIR=$repo/target/perf-base cargo build --release -q -p cells-bench --example regress)
+if [ -d .cargo ]; then rm -rf $bp/.cargo && cp -r .cargo $bp/.cargo; fi
+cp crates/cells-bench/examples/regress.rs $bp/crates/cells-bench/examples/regress.rs
+(cd $bp && CARGO_TARGET_DIR=$repo/target/perf-base cargo build --release -q -p cells-bench --example regress)
 cargo build --release -q -p cells-bench --example regress
 B=$repo/target/perf-base/release/examples/regress; N=$repo/target/release/examples/regress
 F="${PERF_FIXTURES:-chain-100000 points-10000 repeat-10000 fanout-10000 circles3-1000 sticky-1000 curves-100 symchain-1000 wording-1000}"

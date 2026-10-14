@@ -1,7 +1,7 @@
 // The renderer-side counterpart of the cell-addressed interface (ADR 0001):
 // a Float64Array view over the core's cells (wasm memory on this thread,
 // zero-copy), per-cell-index subscriptions, and cell-addressed requests.
-import init, { Core } from "./wasm/cells_wasm.js";
+import init, { Core } from "@doenet/cells-core/pkg/cells_wasm.js";
 import { ComponentTable, columnsFromCore } from "./components";
 
 export interface LoadTimings {

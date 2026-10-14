@@ -1,10 +1,11 @@
 target/
 node_modules/
 results/raw/
-web/dist/
-web/src/wasm/
-web/test-results/
+packages/cells-core/pkg/
+packages/cells-viewer/dist/
+packages/cells-viewer/test-results/
 
-# Generated fixtures; scripts/gen-fixtures.sh regenerates them. sir.doenet is hand-written.
-fixtures/*
-!fixtures/sir.doenet
+# Generated fixtures; packages/cells-core/scripts/gen-fixtures.sh regenerates
+# them. sir.doenet is hand-written.
+packages/cells-core/fixtures/*
+!packages/cells-core/fixtures/sir.doenet

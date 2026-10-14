@@ -11,7 +11,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { encodeDast } from "./cdast-encode.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const doenetmlDir = process.env.DOENETML_DIR ?? resolve(here, "../../../ml");
+const doenetmlDir = process.env.DOENETML_DIR ?? resolve(here, "../../../../../ml");
 const parserEntry = resolve(doenetmlDir, "packages/parser/dist/index.js");
 const { lezerToDast, normalizeDocumentDast } = await import(pathToFileURL(parserEntry).href);
 

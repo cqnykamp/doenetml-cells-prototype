@@ -117,7 +117,7 @@ const results = [];
   console.log(JSON.stringify(r, null, 1));
 }
 await browser.close();
-const dir = resolve(here, "../../results/raw");
+const dir = resolve(here, "../../../results/raw");
 mkdirSync(dir, { recursive: true });
 const file = resolve(dir, `e2e-sir-${new Date().toISOString().slice(0, 10)}.json`);
 writeFileSync(file, JSON.stringify(results, null, 1));

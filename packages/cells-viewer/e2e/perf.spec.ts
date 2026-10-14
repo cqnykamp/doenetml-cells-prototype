@@ -43,7 +43,7 @@ function stats(xs: number[]) {
 const results: any[] = [];
 
 test.afterAll(() => {
-  const dir = resolve(here, "../../results/raw");
+  const dir = resolve(here, "../../../results/raw");
   mkdirSync(dir, { recursive: true });
   const stamp = new Date().toISOString().slice(0, 10);
   const file = resolve(dir, `e2e-${stamp}.json`);

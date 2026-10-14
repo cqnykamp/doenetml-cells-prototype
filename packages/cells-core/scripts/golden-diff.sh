@@ -7,26 +7,28 @@
 #
 # Usage: scripts/golden-diff.sh [base-rev]
 set -euo pipefail
-repo=$(cd "$(dirname "$0")/.." && pwd)
+# This package lives inside a larger repository; the worktree checks out the
+# whole repository and the base is this package's path within it. Bases
+# older than the October 2026 package layout cannot be compared.
+repo=$(cd "$(dirname "$0")/.." && pwd); root=$(git -C "$repo" rev-parse --show-toplevel); rel=${repo#$root/}
 base=${1:-HEAD}
-out="$repo/results/raw/golden"
-# A sibling of the repo, so relative path dependencies still resolve.
-wt="$repo/../.cells-prototype-golden"
-export DOENETML_DIR=${DOENETML_DIR:-$(cd "$repo/../../ml" && pwd)}
+out="$root/results/raw/golden"
+wt="$root/../.cells-prototype-golden"; bp="$wt/$rel"
+export DOENETML_DIR=${DOENETML_DIR:-$(cd "$root/../../ml" && pwd)}
 
 rm -rf "$out/base" "$out/head" "$out/base.programs" "$out/head.programs"
 git -C "$repo" worktree remove --force "$wt" 2>/dev/null || true
 git -C "$repo" worktree add --detach --quiet "$wt" "$base"
 trap 'git -C "$repo" worktree remove --force "$wt"' EXIT
 # The fixtures are generated, not committed; the base reads this tree's.
-rm -rf "$wt/fixtures" && ln -s "$repo/fixtures" "$wt/fixtures"
+rm -rf "$bp/fixtures" && ln -s "$repo/fixtures" "$bp/fixtures"
 if [[ "${GOLDEN_OWN:-0}" != 1 ]]; then
-  cp "$repo/crates/cells-bench/examples/golden.rs" "$wt/crates/cells-bench/examples/"
-  rm -rf "$wt/crates/cells-bench/golden"
-  cp -r "$repo/crates/cells-bench/golden" "$wt/crates/cells-bench/"
+  cp "$repo/crates/cells-bench/examples/golden.rs" "$bp/crates/cells-bench/examples/"
+  rm -rf "$bp/crates/cells-bench/golden"
+  cp -r "$repo/crates/cells-bench/golden" "$bp/crates/cells-bench/"
 fi
 
-(cd "$wt" && CARGO_TARGET_DIR="$repo/target/golden-base" cargo run --release -q -p cells-bench --example golden -- "$out/base")
+(cd "$bp" && CARGO_TARGET_DIR="$repo/target/golden-base" cargo run --release -q -p cells-bench --example golden -- "$out/base")
 (cd "$repo" && cargo run --release -q -p cells-bench --example golden -- "$out/head")
 
 if cmp -s "$out/base.programs" "$out/head.programs"; then
