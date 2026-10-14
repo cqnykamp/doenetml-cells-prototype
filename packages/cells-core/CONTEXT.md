@@ -1,6 +1,6 @@
-# Cells Prototype — Domain Glossary
+# Cells core — Domain Glossary
 
-A prototype of a DoenetML core organized around data (cells) rather than
+A DoenetML core organized around data (cells) rather than
 user-facing components. Terms below are the canonical vocabulary. This file is
 a glossary only; design decisions live in `docs/adr/`.
 
@@ -23,8 +23,8 @@ until it reaches essential cells.
 
 **Operator** — The numeric function that computes one derived cell from its
 input cells. Every operator may carry an inverse. Identity references are not
-operators: they alias. In the prototype, operators appear in a document as the
-prototype-only `<op>` tag.
+operators: they alias. Operators reach a document through components and
+math text; the test-only `<op>` tag names one directly.
 
 **Instruction** — An operator bound to its input cells and the cell (or
 consecutive cells) it writes. The program is the list of instructions in
@@ -68,9 +68,9 @@ reports is its **tick outcome** (`TickOutcome`): the changed cells, dropped
 requests, and whether the document was rebuilt.
 
 **Renderer** — The view layer as a whole: it reads cells, draws the
-document, and turns user actions into requests. The prototype has several
-interchangeable renderers (plain SVG, JSXGraph). The code that draws one
-component type is a **component renderer**.
+document, and turns user actions into requests. The viewer in
+`packages/cells-viewer` is one; it draws graphs with JSXGraph (ADR 0010).
+The code that draws one component type is a **component renderer**.
 _Avoid_: renderer for a single component type's view (say component renderer)
 
 **Request** — A renderer's ask to change a cell to a value. Requests are

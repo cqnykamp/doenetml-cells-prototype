@@ -493,3 +493,14 @@ browser's paint. A rebuild costs about 3 ms in the core; the reset is
 slower than a ±1 change because 100 iterations' rows and points mount.
 The renderer's first try dragged the wrong point: R₀ and I₀ sit 0.3 px
 apart and only `layer="1"` puts I₀ on top, so `layer` is now honored.
+
+## Cleanup toward the DoenetML repository (October 2026)
+
+The prototype was laid out as the two packages it will become
+(`packages/cells-core`, `packages/cells-viewer`), and everything with a
+recorded verdict was removed: the SVG renderer and the JSXGraph variants
+(ADR 0010 holds the plan 7 numbers), both worker transports (ADR 0001),
+the plan instruments, the baselines against the current core, and the
+committed fixtures. `<op>` is test-only. The engine switch to
+math-expressions-rs is recorded in ADR 0011 and is the next step. The
+sections above describe the code as it was; paths in them have moved.

@@ -5,8 +5,8 @@ around components. Components and props are a naming layer over cell
 indices; the dependency graph is a list of **instructions**, each an
 operator that computes derived cells from other cells and may carry an
 inverse. This file is the map. `CONTEXT.md` defines the vocabulary,
-`docs/adr/` records why things are the way they are, and `docs/history/`
-has the briefs and plans of the rounds that built it.
+`docs/adr/` records why things are the way they are, and the repository's
+`docs/history/` has the briefs and plans of the rounds that built it.
 
 ## The pipeline
 
@@ -147,13 +147,14 @@ the operators' own inverses. A type whose wiring depends on which
 attributes the author gave gets a planner of its own, named in its
 `planner` arm: `Geometric` for a shape (see `geometry/`), `PropsThen` to
 adjust the table's plan, or `Whole`. The renderer side is in
-`web/src/renderers/`.
+`packages/cells-viewer/src/renderers/`.
 
 **Add an operator.** Add the bound form to `Op` in `program/scalar.rs` with
 its `eval` and `invert` arms, and the unbound form to `OpSpec` in
 `program/instr.rs` with its `arity` and `bind` arms. To reach it from the
-`<op>` tag, map the name in `build/compile/attrs.rs`. Multi-cell operators
-are `VecOp`s in `program/vector.rs`.
+test-only `<op>` tag (registered under the `testing` feature, which
+`cargo test` turns on), map the name in `build/compile/attrs.rs`. Multi-cell
+operators are `VecOp`s in `program/vector.rs`.
 
 **Change how a request inverts.** Scalar inverse rules are `Op::invert`;
 vector rules are `VecOp::invert`; the engine that orders requests and keeps
@@ -161,25 +162,25 @@ point groups together is `tick/invert.rs`.
 
 **Change what a renderer reads.** The wasm binding is
 `crates/cells-wasm/src/lib.rs` (zero-copy views of the cells and component
-table, ADR 0001); the React side is `web/src/`. Graphs have two renderers,
-chosen in `web/src/renderers/kind.ts`: the SVG component renderers in
-`web/src/renderers/`, and JSXGraph boards in `web/src/renderers/jsxgraph/`,
-whose elements read cells directly and redraw once per tick
-(`CellStore.subscribeTickEnd`); Doenet's styling is copied into
-`jsxgraph/doenet.ts`.
+table, ADR 0001); the React side is `packages/cells-viewer/src/`. The core
+runs on the main thread. Graphs are JSXGraph boards
+(`renderers/jsxgraph/`, ADR 0010) whose elements read cells directly and
+redraw once per tick (`CellStore.subscribeTickEnd`); Doenet's styling is
+copied into `jsxgraph/doenet.ts`.
 
 ## The other crates
 
 - `crates/cells-sym`: symbolic math engine A (a flat hash-consed arena) and
   compiled curve tapes, behind the `SymEngine` trait.
-- `crates/cells-sym-mer`: engine R, wrapping math-expressions-rs, used as
-  engine A's behavior oracle.
+- `crates/cells-sym-mer`: engine R, wrapping math-expressions-rs, today
+  engine A's behavior oracle and, per ADR 0011, the engine to keep.
 - `crates/cells-wasm`: the browser binding.
 - `crates/cells-docgen`: the synthetic DoenetML generator behind the
   fixtures and benchmarks.
-- `crates/cells-bench`: criterion benches, the `stats` binary, and examples.
-  `golden` dumps behavior for `scripts/golden-diff.sh` and `regress` times
-  for `scripts/perf-diff.sh`.
+- `crates/cells-bench`: criterion benches over the generated fixtures, the
+  `stats` binary, and three examples: `golden` dumps behavior for
+  `scripts/golden-diff.sh`, `regress` times for `scripts/perf-diff.sh`, and
+  `sir_perf` times the one hand-written document.
 
 ## Checking a change
 
