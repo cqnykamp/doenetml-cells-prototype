@@ -67,6 +67,7 @@ impl Engine {
     fn convert(&self, t: &Tree, leaves: &mut Vec<(u32, bool)>) -> Expr {
         match t {
             Tree::Num(v) => number(*v),
+            Tree::Sym(s) if s == BLANK => Expr::Blank,
             Tree::Sym(s) => Expr::sym(s),
             Tree::Cell { cell, math } => {
                 if !leaves.contains(&(*cell, *math)) {
@@ -104,10 +105,18 @@ impl Engine {
         h
     }
 
-    /// Parse math text (a `mathInput`'s value). No cell references.
+    /// Parse math text (a `mathInput`'s value). No cell references. Empty
+    /// text is the blank expression, as `<math/>` is in DoenetML.
     pub fn parse(&mut self, text: &str) -> Result<Handle, String> {
-        let e = self.parser.convert(text).map_err(|e| e.to_string())?;
+        let e = self.convert_text(text)?;
         Ok(self.push(e))
+    }
+
+    fn convert_text(&mut self, text: &str) -> Result<Expr, String> {
+        if text.trim().is_empty() {
+            return Ok(Expr::Blank);
+        }
+        self.parser.convert(text).map_err(|e| e.to_string())
     }
 
     /// Parse math text into a builder tree without storing it: what the
@@ -115,7 +124,7 @@ impl Engine {
     /// as `cellN<plan>` leaves. Fails on what a tree cannot say (a relation,
     /// a tuple, a function of several arguments).
     pub fn parse_tree(&mut self, text: &str) -> Result<Tree, String> {
-        let e = self.parser.convert(text).map_err(|e| e.to_string())?;
+        let e = self.convert_text(text)?;
         to_tree(&e).ok_or_else(|| {
             format!("'{text}' is not supported in a math cell (a relation, tuple or multi-argument function)")
         })
@@ -284,6 +293,10 @@ fn count_nodes(e: &Expr) -> usize {
 
 /// An engine expression as a builder tree; cell leaves come back from their
 /// `cellN<i>`/`cellM<i>` symbol names.
+/// The blank expression's spelling as a tree symbol (`＿`, as DoenetML
+/// prints a missing operand).
+const BLANK: &str = "\u{ff3f}";
+
 fn to_tree(e: &Expr) -> Option<Tree> {
     let all = |es: &[Expr]| es.iter().map(to_tree).collect::<Option<Vec<_>>>();
     let one = |e: &Expr| to_tree(e).map(Box::new);
@@ -296,6 +309,7 @@ fn to_tree(e: &Expr) -> Option<Tree> {
                 None => Tree::Sym(name),
             }
         }
+        Expr::Blank => Tree::Sym(BLANK.into()),
         Expr::Const(me::MathConst::Pi) => Tree::Sym("pi".into()),
         Expr::Const(me::MathConst::E) => Tree::Sym("e".into()),
         Expr::Const(me::MathConst::Inf) => Tree::Num(f64::INFINITY),
@@ -341,6 +355,16 @@ mod tests {
                 })
             )
         );
+    }
+
+    #[test]
+    fn empty_text_is_the_blank_expression() {
+        let mut e = Engine::new();
+        let h = e.parse("  ").unwrap();
+        assert_eq!(e.text(h), "\u{ff3f}");
+        assert_eq!(e.parse_tree("").unwrap(), Tree::Sym(BLANK.into()));
+        let back = e.import(&Tree::Sym(BLANK.into()));
+        assert_eq!(e.text(back), "\u{ff3f}");
     }
 
     #[test]

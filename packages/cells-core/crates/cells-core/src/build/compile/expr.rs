@@ -286,6 +286,11 @@ pub struct Parser<'a> {
 
 impl<'a> Parser<'a> {
     pub fn parse(toks: &'a [Token], arena: &'a mut Arena) -> Result<ExprId, String> {
+        // No text at all (`<math/>`, an `<answer>` with only an input): the
+        // blank expression, a symbol the engine spells `＿`.
+        if toks.is_empty() {
+            return Ok(arena.push(Expr::Sym("\u{ff3f}".into())));
+        }
         let mut p = Parser {
             toks,
             pos: 0,
