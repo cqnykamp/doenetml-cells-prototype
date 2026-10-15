@@ -2,7 +2,8 @@
 
 **Moved.** On 2026-10-14 the code moved to the DoenetML repository as
 `packages/cells-core` and `packages/cells-viewer` (branch
-`cells-prototype-adapter` of the fork at github.com/cqnykamp/DoenetML),
+`cells` of the fork at github.com/cqnykamp/DoenetML, renamed from
+`cells-prototype-adapter` on 2026-10-15),
 next to the test adapter that measures its parity with the current core.
 Development continues there; this repository is the record of the
 prototype rounds that produced it and is not updated.
